@@ -7,6 +7,7 @@ import { UserAddress } from '../entities/UserAddress';
 import { KYCDocument } from '../entities/KYCDocument';
 import { RefreshToken } from '../entities/RefreshToken';
 
+
 export const AppDataSource = new DataSource({
     type: 'postgres',
     url: process.env.DATABASE_URL,
@@ -15,8 +16,8 @@ export const AppDataSource = new DataSource({
     entities: [User, UserAddress, KYCDocument, RefreshToken],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
+    ssl: process.env.NODE_ENV !== 'development' ? { rejectUnauthorized: false } : false,
 });
-
 export const connectDB = async (): Promise<void> => {
     try {
         await AppDataSource.initialize();
