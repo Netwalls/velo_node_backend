@@ -16,7 +16,7 @@ export const AppDataSource = new DataSource({
     entities: [User, UserAddress, KYCDocument, RefreshToken],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
-    ssl: process.env.NODE_ENV !== 'development' ? { rejectUnauthorized: false } : false,
+    ssl: { rejectUnauthorized: false },
 });
 export const connectDB = async (): Promise<void> => {
     try {
