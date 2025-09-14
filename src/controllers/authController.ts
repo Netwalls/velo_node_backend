@@ -9,9 +9,39 @@ import {
     verifyRefreshToken,
 } from '../utils/jwt';
 import { generateOTP, getOTPExpiry, isOTPExpired } from '../utils/otp';
-import { sendOTPEmail } from '../utils/email';
+import { sendMail } from '../utils/email';
+import { registerTemplate } from '../utils/registerTemplate';
+import { otpTemplate } from '../utils/otpTemplate';
+import { resendOtpTemplate } from '../utils/resendOtpTemplate';
+import { loginNotificationTemplate } from '../utils/loginNotificationTemplate';
+import { logoutNotificationTemplate } from '../utils/logoutNotificationTemplate';
 
 export class AuthController {
+    // Delete user by email or ID
+    static async deleteUser(req: Request, res: Response): Promise<void> {
+        try {
+            const { email, id } = req.body;
+            const userRepository = AppDataSource.getRepository(User);
+            let user;
+            if (id) {
+                user = await userRepository.findOne({ where: { id } });
+            } else if (email) {
+                user = await userRepository.findOne({ where: { email } });
+            } else {
+                res.status(400).json({ error: 'Email or ID required' });
+                return;
+            }
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+            await userRepository.remove(user);
+            res.json({ message: 'User deleted successfully' });
+        } catch (error) {
+            console.error('Delete user error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
     // Register new user
     static async register(req: Request, res: Response): Promise<void> {
         try {
@@ -41,7 +71,10 @@ export class AuthController {
             user.emailOTPExpiry = getOTPExpiry();
             await userRepository.save(user);
 
-            // await sendOTPEmail(email, otp);
+            // Send registration verification email
+            await sendMail(email, 'Verify your email', registerTemplate(email));
+            // Send OTP email
+            await sendMail(email, 'Your OTP Code', otpTemplate(email, otp));
             console.log(`OTP for ${email}: ${otp}`);
 
             res.status(201).json({
@@ -114,6 +147,12 @@ export class AuthController {
                     isEmailVerified: user.isEmailVerified,
                 },
             });
+            // Send login notification email
+            await sendMail(
+                email,
+                'Login Notification',
+                loginNotificationTemplate(email)
+            );
         } catch (error) {
             console.error('Login error:', error);
             res.status(500).json({ error: 'Internal server error' });
@@ -187,7 +226,12 @@ export class AuthController {
             user.emailOTPExpiry = getOTPExpiry();
             await userRepository.save(user);
 
-            // await sendOTPEmail(email, otp);
+            // Send OTP email
+            await sendMail(
+                email,
+                'Your OTP Code',
+                resendOtpTemplate(email, otp)
+            );
             console.log(`OTP for ${email}: ${otp}`);
 
             res.json({ message: 'OTP sent successfully' });
@@ -263,6 +307,14 @@ export class AuthController {
             }
 
             res.json({ message: 'Logged out successfully' });
+            // Send logout notification email
+            if (req.user && req.user.email) {
+                await sendMail(
+                    req.user.email,
+                    'Logout Notification',
+                    logoutNotificationTemplate(req.user.email)
+                );
+            }
         } catch (error) {
             console.error('Logout error:', error);
             res.status(500).json({ error: 'Internal server error' });
@@ -283,6 +335,14 @@ export class AuthController {
             }
 
             res.json({ message: 'Logged out from all devices successfully' });
+            // Send logout notification email
+            if (req.user && req.user.email) {
+                await sendMail(
+                    req.user.email,
+                    'Logout Notification',
+                    logoutNotificationTemplate(req.user.email)
+                );
+            }
         } catch (error) {
             console.error('Logout all error:', error);
             res.status(500).json({ error: 'Internal server error' });

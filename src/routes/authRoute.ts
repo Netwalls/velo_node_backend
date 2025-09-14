@@ -24,5 +24,7 @@ router.post('/logout', authMiddleware, AuthController.logout);
 
 // Logout from all devices
 router.post('/logout-all', authMiddleware, AuthController.logoutAll);
+// Delete user
+router.delete('/delete-user', authMiddleware, AuthController.deleteUser);
 
 export default router;

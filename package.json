@@ -30,6 +30,7 @@
     "nodemailer": "^6.9.4",
     "pg": "^8.11.3",
     "reflect-metadata": "^0.1.13",
+    "resend": "^6.0.3",
     "speakeasy": "^2.0.0",
     "typeorm": "^0.3.17"
   },
