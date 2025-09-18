@@ -18,9 +18,15 @@ app.get('/', (req, res) => {
 
 import authRouter from './routes/authRoute';
 import userRouter from './routes/userRoute';
+import walletRouter from './routes/walletRoute';
+import notificationRouter from './routes/notificationRoute';
+import historyRouter from './routes/historyRoute';
 
 app.use('/auth', authRouter);
 app.use('/user', userRouter);
+app.use('/wallet', walletRouter);
+app.use('/notification', notificationRouter);
+app.use('/history', historyRouter);
 
 connectDB().then(() => {
     app.listen(PORT, () => {

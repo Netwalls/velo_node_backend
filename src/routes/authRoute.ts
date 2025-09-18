@@ -24,7 +24,18 @@ router.post('/logout', authMiddleware, AuthController.logout);
 
 // Logout from all devices
 router.post('/logout-all', authMiddleware, AuthController.logoutAll);
-// Delete user
-router.delete('/delete-user', authMiddleware, AuthController.deleteUser);
+
+// Delete user by ID (expects :id param)
+router.delete(
+    '/delete-user/:id',
+    authMiddleware,
+    AuthController.deleteUserById
+);
+
+// Testable logout endpoint (GET for easy browser/curl testing)
+router.get('/logout-test', authMiddleware, (req, res) => {
+    // Calls the same logic as the POST /logout endpoint
+    return AuthController.logout(req, res);
+});
 
 export default router;

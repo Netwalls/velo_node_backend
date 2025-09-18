@@ -1,3 +1,5 @@
+// Get user profile by ID
+
 import { Router } from 'express';
 import { UserController } from '../controllers/userController';
 import { authMiddleware } from '../middleware/auth';
@@ -6,6 +8,7 @@ const router = Router();
 
 // Get user profile
 router.get('/profile', authMiddleware, UserController.getProfile);
+router.get('/profile/:userId', authMiddleware, UserController.getProfileById);
 
 // Update user profile
 router.put('/profile', authMiddleware, UserController.updateProfile);

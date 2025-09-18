@@ -7,10 +7,12 @@ import {
     JoinColumn,
 } from 'typeorm';
 import { User } from './User';
-import { ChainType } from '../types';
+import { ChainType, NetworkType } from '../types';
 
 @Entity('user_addresses')
 export class UserAddress {
+    @Column({ type: 'enum', enum: NetworkType, default: NetworkType.MAINNET })
+    network!: NetworkType;
     @PrimaryGeneratedColumn('uuid')
     id!: string;
 
@@ -22,6 +24,9 @@ export class UserAddress {
 
     @Column('text')
     address!: string;
+
+    @Column('text', { nullable: true })
+    encryptedPrivateKey?: string;
 
     @Column({ default: false })
     isVerified!: boolean;

@@ -6,7 +6,53 @@ import { KYCDocument } from '../entities/KYCDocument';
 import { AuthRequest, KYCStatus } from '../types';
 
 export class UserController {
-    // Get user profile
+    /**
+     * Get user profile by ID (admin or public endpoint).
+     * Fetches user details, KYC document, and addresses for the given userId param.
+     * Returns 404 if not found.
+     */
+    static async getProfileById(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const { userId } = req.params;
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOne({
+                where: { id: userId },
+                relations: ['addresses', 'kycDocument'],
+            });
+
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            res.json({
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    phoneNumber: user.phoneNumber,
+                    isEmailVerified: user.isEmailVerified,
+                    kycStatus: user.kycStatus,
+                    kyc: user.kycDocument,
+                    addresses: user.addresses,
+                    createdAt: user.createdAt,
+                },
+            });
+        } catch (error) {
+            console.error('Get profile by ID error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Get profile for the currently authenticated user.
+     * Fetches user details, KYC document, and addresses for req.user!.id.
+     * Returns 404 if not found.
+     */
     static async getProfile(req: AuthRequest, res: Response): Promise<void> {
         try {
             const userRepository = AppDataSource.getRepository(User);
@@ -40,7 +86,11 @@ export class UserController {
         }
     }
 
-    // Update user profile
+    /**
+     * Update the profile of the currently authenticated user.
+     * Allows updating first name, last name, and phone number.
+     * Returns the updated user profile.
+     */
     static async updateProfile(req: AuthRequest, res: Response): Promise<void> {
         try {
             const { firstName, lastName, phoneNumber } = req.body;
@@ -71,7 +121,11 @@ export class UserController {
         }
     }
 
-    // Add blockchain address
+    /**
+     * Add a new blockchain address for the authenticated user.
+     * Checks for duplicates before adding.
+     * Returns all addresses after addition.
+     */
     static async addAddress(req: AuthRequest, res: Response): Promise<void> {
         try {
             const { chain, address } = req.body;
@@ -110,7 +164,11 @@ export class UserController {
         }
     }
 
-    // Remove blockchain address
+    /**
+     * Remove a blockchain address for the authenticated user.
+     * Expects addressId in req.params.
+     * Returns all addresses after removal.
+     */
     static async removeAddress(req: AuthRequest, res: Response): Promise<void> {
         try {
             const { addressId } = req.params;
@@ -140,7 +198,11 @@ export class UserController {
         }
     }
 
-    // Update KYC status (admin only - simplified for demo)
+    /**
+     * Update the KYC status for a user (admin only, simplified for demo).
+     * Expects userId in req.params and status/rejectionReason in req.body.
+     * Updates both the user and KYC document.
+     */
     static async updateKYCStatus(
         req: AuthRequest,
         res: Response
