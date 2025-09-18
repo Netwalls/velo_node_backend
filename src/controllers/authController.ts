@@ -168,7 +168,7 @@ export class AuthController {
             await AppDataSource.getRepository(User).save(user);
 
             // Send registration verification email and OTP
-            // await sendRegistrationEmails(email, otp);
+            await sendRegistrationEmails(email, otp);
 
             // Return user profile with addresses (no private keys)
             const userAddresses = addresses.map((a) => ({

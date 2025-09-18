@@ -21,7 +21,7 @@ export function loginNotificationTemplate(name: string) {
       <p>Hello ${name},</p><p>Your account was just accessed. If this wasn't you, please reset your password immediately.</p>
     </div>
     <div style=\"margin-top:32px; font-size:12px; color:#888; text-align:center;\">
-      &copy; 2025 Swift. All rights reserved.
+      &copy; 2025 Velo. All rights reserved.
     </div>
   </div>
 </body>

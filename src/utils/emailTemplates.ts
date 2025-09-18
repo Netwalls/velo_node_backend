@@ -1,4 +1,4 @@
-// Email templates for Swift app
+// Email templates for Velo app
 
 const colors = {
     primary: '#2563eb',
@@ -46,7 +46,7 @@ function baseTemplate({
             : ''
     }
     <div style="margin-top:32px; font-size:12px; color:#888; text-align:center;">
-      &copy; 2025 Swift. All rights reserved.
+      &copy; 2025 Velo. All rights reserved.
     </div>
   </div>
 </body>
@@ -69,8 +69,8 @@ export function resendOtpTemplate(email: string, otp: string) {
 
 export function welcomeTemplate(name: string) {
     return baseTemplate({
-        title: 'Welcome to Swift!',
-        body: `<p>Welcome to Swift, <b>${name}</b>!</p><p>We're excited to have you on board. Start managing your crypto payments and splits now.</p>`,
+        title: 'Welcome to Velo!',
+        body: `<p>Welcome to Velo, <b>${name}</b>!</p><p>We're excited to have you on board. Start managing your crypto payments and splits now.</p>`,
     });
 }
 
