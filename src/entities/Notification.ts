@@ -7,6 +7,7 @@ import {
     JoinColumn,
 } from 'typeorm';
 import { User } from './User';
+import { NotificationType } from '../types';
 
 @Entity('notifications')
 export class Notification {
@@ -20,11 +21,23 @@ export class Notification {
     @JoinColumn()
     user!: User;
 
-    @Column()
-    type!: string; // e.g. 'swap', 'deposit', 'withdrawal', etc.
+    @Column({
+        type: 'enum',
+        enum: NotificationType,
+    })
+    type!: NotificationType;
+
+    @Column('text')
+    title!: string;
+
+    @Column('text')
+    message!: string;
 
     @Column('jsonb', { nullable: true })
     details?: any;
+
+    @Column({ default: false })
+    isRead!: boolean;
 
     @CreateDateColumn()
     createdAt!: Date;

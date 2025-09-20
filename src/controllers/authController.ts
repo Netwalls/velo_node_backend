@@ -23,6 +23,7 @@ import {
     saveUserAddresses,
 } from '../services/userService';
 import { sendRegistrationEmails } from '../services/emailService';
+import { NotificationService } from '../services/notificationService';
 import { UserAddress } from '../entities/UserAddress';
 import { NetworkType } from '../types';
 import { ChainType } from '../types';
@@ -170,6 +171,27 @@ export class AuthController {
             // Send registration verification email and OTP
             await sendRegistrationEmails(email, otp);
 
+            // Create registration notification
+            try {
+                if (user.id) {
+                    await NotificationService.notifyRegistration(user.id, {
+                        email,
+                        registrationDate: new Date(),
+                        addressCount: addresses.length,
+                    });
+                    console.log(
+                        '[DEBUG] Registration notification created for user:',
+                        user.id
+                    );
+                }
+            } catch (notificationError) {
+                console.error(
+                    '[DEBUG] Failed to create registration notification:',
+                    notificationError
+                );
+                // Don't fail registration if notification fails
+            }
+
             // Return user profile with addresses (no private keys)
             const userAddresses = addresses.map((a) => ({
                 chain: a.chain,
@@ -255,6 +277,27 @@ export class AuthController {
                 },
             });
 
+            // Create login notification
+            try {
+                if (user.id) {
+                    await NotificationService.notifyLogin(user.id, {
+                        loginTime: new Date(),
+                        userAgent: req.headers['user-agent'],
+                        ip: req.ip || req.connection.remoteAddress,
+                    });
+                    console.log(
+                        '[DEBUG] Login notification created for user:',
+                        user.id
+                    );
+                }
+            } catch (notificationError) {
+                console.error(
+                    '[DEBUG] Failed to create login notification:',
+                    notificationError
+                );
+                // Don't fail login if notification fails
+            }
+
             // Optionally send login notification email (commented out)
             //      await sendMail(
             //     email,
@@ -313,6 +356,26 @@ export class AuthController {
             user.emailOTP = undefined;
             user.emailOTPExpiry = undefined;
             await userRepository.save(user);
+
+            // Create OTP verification notification
+            try {
+                if (user.id) {
+                    await NotificationService.notifyOTPVerified(user.id, {
+                        verificationTime: new Date(),
+                        email: user.email,
+                    });
+                    console.log(
+                        '[DEBUG] OTP verification notification created for user:',
+                        user.id
+                    );
+                }
+            } catch (notificationError) {
+                console.error(
+                    '[DEBUG] Failed to create OTP verification notification:',
+                    notificationError
+                );
+                // Don't fail verification if notification fails
+            }
 
             res.json({ message: 'Email verified successfully' });
         } catch (error) {

@@ -30,3 +30,17 @@ export enum ChainType {
     SOLANA = 'solana',
     STARKNET = 'starknet',
 }
+
+export enum NotificationType {
+    LOGIN = 'login',
+    LOGOUT = 'logout',
+    REGISTRATION = 'registration',
+    SEND_MONEY = 'send_money',
+    RECEIVE_MONEY = 'receive_money',
+    SWAP = 'swap',
+    DEPOSIT = 'deposit',
+    WITHDRAWAL = 'withdrawal',
+    OTP_VERIFIED = 'otp_verified',
+    PASSWORD_CHANGE = 'password_change',
+    SECURITY_ALERT = 'security_alert',
+}

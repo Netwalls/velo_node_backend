@@ -32,10 +32,4 @@ router.delete(
     AuthController.deleteUserById
 );
 
-// Testable logout endpoint (GET for easy browser/curl testing)
-router.get('/logout-test', authMiddleware, (req, res) => {
-    // Calls the same logic as the POST /logout endpoint
-    return AuthController.logout(req, res);
-});
-
 export default router;
