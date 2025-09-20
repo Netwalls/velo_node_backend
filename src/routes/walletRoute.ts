@@ -7,6 +7,23 @@ const router = Router();
 // Get all balances for the authenticated user
 router.get('/balances', authMiddleware, WalletController.getBalances);
 
+// Get user wallet addresses
+router.get('/addresses', authMiddleware, WalletController.getWalletAddresses);
+
+// Get user testnet addresses (chain and address only)
+router.get(
+    '/addresses/testnet',
+    authMiddleware,
+    WalletController.getTestnetAddresses
+);
+
+// Get user mainnet addresses (chain and address only)
+router.get(
+    '/addresses/mainnet',
+    authMiddleware,
+    WalletController.getMainnetAddresses
+);
+
 // Get all balances for a specific user by userId (admin/public)
 router.get('/balances/:userId', WalletController.getBalancesByUserId);
 

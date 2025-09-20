@@ -2,7 +2,7 @@ import { Transaction } from '../entities/Transaction';
 import { Request, Response } from 'express';
 import { AppDataSource } from '../config/database';
 import { UserAddress } from '../entities/UserAddress';
-import { AuthRequest } from '../types';
+import { AuthRequest, NetworkType } from '../types';
 import { RpcProvider } from 'starknet';
 import { ethers } from 'ethers';
 import axios from 'axios';
@@ -577,6 +577,155 @@ export class WalletController {
             await txRepo.save(txEntity);
             console.error('Send transaction error:', error);
             res.status(500).json({ error: 'Failed to send transaction.' });
+        }
+    }
+
+    /**
+     * Get user wallet addresses
+     * Expects authenticated user in req.user
+     * Returns all wallet addresses for the user
+     */
+    static async getWalletAddresses(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const userAddressRepository =
+                AppDataSource.getRepository(UserAddress);
+            const addresses = await userAddressRepository.find({
+                where: { userId },
+                select: ['id', 'chain', 'network', 'address', 'addedAt'],
+            });
+
+            if (!addresses || addresses.length === 0) {
+                res.status(404).json({
+                    error: 'No wallet addresses found for this user',
+                    addresses: [],
+                });
+                return;
+            }
+
+            // Group addresses by chain for better organization
+            const addressesByChain = addresses.reduce((acc, addr) => {
+                if (!acc[addr.chain]) {
+                    acc[addr.chain] = [];
+                }
+                acc[addr.chain].push({
+                    id: addr.id,
+                    chain: addr.chain,
+                    network: addr.network,
+                    address: addr.address,
+                    addedAt: addr.addedAt,
+                });
+                return acc;
+            }, {} as Record<string, any[]>);
+
+            res.status(200).json({
+                message: 'Wallet addresses retrieved successfully',
+                addresses: addressesByChain,
+                totalCount: addresses.length,
+            });
+        } catch (error) {
+            console.error('Get wallet addresses error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Get user testnet wallet addresses
+     * Returns only chain and address for testnet networks
+     */
+    static async getTestnetAddresses(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const userAddressRepository =
+                AppDataSource.getRepository(UserAddress);
+            const addresses = await userAddressRepository.find({
+                where: { userId, network: NetworkType.TESTNET },
+                select: ['chain', 'address'],
+            });
+
+            if (!addresses || addresses.length === 0) {
+                res.status(404).json({
+                    error: 'No testnet addresses found for this user',
+                    addresses: [],
+                });
+                return;
+            }
+
+            // Return simplified format with only chain and address
+            const simplifiedAddresses = addresses.map((addr) => ({
+                chain: addr.chain,
+                address: addr.address,
+            }));
+
+            res.status(200).json({
+                message: 'Testnet addresses retrieved successfully',
+                addresses: simplifiedAddresses,
+            });
+        } catch (error) {
+            console.error('Get testnet addresses error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Get user mainnet wallet addresses
+     * Returns only chain and address for mainnet networks
+     */
+    static async getMainnetAddresses(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const userAddressRepository =
+                AppDataSource.getRepository(UserAddress);
+            const addresses = await userAddressRepository.find({
+                where: { userId, network: NetworkType.MAINNET },
+                select: ['chain', 'address'],
+            });
+
+            if (!addresses || addresses.length === 0) {
+                res.status(404).json({
+                    error: 'No mainnet addresses found for this user',
+                    addresses: [],
+                });
+                return;
+            }
+
+            // Return simplified format with only chain and address
+            const simplifiedAddresses = addresses.map((addr) => ({
+                chain: addr.chain,
+                address: addr.address,
+            }));
+
+            res.status(200).json({
+                message: 'Mainnet addresses retrieved successfully',
+                addresses: simplifiedAddresses,
+            });
+        } catch (error) {
+            console.error('Get mainnet addresses error:', error);
+            res.status(500).json({ error: 'Internal server error' });
         }
     }
 }
