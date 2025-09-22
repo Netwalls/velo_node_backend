@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import { connectDB } from './config/database';
+import { PaymentMonitoringService } from './services/paymentMonitoringService';
 
 // Load environment variables
 dotenv.config();
@@ -21,15 +22,21 @@ import userRouter from './routes/userRoute';
 import walletRouter from './routes/walletRoute';
 import notificationRouter from './routes/notificationRoute';
 import historyRouter from './routes/historyRoute';
+import paymentRouter from './routes/payment';
 
 app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/wallet', walletRouter);
 app.use('/notification', notificationRouter);
 app.use('/history', historyRouter);
+app.use('/payments', paymentRouter);
 
 connectDB().then(() => {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
+
+        // Start payment monitoring service
+        PaymentMonitoringService.start();
+        console.log('Payment monitoring service started');
     });
 });

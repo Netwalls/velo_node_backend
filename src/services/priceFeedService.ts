@@ -1,0 +1,198 @@
+import axios from 'axios';
+
+export interface PriceData {
+    currency: string;
+    price: number;
+    timestamp: Date;
+}
+
+export class PriceFeedService {
+    private static readonly COINGECKO_API = 'https://api.coingecko.com/api/v3';
+    private static readonly CACHE_DURATION = 30000; // 30 seconds
+    private static priceCache: Map<
+        string,
+        { price: number; timestamp: number }
+    > = new Map();
+
+    // CoinGecko ID mappings
+    private static readonly CURRENCY_IDS = {
+        ETH: 'ethereum',
+        BTC: 'bitcoin',
+        SOL: 'solana',
+        STRK: 'starknet',
+        USDT: 'tether',
+    };
+
+    /**
+     * Get current price for a currency in USD
+     */
+    static async getPrice(currency: string): Promise<number> {
+        const cacheKey = currency.toUpperCase();
+        const now = Date.now();
+
+        // Check cache first
+        const cached = this.priceCache.get(cacheKey);
+        if (cached && now - cached.timestamp < this.CACHE_DURATION) {
+            return cached.price;
+        }
+
+        try {
+            const coinId =
+                this.CURRENCY_IDS[cacheKey as keyof typeof this.CURRENCY_IDS];
+            if (!coinId) {
+                throw new Error(`Unsupported currency: ${currency}`);
+            }
+
+            const response = await axios.get(
+                `${this.COINGECKO_API}/simple/price?ids=${coinId}&vs_currencies=usd`,
+                { timeout: 10000 }
+            );
+
+            const data = response.data as Record<
+                string,
+                Record<string, number>
+            >;
+            const price = data[coinId]?.usd;
+            if (!price) {
+                throw new Error(`Price not found for ${currency}`);
+            }
+
+            // Cache the price
+            this.priceCache.set(cacheKey, { price, timestamp: now });
+
+            console.log(`[PriceFeed] ${currency}: $${price}`);
+            return price;
+        } catch (error) {
+            console.error(`Failed to fetch price for ${currency}:`, error);
+
+            // Return cached price if available, even if expired
+            const cached = this.priceCache.get(cacheKey);
+            if (cached) {
+                console.log(
+                    `[PriceFeed] Using stale cache for ${currency}: $${cached.price}`
+                );
+                return cached.price;
+            }
+
+            throw new Error(`Unable to fetch price for ${currency}`);
+        }
+    }
+
+    /**
+     * Get conversion rate from one currency to another
+     */
+    static async getConversionRate(
+        fromCurrency: string,
+        toCurrency: string = 'USDT'
+    ): Promise<number> {
+        if (fromCurrency.toUpperCase() === toCurrency.toUpperCase()) {
+            return 1.0;
+        }
+
+        const [fromPrice, toPrice] = await Promise.all([
+            this.getPrice(fromCurrency),
+            this.getPrice(toCurrency),
+        ]);
+
+        return fromPrice / toPrice;
+    }
+
+    /**
+     * Convert amount from one currency to another
+     */
+    static async convertAmount(
+        amount: number,
+        fromCurrency: string,
+        toCurrency: string = 'USDT',
+        includeSlippage: boolean = true
+    ): Promise<{ convertedAmount: number; rate: number; slippage: number }> {
+        const rate = await this.getConversionRate(fromCurrency, toCurrency);
+        let convertedAmount = amount * rate;
+
+        // Apply slippage (0.5% default)
+        const slippage = includeSlippage ? 0.005 : 0;
+        if (includeSlippage) {
+            convertedAmount = convertedAmount * (1 - slippage);
+        }
+
+        return {
+            convertedAmount,
+            rate,
+            slippage,
+        };
+    }
+
+    /**
+     * Get all current prices
+     */
+    static async getAllPrices(): Promise<Record<string, number>> {
+        const currencies = Object.keys(this.CURRENCY_IDS);
+        const prices: Record<string, number> = {};
+
+        await Promise.allSettled(
+            currencies.map(async (currency) => {
+                try {
+                    prices[currency] = await this.getPrice(currency);
+                } catch (error) {
+                    console.error(
+                        `Failed to get price for ${currency}:`,
+                        error
+                    );
+                    prices[currency] = 0;
+                }
+            })
+        );
+
+        return prices;
+    }
+
+    /**
+     * Calculate conversion with fees
+     */
+    static async calculateConversion(
+        amount: number,
+        fromCurrency: string,
+        toCurrency: string = 'USDT',
+        feePercentage: number = 0.003 // 0.3% default fee
+    ): Promise<{
+        inputAmount: number;
+        outputAmount: number;
+        rate: number;
+        fee: number;
+        totalFeeUSD: number;
+        slippage: number;
+    }> {
+        const conversion = await this.convertAmount(
+            amount,
+            fromCurrency,
+            toCurrency,
+            true
+        );
+
+        // Calculate fee in output currency
+        const fee = conversion.convertedAmount * feePercentage;
+        const finalAmount = conversion.convertedAmount - fee;
+
+        // Calculate fee in USD for tracking
+        const feeInUSD =
+            toCurrency === 'USDT'
+                ? fee
+                : fee * (await this.getConversionRate(toCurrency, 'USDT'));
+
+        return {
+            inputAmount: amount,
+            outputAmount: finalAmount,
+            rate: conversion.rate,
+            fee: fee,
+            totalFeeUSD: feeInUSD,
+            slippage: conversion.slippage,
+        };
+    }
+
+    /**
+     * Clear price cache (useful for testing)
+     */
+    static clearCache(): void {
+        this.priceCache.clear();
+    }
+}

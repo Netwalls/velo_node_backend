@@ -39,8 +39,32 @@ export class User {
     @Column({ nullable: true })
     phoneNumber?: string;
 
+    @Column({ unique: true, nullable: true })
+    username?: string;
+
+    @Column({ nullable: true })
+    displayPicture?: string;
+
+    @Column({ nullable: true })
+    bankName?: string;
+
+    @Column({ nullable: true })
+    accountNumber?: string;
+
+    @Column({ nullable: true })
+    accountName?: string;
+
+    @Column({ nullable: true })
+    routingNumber?: string;
+
+    @Column({ nullable: true })
+    swiftCode?: string;
+
     @Column({ default: false })
     isEmailVerified!: boolean;
+
+    @Column('decimal', { precision: 18, scale: 8, default: 0 })
+    usdtBalance!: number;
 
     @Column({ nullable: true })
     emailOTP?: string;
@@ -53,6 +77,12 @@ export class User {
 
     @Column({ type: 'timestamp', nullable: true })
     phoneOTPExpiry?: Date;
+
+    @Column({ nullable: true })
+    passwordResetToken?: string;
+
+    @Column({ type: 'timestamp', nullable: true })
+    passwordResetExpiry?: Date;
 
     @Column({
         type: 'enum',

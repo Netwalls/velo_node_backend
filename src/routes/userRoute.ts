@@ -13,6 +13,19 @@ router.get('/profile/:userId', authMiddleware, UserController.getProfileById);
 // Update user profile
 router.put('/profile', authMiddleware, UserController.updateProfile);
 
+// Check username availability (public)
+router.get(
+    '/username/:username/availability',
+    UserController.checkUsernameAvailability
+);
+
+// Get username suggestions (requires auth)
+router.get(
+    '/username/suggestions',
+    authMiddleware,
+    UserController.getUsernameSuggestions
+);
+
 // Add blockchain address
 router.post('/address', authMiddleware, UserController.addAddress);
 
@@ -27,7 +40,6 @@ router.delete(
 router.put('/kyc/:userId', authMiddleware, UserController.updateKYCStatus);
 
 export default router;
-
 
 // getProfile
 // updateProfile

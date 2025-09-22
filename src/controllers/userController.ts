@@ -4,6 +4,7 @@ import { User } from '../entities/User';
 import { UserAddress } from '../entities/UserAddress';
 import { KYCDocument } from '../entities/KYCDocument';
 import { AuthRequest, KYCStatus } from '../types';
+import { UsernameService } from '../services/usernameService';
 
 export class UserController {
     /**
@@ -35,10 +36,19 @@ export class UserController {
                     firstName: user.firstName,
                     lastName: user.lastName,
                     phoneNumber: user.phoneNumber,
+                    username: user.username,
+                    displayPicture: user.displayPicture,
                     isEmailVerified: user.isEmailVerified,
                     kycStatus: user.kycStatus,
                     kyc: user.kycDocument,
                     addresses: user.addresses,
+                    bankDetails: {
+                        bankName: user.bankName,
+                        accountNumber: user.accountNumber,
+                        accountName: user.accountName,
+                        routingNumber: user.routingNumber,
+                        swiftCode: user.swiftCode,
+                    },
                     createdAt: user.createdAt,
                 },
             });
@@ -73,10 +83,19 @@ export class UserController {
                     firstName: user.firstName,
                     lastName: user.lastName,
                     phoneNumber: user.phoneNumber,
+                    username: user.username,
+                    displayPicture: user.displayPicture,
                     isEmailVerified: user.isEmailVerified,
                     kycStatus: user.kycStatus,
                     kyc: user.kycDocument,
                     addresses: user.addresses,
+                    bankDetails: {
+                        bankName: user.bankName,
+                        accountNumber: user.accountNumber,
+                        accountName: user.accountName,
+                        routingNumber: user.routingNumber,
+                        swiftCode: user.swiftCode,
+                    },
                     createdAt: user.createdAt,
                 },
             });
@@ -88,19 +107,71 @@ export class UserController {
 
     /**
      * Update the profile of the currently authenticated user.
-     * Allows updating first name, last name, and phone number.
+     * Allows updating first name, last name, phone number, username, display picture, and bank details.
+     * Validates username uniqueness if provided.
      * Returns the updated user profile.
      */
     static async updateProfile(req: AuthRequest, res: Response): Promise<void> {
         try {
-            const { firstName, lastName, phoneNumber } = req.body;
+            const {
+                firstName,
+                lastName,
+                phoneNumber,
+                username,
+                displayPicture,
+                bankName,
+                accountNumber,
+                accountName,
+                routingNumber,
+                swiftCode,
+            } = req.body;
+
             const userRepository = AppDataSource.getRepository(User);
 
-            await userRepository.update(
-                { id: req.user!.id },
-                { firstName, lastName, phoneNumber }
-            );
+            // Check username uniqueness if provided
+            if (username) {
+                // Validate username format
+                const formatValidation =
+                    UsernameService.validateUsernameFormat(username);
+                if (!formatValidation.isValid) {
+                    res.status(400).json({ error: formatValidation.error });
+                    return;
+                }
 
+                // Check if username is available for this user
+                const isAvailable =
+                    await UsernameService.isUsernameAvailableForUser(
+                        username,
+                        req.user!.id!
+                    );
+                if (!isAvailable) {
+                    res.status(400).json({
+                        error: 'Username is already taken. Please choose a different username.',
+                    });
+                    return;
+                }
+            }
+
+            // Prepare update data (only include fields that are provided)
+            const updateData: any = {};
+            if (firstName !== undefined) updateData.firstName = firstName;
+            if (lastName !== undefined) updateData.lastName = lastName;
+            if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+            if (username !== undefined) updateData.username = username;
+            if (displayPicture !== undefined)
+                updateData.displayPicture = displayPicture;
+            if (bankName !== undefined) updateData.bankName = bankName;
+            if (accountNumber !== undefined)
+                updateData.accountNumber = accountNumber;
+            if (accountName !== undefined) updateData.accountName = accountName;
+            if (routingNumber !== undefined)
+                updateData.routingNumber = routingNumber;
+            if (swiftCode !== undefined) updateData.swiftCode = swiftCode;
+
+            // Update user profile
+            await userRepository.update({ id: req.user!.id }, updateData);
+
+            // Fetch updated user data
             const updatedUser = await userRepository.findOne({
                 where: { id: req.user!.id },
             });
@@ -113,11 +184,27 @@ export class UserController {
                     firstName: updatedUser!.firstName,
                     lastName: updatedUser!.lastName,
                     phoneNumber: updatedUser!.phoneNumber,
+                    username: updatedUser!.username,
+                    displayPicture: updatedUser!.displayPicture,
+                    bankDetails: {
+                        bankName: updatedUser!.bankName,
+                        accountNumber: updatedUser!.accountNumber,
+                        accountName: updatedUser!.accountName,
+                        routingNumber: updatedUser!.routingNumber,
+                        swiftCode: updatedUser!.swiftCode,
+                    },
                 },
             });
         } catch (error) {
             console.error('Update profile error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            if (
+                error instanceof Error &&
+                error.message.includes('unique constraint')
+            ) {
+                res.status(400).json({ error: 'Username is already taken' });
+            } else {
+                res.status(500).json({ error: 'Internal server error' });
+            }
         }
     }
 
@@ -251,6 +338,90 @@ export class UserController {
             });
         } catch (error) {
             console.error('Update KYC error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Check if a username is available
+     * Public endpoint - no authentication required
+     */
+    static async checkUsernameAvailability(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const { username } = req.params;
+
+            if (!username) {
+                res.status(400).json({ error: 'Username is required' });
+                return;
+            }
+
+            // Validate username format
+            const formatValidation =
+                UsernameService.validateUsernameFormat(username);
+            if (!formatValidation.isValid) {
+                res.status(400).json({
+                    error: formatValidation.error,
+                    available: false,
+                });
+                return;
+            }
+
+            // Check availability
+            const isAvailable = await UsernameService.isUsernameAvailable(
+                username
+            );
+
+            res.json({
+                username,
+                available: isAvailable,
+                message: isAvailable
+                    ? 'Username is available'
+                    : 'Username is already taken',
+            });
+        } catch (error) {
+            console.error('Check username availability error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Get username suggestions based on user's name
+     * Requires authentication
+     */
+    static async getUsernameSuggestions(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOne({
+                where: { id: req.user!.id },
+                select: ['firstName', 'lastName'],
+            });
+
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            const suggestions =
+                await UsernameService.generateUsernameSuggestions(
+                    user.firstName || undefined,
+                    user.lastName || undefined
+                );
+
+            res.json({
+                suggestions,
+                message:
+                    suggestions.length > 0
+                        ? 'Username suggestions generated successfully'
+                        : 'No available suggestions found. Try a different approach.',
+            });
+        } catch (error) {
+            console.error('Get username suggestions error:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }

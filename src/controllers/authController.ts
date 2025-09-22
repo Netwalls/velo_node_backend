@@ -12,6 +12,12 @@ import { generateOTP, getOTPExpiry, isOTPExpired } from '../utils/otp';
 import { sendMailtrapMail } from '../utils/mailtrap';
 import { resendOtpTemplate } from '../utils/resendOtpTemplate';
 import {
+    passwordResetRequestTemplate,
+    passwordResetRequestText,
+    passwordChangedTemplate,
+    passwordChangedText,
+} from '../utils/passwordResetTemplates';
+import {
     generateEthWallet,
     generateBtcWallet,
     generateSolWallet,
@@ -25,7 +31,7 @@ import {
 import { sendRegistrationEmails } from '../services/emailService';
 import { NotificationService } from '../services/notificationService';
 import { UserAddress } from '../entities/UserAddress';
-import { NetworkType } from '../types';
+import { NetworkType, NotificationType } from '../types';
 import { ChainType } from '../types';
 
 export class AuthController {
@@ -81,6 +87,10 @@ export class AuthController {
             const sol = generateSolWallet();
             const strk = generateStrkWallet('argentx');
 
+            // For USDT, we'll use the same addresses as ETH (since USDT-ERC20 uses Ethereum addresses)
+            // and generate separate Tron addresses for USDT-TRC20
+            const tron = generateEthWallet(); // Tron uses similar address generation
+
             // Prepare addresses array for saving and response
             const addresses = [
                 {
@@ -130,6 +140,32 @@ export class AuthController {
                     network: 'testnet',
                     address: strk.testnet.address,
                     privateKey: encrypt(strk.testnet.privateKey),
+                },
+                // USDT addresses - using ETH addresses for ERC-20 USDT
+                {
+                    chain: 'usdt_erc20',
+                    network: 'mainnet',
+                    address: eth.mainnet.address, // Same as ETH mainnet
+                    privateKey: encrypt(eth.mainnet.privateKey),
+                },
+                {
+                    chain: 'usdt_erc20',
+                    network: 'testnet',
+                    address: eth.testnet.address, // Same as ETH testnet
+                    privateKey: encrypt(eth.testnet.privateKey),
+                },
+                // USDT TRC-20 addresses (Tron network)
+                {
+                    chain: 'usdt_trc20',
+                    network: 'mainnet',
+                    address: tron.mainnet.address,
+                    privateKey: encrypt(tron.mainnet.privateKey),
+                },
+                {
+                    chain: 'usdt_trc20',
+                    network: 'testnet',
+                    address: tron.testnet.address,
+                    privateKey: encrypt(tron.testnet.privateKey),
                 },
             ];
 
@@ -555,6 +591,322 @@ export class AuthController {
             // Optionally send logout notification email (commented out)
         } catch (error) {
             console.error('Logout all error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Initiate forgot password process
+     * - Validates email exists
+     * - Generates secure reset token
+     * - Sends reset email with token
+     * - Sets token expiry (15 minutes)
+     */
+    static async forgotPassword(req: Request, res: Response): Promise<void> {
+        try {
+            const { email } = req.body;
+
+            if (!email) {
+                res.status(400).json({ error: 'Email is required' });
+                return;
+            }
+
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOne({ where: { email } });
+
+            if (!user) {
+                // Don't reveal if email exists or not for security
+                res.json({
+                    message:
+                        'If the email exists, you will receive a password reset link',
+                });
+                return;
+            }
+
+            // Generate secure reset token
+            const resetToken = generateOTP(); // 6-digit code for simplicity
+            const resetExpiry = new Date();
+            resetExpiry.setMinutes(resetExpiry.getMinutes() + 15); // 15 minutes expiry
+
+            // Save reset token to user
+            user.passwordResetToken = resetToken;
+            user.passwordResetExpiry = resetExpiry;
+            await userRepository.save(user);
+
+            // Send password reset email
+            try {
+                await sendMailtrapMail({
+                    to: email,
+                    subject: 'Password Reset Request',
+                    text: passwordResetRequestText(email, resetToken),
+                    html: passwordResetRequestTemplate(email, resetToken),
+                });
+
+                console.log(`Password reset email sent to: ${email}`);
+                console.log(
+                    `Reset token: ${resetToken} (expires: ${resetExpiry})`
+                );
+            } catch (emailError) {
+                console.error('Failed to send reset email:', emailError);
+                // Still return success to not reveal email existence
+            }
+
+            // Create notification
+            try {
+                if (user.id) {
+                    await NotificationService.createNotification(
+                        user.id,
+                        NotificationType.SECURITY_ALERT,
+                        'Password Reset Requested',
+                        'A password reset was requested for your account',
+                        {
+                            email,
+                            timestamp: new Date(),
+                            ipAddress: req.ip,
+                        }
+                    );
+                }
+            } catch (notificationError) {
+                console.error(
+                    'Failed to create reset notification:',
+                    notificationError
+                );
+            }
+
+            res.json({
+                message:
+                    'If the email exists, you will receive a password reset link',
+            });
+        } catch (error) {
+            console.error('Forgot password error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Verify password reset token
+     * - Validates reset token and expiry
+     * - Returns success if token is valid
+     */
+    static async verifyResetToken(req: Request, res: Response): Promise<void> {
+        try {
+            const { email, token } = req.body;
+
+            if (!email || !token) {
+                res.status(400).json({
+                    error: 'Email and reset token are required',
+                });
+                return;
+            }
+
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOne({ where: { email } });
+
+            if (!user) {
+                res.status(400).json({ error: 'Invalid reset token' });
+                return;
+            }
+
+            // Debug logging
+            console.log('=== PASSWORD RESET TOKEN VERIFICATION DEBUG ===');
+            console.log('Provided email:', email);
+            console.log('Provided token:', token);
+            console.log('Stored token in DB:', user.passwordResetToken);
+            console.log('Token expiry in DB:', user.passwordResetExpiry);
+            console.log('Current time:', new Date());
+            console.log('Token matches:', user.passwordResetToken === token);
+            console.log('Token exists:', !!user.passwordResetToken);
+            console.log('Expiry exists:', !!user.passwordResetExpiry);
+            console.log(
+                'Is expired:',
+                user.passwordResetExpiry
+                    ? new Date() > user.passwordResetExpiry
+                    : 'N/A'
+            );
+            console.log('===============================================');
+
+            // Check if token matches and hasn't expired
+            if (
+                user.passwordResetToken !== token ||
+                !user.passwordResetExpiry ||
+                new Date() > user.passwordResetExpiry
+            ) {
+                let errorDetails = [];
+                if (user.passwordResetToken !== token) {
+                    errorDetails.push('Token mismatch');
+                }
+                if (!user.passwordResetExpiry) {
+                    errorDetails.push('No expiry set');
+                }
+                if (
+                    user.passwordResetExpiry &&
+                    new Date() > user.passwordResetExpiry
+                ) {
+                    errorDetails.push('Token expired');
+                }
+
+                console.log(
+                    'Verification failed. Reasons:',
+                    errorDetails.join(', ')
+                );
+
+                res.status(400).json({
+                    error: 'Invalid or expired reset token',
+                    debug: errorDetails, // Remove this in production
+                });
+                return;
+            }
+
+            res.json({
+                message: 'Reset token is valid',
+                canResetPassword: true,
+            });
+        } catch (error) {
+            console.error('Verify reset token error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Reset password with token
+     * - Validates reset token and expiry
+     * - Updates password
+     * - Clears reset token
+     * - Revokes all existing refresh tokens for security
+     */
+    static async resetPassword(req: Request, res: Response): Promise<void> {
+        try {
+            const { email, token, newPassword } = req.body;
+
+            if (!email || !token || !newPassword) {
+                res.status(400).json({
+                    error: 'Email, reset token, and new password are required',
+                });
+                return;
+            }
+
+            if (newPassword.length < 6) {
+                res.status(400).json({
+                    error: 'Password must be at least 6 characters long',
+                });
+                return;
+            }
+
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOne({ where: { email } });
+
+            if (!user) {
+                res.status(400).json({ error: 'Invalid reset token' });
+                return;
+            }
+
+            // Debug logging
+            console.log('=== PASSWORD RESET DEBUG ===');
+            console.log('Provided email:', email);
+            console.log('Provided token:', token);
+            console.log('Stored token in DB:', user.passwordResetToken);
+            console.log('Token expiry in DB:', user.passwordResetExpiry);
+            console.log('Current time:', new Date());
+            console.log('Token matches:', user.passwordResetToken === token);
+            console.log('Token exists:', !!user.passwordResetToken);
+            console.log('Expiry exists:', !!user.passwordResetExpiry);
+            console.log(
+                'Is expired:',
+                user.passwordResetExpiry
+                    ? new Date() > user.passwordResetExpiry
+                    : 'N/A'
+            );
+            console.log('=============================');
+
+            // Check if token matches and hasn't expired
+            if (
+                user.passwordResetToken !== token ||
+                !user.passwordResetExpiry ||
+                new Date() > user.passwordResetExpiry
+            ) {
+                let errorDetails = [];
+                if (user.passwordResetToken !== token) {
+                    errorDetails.push('Token mismatch');
+                }
+                if (!user.passwordResetExpiry) {
+                    errorDetails.push('No expiry set');
+                }
+                if (
+                    user.passwordResetExpiry &&
+                    new Date() > user.passwordResetExpiry
+                ) {
+                    errorDetails.push('Token expired');
+                }
+
+                console.log('Reset failed. Reasons:', errorDetails.join(', '));
+
+                res.status(400).json({
+                    error: 'Invalid or expired reset token',
+                    debug: errorDetails, // Remove this in production
+                });
+                return;
+            }
+
+            // Update password (will be automatically hashed by @BeforeUpdate)
+            user.password = newPassword;
+
+            // Clear reset token
+            user.passwordResetToken = undefined;
+            user.passwordResetExpiry = undefined;
+
+            await userRepository.save(user);
+
+            // Revoke all existing refresh tokens for security
+            const refreshTokenRepository =
+                AppDataSource.getRepository(RefreshToken);
+            await refreshTokenRepository.update(
+                { userId: user.id },
+                { isRevoked: true }
+            );
+
+            // Send password change confirmation email
+            try {
+                await sendMailtrapMail({
+                    to: email,
+                    subject: 'Password Changed Successfully',
+                    text: passwordChangedText(email),
+                    html: passwordChangedTemplate(email),
+                });
+            } catch (emailError) {
+                console.error(
+                    'Failed to send password change confirmation:',
+                    emailError
+                );
+            }
+
+            // Create notification
+            try {
+                if (user.id) {
+                    await NotificationService.createNotification(
+                        user.id,
+                        NotificationType.PASSWORD_CHANGE,
+                        'Password Changed',
+                        'Your password has been successfully changed',
+                        {
+                            email,
+                            timestamp: new Date(),
+                            ipAddress: req.ip,
+                        }
+                    );
+                }
+            } catch (notificationError) {
+                console.error(
+                    'Failed to create password change notification:',
+                    notificationError
+                );
+            }
+
+            res.json({
+                message:
+                    'Password reset successfully. Please log in with your new password.',
+            });
+        } catch (error) {
+            console.error('Reset password error:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
     }

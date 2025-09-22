@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/authController';
 import { authMiddleware } from '../middleware/auth';
+import { validateRequest } from '../middleware/validation';
+import {
+    forgotPasswordSchema,
+    verifyResetTokenSchema,
+    resetPasswordSchema,
+} from '../validation/auth';
 
 const router = Router();
 
@@ -18,6 +24,27 @@ router.post('/resend-otp', AuthController.resendOTP);
 
 // Refresh token
 router.post('/refresh-token', AuthController.refreshToken);
+
+// Forgot password
+router.post(
+    '/forgot-password',
+    validateRequest(forgotPasswordSchema),
+    AuthController.forgotPassword
+);
+
+// Verify reset token
+router.post(
+    '/verify-reset-token',
+    validateRequest(verifyResetTokenSchema),
+    AuthController.verifyResetToken
+);
+
+// Reset password
+router.post(
+    '/reset-password',
+    validateRequest(resetPasswordSchema),
+    AuthController.resetPassword
+);
 
 // Logout
 router.post('/logout', authMiddleware, AuthController.logout);

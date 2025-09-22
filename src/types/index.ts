@@ -29,6 +29,8 @@ export enum ChainType {
     BSC = 'bsc',
     SOLANA = 'solana',
     STARKNET = 'starknet',
+    USDT_ERC20 = 'usdt_erc20',
+    USDT_TRC20 = 'usdt_trc20',
 }
 
 export enum NotificationType {
@@ -43,4 +45,8 @@ export enum NotificationType {
     OTP_VERIFIED = 'otp_verified',
     PASSWORD_CHANGE = 'password_change',
     SECURITY_ALERT = 'security_alert',
+    CONVERSION_STARTED = 'conversion_started',
+    CONVERSION_COMPLETED = 'conversion_completed',
+    CONVERSION_FAILED = 'conversion_failed',
+    CONVERSION_CANCELLED = 'conversion_cancelled',
 }
