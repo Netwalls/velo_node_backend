@@ -251,6 +251,111 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ---
 
+## 8. Forgot Password
+
+**Endpoint:** `POST /auth/forgot-password`
+
+**Description:** Initiate password reset process. Sends a 6-digit reset code to the user's email.
+
+**Request Body:**
+
+```json
+{
+    "email": "user@example.com"
+}
+```
+
+**Response (200):**
+
+```json
+{
+    "message": "If the email exists, you will receive a password reset link"
+}
+```
+
+**Notes:**
+
+-   For security, the same response is returned whether the email exists or not
+-   Reset code expires in 15 minutes
+-   Only one active reset token per user at a time
+
+---
+
+## 9. Verify Reset Token
+
+**Endpoint:** `POST /auth/verify-reset-token`
+
+**Description:** Verify if a password reset token is valid and not expired.
+
+**Request Body:**
+
+```json
+{
+    "email": "user@example.com",
+    "token": "123456"
+}
+```
+
+**Response (200):**
+
+```json
+{
+    "message": "Reset token is valid",
+    "canResetPassword": true
+}
+```
+
+**Response (400):**
+
+```json
+{
+    "error": "Invalid or expired reset token"
+}
+```
+
+---
+
+## 10. Reset Password
+
+**Endpoint:** `POST /auth/reset-password`
+
+**Description:** Reset user password using the reset token.
+
+**Request Body:**
+
+```json
+{
+    "email": "user@example.com",
+    "token": "123456",
+    "newPassword": "newPassword123"
+}
+```
+
+**Response (200):**
+
+```json
+{
+    "message": "Password reset successfully. Please log in with your new password."
+}
+```
+
+**Response (400):**
+
+```json
+{
+    "error": "Invalid or expired reset token"
+}
+```
+
+**Notes:**
+
+-   Password must be at least 6 characters long
+-   All existing refresh tokens are revoked for security
+-   User will need to log in again on all devices
+-   Confirmation email is sent after successful reset
+
+---
+
 # User Management
 
 ## 1. Get User Profile

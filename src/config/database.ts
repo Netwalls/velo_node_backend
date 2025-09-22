@@ -8,6 +8,7 @@ import { KYCDocument } from '../entities/KYCDocument';
 import { RefreshToken } from '../entities/RefreshToken';
 import { Notification } from '../entities/Notification';
 import { Transaction } from '../entities/Transaction';
+import { Conversion } from '../entities/Conversion';
 
 export const AppDataSource = new DataSource({
     type: 'postgres',
@@ -21,6 +22,7 @@ export const AppDataSource = new DataSource({
         RefreshToken,
         Notification,
         Transaction,
+        Conversion,
     ],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
