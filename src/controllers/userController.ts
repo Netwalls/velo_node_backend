@@ -46,8 +46,7 @@ export class UserController {
                         bankName: user.bankName,
                         accountNumber: user.accountNumber,
                         accountName: user.accountName,
-                        routingNumber: user.routingNumber,
-                        swiftCode: user.swiftCode,
+
                     },
                     createdAt: user.createdAt,
                 },
@@ -93,8 +92,6 @@ export class UserController {
                         bankName: user.bankName,
                         accountNumber: user.accountNumber,
                         accountName: user.accountName,
-                        routingNumber: user.routingNumber,
-                        swiftCode: user.swiftCode,
                     },
                     createdAt: user.createdAt,
                 },
@@ -122,8 +119,6 @@ export class UserController {
                 bankName,
                 accountNumber,
                 accountName,
-                routingNumber,
-                swiftCode,
             } = req.body;
 
             const userRepository = AppDataSource.getRepository(User);
@@ -164,9 +159,6 @@ export class UserController {
             if (accountNumber !== undefined)
                 updateData.accountNumber = accountNumber;
             if (accountName !== undefined) updateData.accountName = accountName;
-            if (routingNumber !== undefined)
-                updateData.routingNumber = routingNumber;
-            if (swiftCode !== undefined) updateData.swiftCode = swiftCode;
 
             // Update user profile
             await userRepository.update({ id: req.user!.id }, updateData);
@@ -190,8 +182,6 @@ export class UserController {
                         bankName: updatedUser!.bankName,
                         accountNumber: updatedUser!.accountNumber,
                         accountName: updatedUser!.accountName,
-                        routingNumber: updatedUser!.routingNumber,
-                        swiftCode: updatedUser!.swiftCode,
                     },
                 },
             });

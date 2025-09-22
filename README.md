@@ -17,7 +17,7 @@
 
 ## Overview
 
-The Velo API provides comprehensive multi-chain wallet functionality supporting Ethereum (ETH), Bitcoin (BTC), Solana (SOL), and Starknet (STRK). This RESTful API enables user registration, authentication, wallet management, notifications, and transaction history.
+The Velo API provides comprehensive multi-chain wallet functionality supporting Ethereum (ETH), Bitcoin (BTC), Solana (SOL), Starknet (STRK), and USDT (ERC20/TRC20). This RESTful API enables user registration, authentication, wallet management, notifications, and transaction history.
 
 ## Base URL
 
@@ -61,7 +61,7 @@ Common HTTP status codes:
 
 **Endpoint:** `POST /auth/register`
 
-**Description:** Register a new user and automatically generate wallet addresses for all supported chains (ETH, BTC, SOL, STRK) on both mainnet and testnet.
+**Description:** Register a new user and automatically generate wallet addresses for all supported chains (ETH, BTC, SOL, STRK, USDT ERC20, USDT TRC20) on both mainnet and testnet.
 
 **Request Body:**
 
@@ -388,13 +388,18 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 **Headers:** `Authorization: Bearer <token>`
 
-**Request Body:**
+**Request Body (All fields optional):**
 
 ```json
 {
     "firstName": "Jane",
     "lastName": "Smith",
-    "phoneNumber": "+1234567890"
+    "phoneNumber": "+1234567890",
+    "username": "jane_smith_2024",
+    "displayPicture": "https://example.com/profile.jpg",
+    "bankName": "Wells Fargo",
+    "accountNumber": "9876543210",
+    "accountName": "Jane Smith"
 }
 ```
 
@@ -408,10 +413,29 @@ curl -X POST "http://localhost:5500/auth/register" \
         "email": "user@example.com",
         "firstName": "Jane",
         "lastName": "Smith",
-        "phoneNumber": "+1234567890"
+        "phoneNumber": "+1234567890",
+        "username": "jane_smith_2024",
+        "displayPicture": "https://example.com/profile.jpg",
+        "bankDetails": {
+            "bankName": "Wells Fargo",
+            "accountNumber": "9876543210",
+            "accountName": "Jane Smith"
+        }
     }
 }
 ```
+
+**Username Validation:**
+
+-   Length: 3-30 characters
+-   Characters: Letters, numbers, underscores only
+-   Must be unique across all users
+-   No consecutive underscores allowed
+
+**Additional Endpoints:**
+
+-   `GET /user/username/:username/availability` - Check username availability
+-   `GET /user/username/suggestions` - Get username suggestions
 
 ---
 
@@ -562,6 +586,128 @@ curl -X POST "http://localhost:5500/auth/register" \
             "usdValue": "2700.00"
         }
     ]
+}
+```
+
+## 5. Get Testnet Balances
+
+**Endpoint:** `GET /wallet/balances/testnet`
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Description:** Get balances for all user testnet addresses only.
+
+**Response (200):**
+
+```json
+{
+    "message": "Testnet balances retrieved successfully",
+    "balances": [
+        {
+            "chain": "ethereum",
+            "network": "testnet",
+            "address": "0x1234567890123456789012345678901234567890",
+            "balance": "1.5",
+            "symbol": "ETH"
+        },
+        {
+            "chain": "bitcoin",
+            "network": "testnet",
+            "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+            "balance": "0.001",
+            "symbol": "BTC"
+        },
+        {
+            "chain": "solana",
+            "network": "testnet",
+            "address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+            "balance": "10.0",
+            "symbol": "SOL"
+        },
+        {
+            "chain": "starknet",
+            "network": "testnet",
+            "address": "0x123...abc",
+            "balance": "5.0",
+            "symbol": "STRK"
+        },
+        {
+            "chain": "usdt_erc20",
+            "network": "testnet",
+            "address": "0x1234567890123456789012345678901234567890",
+            "balance": "100.0",
+            "symbol": "USDT"
+        },
+        {
+            "chain": "usdt_trc20",
+            "network": "testnet",
+            "address": "0x9876543210987654321098765432109876543210",
+            "balance": "50.0",
+            "symbol": "USDT"
+        }
+    ],
+    "totalAddresses": 6
+}
+```
+
+## 6. Get Mainnet Balances
+
+**Endpoint:** `GET /wallet/balances/mainnet`
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Description:** Get balances for all user mainnet addresses only.
+
+**Response (200):**
+
+```json
+{
+    "message": "Mainnet balances retrieved successfully",
+    "balances": [
+        {
+            "chain": "ethereum",
+            "network": "mainnet",
+            "address": "0xabAcBEb1896Acd006e7d51d7CF857487bD118eA6",
+            "balance": "0.0",
+            "symbol": "ETH"
+        },
+        {
+            "chain": "bitcoin",
+            "network": "mainnet",
+            "address": "1QA2xxSNyRNzxZRjF8r9PNpzLVNBwENfMV",
+            "balance": "0",
+            "symbol": "BTC"
+        },
+        {
+            "chain": "solana",
+            "network": "mainnet",
+            "address": "Df76jHDoc1XzyYHKBfdJ2HyLaYDKj1docAEjvXnrDaZz",
+            "balance": "0",
+            "symbol": "SOL"
+        },
+        {
+            "chain": "starknet",
+            "network": "mainnet",
+            "address": "0x3df8ed48bfa8bfebe5faf918eed245fcbda0a3b9df59a2dc4c0436ce1242ed7",
+            "balance": "0",
+            "symbol": "STRK"
+        },
+        {
+            "chain": "usdt_erc20",
+            "network": "mainnet",
+            "address": "0xabAcBEb1896Acd006e7d51d7CF857487bD118eA6",
+            "balance": "0",
+            "symbol": "USDT"
+        },
+        {
+            "chain": "usdt_trc20",
+            "network": "mainnet",
+            "address": "0x38D3fb1C2753f8F28be923f10EE797CCd15c5f15",
+            "balance": "0",
+            "symbol": "USDT"
+        }
+    ],
+    "totalAddresses": 6
 }
 ```
 
@@ -826,6 +972,8 @@ curl -X GET "http://localhost:5500/wallet/addresses" \
 -   **Bitcoin (BTC)**: Mainnet & Testnet
 -   **Solana (SOL)**: Mainnet & Devnet
 -   **Starknet (STRK)**: Mainnet & Testnet
+-   **USDT ERC20**: Mainnet & Testnet (Ethereum-based)
+-   **USDT TRC20**: Mainnet & Testnet (Tron-based)
 
 ---
 
@@ -848,12 +996,16 @@ The system automatically creates notifications for:
 
 # Rate Limiting & Security
 
--   JWT tokens expire after 1 hour
--   Refresh tokens expire after 7 days
+-   **JWT Access Tokens**: Expire after 30 minutes
+-   **Refresh Tokens**: Expire after 7 days
+-   **OTP Codes**: Expire after 15 minutes
+-   **Password Reset Tokens**: Expire after 15 minutes
 -   All sensitive data is encrypted
 -   Private keys are encrypted and stored securely
 -   Input validation on all endpoints
 -   CORS enabled for cross-origin requests
+-   Username uniqueness validation
+-   Bank details encryption support
 
 ---
 

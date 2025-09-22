@@ -29,8 +29,6 @@ export const updateProfileSchema = Joi.object({
     bankName: Joi.string().optional(),
     accountNumber: Joi.string().optional(),
     accountName: Joi.string().optional(),
-    routingNumber: Joi.string().optional(),
-    swiftCode: Joi.string().optional(),
 });
 
 export const addAddressSchema = Joi.object({

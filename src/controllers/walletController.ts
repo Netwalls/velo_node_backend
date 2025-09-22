@@ -728,4 +728,352 @@ export class WalletController {
             res.status(500).json({ error: 'Internal server error' });
         }
     }
+
+    /**
+     * Get testnet balances for the authenticated user
+     * Returns balances for all testnet addresses only
+     */
+    static async getTestnetBalances(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const addressRepo = AppDataSource.getRepository(UserAddress);
+            const addresses = await addressRepo.find({
+                where: {
+                    userId: req.user!.id,
+                    network: NetworkType.TESTNET,
+                },
+            });
+
+            const balances: any[] = [];
+
+            // Loop through each testnet address and fetch balance
+            for (const addr of addresses) {
+                if (addr.chain === 'starknet') {
+                    try {
+                        // Starknet testnet balance
+                        const provider = new RpcProvider({
+                            nodeUrl:
+                                'https://starknet-sepolia.g.alchemy.comundefined/CP1fRkzqgL_nwb9DNNiKI',
+                        });
+
+                        const contract = {
+                            abi: [
+                                {
+                                    name: 'balanceOf',
+                                    type: 'function',
+                                    inputs: [{ name: 'account', type: 'felt' }],
+                                    outputs: [
+                                        { name: 'balance', type: 'felt' },
+                                    ],
+                                },
+                            ],
+                        };
+
+                        const contractInstance = new (provider as any).Contract(
+                            contract.abi,
+                            '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7' // ETH contract
+                        );
+
+                        const balanceResult = await contractInstance.balanceOf(
+                            addr.address
+                        );
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: balanceResult.balance.toString(),
+                            symbol: 'STRK',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'STRK',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'ethereum') {
+                    try {
+                        // Ethereum testnet balance
+                        const provider = new ethers.JsonRpcProvider(
+                            'https://eth-sepolia.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                        );
+                        const balance = await provider.getBalance(addr.address);
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: ethers.formatEther(balance),
+                            symbol: 'ETH',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'ETH',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'bitcoin') {
+                    try {
+                        // Bitcoin testnet balance
+                        const response = await axios.get(
+                            `https://blockstream.info/testnet/api/address/${addr.address}`
+                        );
+                        const balanceInSatoshis =
+                            (response.data as any).chain_stats
+                                ?.funded_txo_sum || 0;
+                        const balanceInBTC = balanceInSatoshis / 100000000; // Convert satoshis to BTC
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: balanceInBTC.toString(),
+                            symbol: 'BTC',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'BTC',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'solana') {
+                    try {
+                        // Solana testnet balance
+                        const connection = new Connection(
+                            'https://solana-devnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                        );
+                        const publicKey = new PublicKey(addr.address);
+                        const balance = await connection.getBalance(publicKey);
+                        const balanceInSOL = balance / 1000000000; // Convert lamports to SOL
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: balanceInSOL.toString(),
+                            symbol: 'SOL',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'SOL',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (
+                    addr.chain === 'usdt_erc20' ||
+                    addr.chain === 'usdt_trc20'
+                ) {
+                    // USDT testnet balances
+                    balances.push({
+                        chain: addr.chain,
+                        network: 'testnet',
+                        address: addr.address,
+                        balance: '0', // Placeholder for now
+                        symbol: 'USDT',
+                    });
+                }
+            }
+
+            res.status(200).json({
+                message: 'Testnet balances retrieved successfully',
+                balances,
+                totalAddresses: addresses.length,
+            });
+        } catch (error) {
+            console.error('Get testnet balances error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Get mainnet balances for the authenticated user
+     * Returns balances for all mainnet addresses only
+     */
+    static async getMainnetBalances(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const addressRepo = AppDataSource.getRepository(UserAddress);
+            const addresses = await addressRepo.find({
+                where: {
+                    userId: req.user!.id,
+                    network: NetworkType.MAINNET,
+                },
+            });
+
+            const balances: any[] = [];
+
+            // Loop through each mainnet address and fetch balance
+            for (const addr of addresses) {
+                if (addr.chain === 'starknet') {
+                    try {
+                        // Starknet mainnet balance
+                        const provider = new RpcProvider({
+                            nodeUrl:
+                                'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+                        });
+
+                        const contract = {
+                            abi: [
+                                {
+                                    name: 'balanceOf',
+                                    type: 'function',
+                                    inputs: [{ name: 'account', type: 'felt' }],
+                                    outputs: [
+                                        { name: 'balance', type: 'felt' },
+                                    ],
+                                },
+                            ],
+                        };
+
+                        const contractInstance = new (provider as any).Contract(
+                            contract.abi,
+                            '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7' // ETH contract
+                        );
+
+                        const balanceResult = await contractInstance.balanceOf(
+                            addr.address
+                        );
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: balanceResult.balance.toString(),
+                            symbol: 'STRK',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'STRK',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'ethereum') {
+                    try {
+                        // Ethereum mainnet balance
+                        const provider = new ethers.JsonRpcProvider(
+                            'https://eth-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                        );
+                        const balance = await provider.getBalance(addr.address);
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: ethers.formatEther(balance),
+                            symbol: 'ETH',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'ETH',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'bitcoin') {
+                    try {
+                        // Bitcoin mainnet balance
+                        const response = await axios.get(
+                            `https://blockstream.info/api/address/${addr.address}`
+                        );
+                        const balanceInSatoshis =
+                            (response.data as any).chain_stats
+                                ?.funded_txo_sum || 0;
+                        const balanceInBTC = balanceInSatoshis / 100000000; // Convert satoshis to BTC
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: balanceInBTC.toString(),
+                            symbol: 'BTC',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'BTC',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'solana') {
+                    try {
+                        // Solana mainnet balance
+                        const connection = new Connection(
+                            'https://solana-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                        );
+                        const publicKey = new PublicKey(addr.address);
+                        const balance = await connection.getBalance(publicKey);
+                        const balanceInSOL = balance / 1000000000; // Convert lamports to SOL
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: balanceInSOL.toString(),
+                            symbol: 'SOL',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'SOL',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (
+                    addr.chain === 'usdt_erc20' ||
+                    addr.chain === 'usdt_trc20'
+                ) {
+                    // USDT mainnet balances
+                    balances.push({
+                        chain: addr.chain,
+                        network: 'mainnet',
+                        address: addr.address,
+                        balance: '0', // Placeholder for now
+                        symbol: 'USDT',
+                    });
+                }
+            }
+
+            res.status(200).json({
+                message: 'Mainnet balances retrieved successfully',
+                balances,
+                totalAddresses: addresses.length,
+            });
+        } catch (error) {
+            console.error('Get mainnet balances error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
 }

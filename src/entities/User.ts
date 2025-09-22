@@ -54,12 +54,6 @@ export class User {
     @Column({ nullable: true })
     accountName?: string;
 
-    @Column({ nullable: true })
-    routingNumber?: string;
-
-    @Column({ nullable: true })
-    swiftCode?: string;
-
     @Column({ default: false })
     isEmailVerified!: boolean;
 
