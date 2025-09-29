@@ -43,13 +43,8 @@ router.post('/check-deposits', async (req, res) => {
     res.json({ message: 'Deposit check complete' });
 });
 
-// Get all balances for a specific user by userId (admin/public)
-// router.get('/balances/:userId', WalletController.getBalancesByUserId);
-
-// Starknet: Generate and deploy wallet
-// router.post(
-//     '/starknet/generate-and-deploy',
-//     WalletController.generateAndDeployStarknetWallet
-// );
+router.post('/send', authMiddleware, async (req, res) => {
+    await WalletController.sendTransaction(req, res);
+});
 
 export default router;

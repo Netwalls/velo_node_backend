@@ -12,12 +12,14 @@
 -   [Notification Endpoints](#notification-endpoints)
 -   [Transaction History](#transaction-history)
 -   [Response Examples](#response-examples)
+-   [Deposit Checking](#deposit-checking)
+-   [Send Transactions](#send-transactions)
 
 ---
 
 ## Overview
 
-The Velo API provides comprehensive multi-chain wallet functionality supporting Ethereum (ETH), Bitcoin (BTC), Solana (SOL), Starknet (STRK), and USDT (ERC20/TRC20). This RESTful API enables user registration, authentication, wallet management, notifications, and transaction history.
+The Velo API provides comprehensive multi-chain wallet functionality supporting Ethereum (ETH), Bitcoin (BTC), Solana (SOL), Starknet (STRK), and USDT (ERC20/TRC20). This RESTful API enables user registration, authentication, wallet management, notifications, transaction history, **automatic deposit detection**, and **sending funds to any address**.
 
 ## Base URL
 
@@ -713,6 +715,63 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ---
 
+## 7. Send Transaction
+
+**Endpoint:** `POST /wallet/send`
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Description:** Send funds from your Velo wallet to any valid address (recipient does NOT need to be a Velo user). You can only send from wallets created by Velo (with a private key stored).
+
+**Request Body:**
+
+```json
+{
+    "chain": "ethereum", // "ethereum", "bitcoin", "solana", "starknet", "usdt_erc20"
+    "network": "testnet", // or "mainnet"
+    "toAddress": "0xRecipient", // recipient address (any valid address)
+    "amount": "0.01"
+}
+```
+
+_Optional:_  
+If you have multiple addresses per chain, you can add:
+
+```json
+"fromAddress": "0xYourSenderAddress"
+```
+
+**Response (200):**
+
+```json
+{
+    "message": "Transaction sent",
+    "txHash": "..."
+}
+```
+
+**Notes:**
+
+-   For Starknet, the recipient address must be 66 characters and start with `0x`.
+-   For USDT ERC20, amount is in USDT (6 decimals).
+-   For Bitcoin, amount is in BTC (not satoshis).
+
+---
+
+## 8. Check for Incoming Deposits
+
+**Endpoint:** `POST /wallet/check-deposits`
+
+**Description:** Manually trigger a deposit check (for testing or cron jobs). Scans all user addresses for new incoming payments and creates notifications.
+
+**Response (200):**
+
+```json
+{ "message": "Deposit check complete" }
+```
+
+---
+
 # Notification Endpoints
 
 ## 1. Get All Notifications
@@ -966,6 +1025,14 @@ curl -X GET "http://localhost:5500/wallet/addresses" \
 
 ---
 
+# Notes
+
+-   You can only send from wallets created by Velo (with a private key stored).
+-   You can send to any valid address (recipient does not need to be a Velo user).
+-   Deposit notifications are created automatically when new funds are detected.
+
+---
+
 # Supported Chains
 
 -   **Ethereum (ETH)**: Mainnet & Testnet (Sepolia)
@@ -973,24 +1040,15 @@ curl -X GET "http://localhost:5500/wallet/addresses" \
 -   **Solana (SOL)**: Mainnet & Devnet
 -   **Starknet (STRK)**: Mainnet & Testnet
 -   **USDT ERC20**: Mainnet & Testnet (Ethereum-based)
--   **USDT TRC20**: Mainnet & Testnet (Tron-based)
+-   **USDT TRC20**: Mainnet & Testnet (Tron-based, planned)
 
 ---
 
 # Automatic Features
 
-## Auto-Generated Wallets
-
-Upon registration, the system automatically generates wallet addresses for all supported chains on both mainnet and testnet.
-
-## Auto-Notifications
-
-The system automatically creates notifications for:
-
--   User registration
--   Login/logout events
--   Email verification
--   Transaction activities
+-   **Auto-Generated Wallets:** Upon registration, the system automatically generates wallet addresses for all supported chains on both mainnet and testnet, and stores encrypted private keys.
+-   **Auto-Notifications:** The system automatically creates notifications for deposits and other events.
+-   **Deposit Checking:** The backend can check for incoming payments and notify users.
 
 ---
 

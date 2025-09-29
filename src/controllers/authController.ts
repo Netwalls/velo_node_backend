@@ -18,15 +18,14 @@ import {
     passwordChangedText,
 } from '../utils/passwordResetTemplates';
 import {
+    encrypt,
     generateEthWallet,
     generateBtcWallet,
     generateSolWallet,
     generateStrkWallet,
-    encrypt,
 } from '../utils/keygen';
 import {
     createUserIfNotExists,
-    saveUserAddresses,
 } from '../services/userService';
 import { sendRegistrationEmails } from '../services/emailService';
 import { NotificationService } from '../services/notificationService';
@@ -97,75 +96,75 @@ export class AuthController {
                     chain: 'ethereum',
                     network: 'mainnet',
                     address: eth.mainnet.address,
-                    privateKey: encrypt(eth.mainnet.privateKey),
+                    encryptedPrivateKey: encrypt(eth.mainnet.privateKey),
                 },
                 {
                     chain: 'ethereum',
                     network: 'testnet',
                     address: eth.testnet.address,
-                    privateKey: encrypt(eth.testnet.privateKey),
+                    encryptedPrivateKey: encrypt(eth.testnet.privateKey),
                 },
                 {
                     chain: 'bitcoin',
                     network: 'mainnet',
                     address: btc.mainnet.address,
-                    privateKey: encrypt(btc.mainnet.privateKey),
+                    encryptedPrivateKey: encrypt(btc.mainnet.privateKey),
                 },
                 {
                     chain: 'bitcoin',
                     network: 'testnet',
                     address: btc.testnet.address,
-                    privateKey: encrypt(btc.testnet.privateKey),
+                    encryptedPrivateKey: encrypt(btc.testnet.privateKey),
                 },
                 {
                     chain: 'solana',
                     network: 'mainnet',
                     address: sol.mainnet.address,
-                    privateKey: encrypt(sol.mainnet.privateKey),
+                    encryptedPrivateKey: encrypt(sol.mainnet.privateKey),
                 },
                 {
                     chain: 'solana',
                     network: 'testnet',
                     address: sol.testnet.address,
-                    privateKey: encrypt(sol.testnet.privateKey),
+                    encryptedPrivateKey: encrypt(sol.testnet.privateKey),
                 },
                 {
                     chain: 'starknet',
                     network: 'mainnet',
                     address: strk.mainnet.address,
-                    privateKey: encrypt(strk.mainnet.privateKey),
+                    encryptedPrivateKey: encrypt(strk.mainnet.privateKey),
                 },
                 {
                     chain: 'starknet',
                     network: 'testnet',
                     address: strk.testnet.address,
-                    privateKey: encrypt(strk.testnet.privateKey),
+                    encryptedPrivateKey: encrypt(strk.testnet.privateKey),
                 },
                 // USDT addresses - using ETH addresses for ERC-20 USDT
                 {
                     chain: 'usdt_erc20',
                     network: 'mainnet',
                     address: eth.mainnet.address, // Same as ETH mainnet
-                    privateKey: encrypt(eth.mainnet.privateKey),
+                    encryptedPrivateKey: encrypt(eth.mainnet.privateKey),
                 },
                 {
                     chain: 'usdt_erc20',
                     network: 'testnet',
                     address: eth.testnet.address, // Same as ETH testnet
-                    privateKey: encrypt(eth.testnet.privateKey),
+                    encryptedPrivateKey: encrypt(eth.testnet.privateKey),
                 },
                 // USDT TRC-20 addresses (Tron network)
                 {
                     chain: 'usdt_trc20',
                     network: 'mainnet',
                     address: tron.mainnet.address,
-                    privateKey: encrypt(tron.mainnet.privateKey),
+                    encryptedPrivateKey: encrypt(tron.mainnet.privateKey),
                 },
                 {
                     chain: 'usdt_trc20',
                     network: 'testnet',
                     address: tron.testnet.address,
-                    privateKey: encrypt(tron.testnet.privateKey),
+                    encryptedPrivateKey: encrypt(tron.testnet.privateKey),
                 },
             ];
 
