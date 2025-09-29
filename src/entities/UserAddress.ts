@@ -40,4 +40,7 @@ export class UserAddress {
 
     @CreateDateColumn()
     addedAt!: Date;
+
+    @Column('decimal', { default: 0, nullable: false })
+    lastKnownBalance!: number;
 }

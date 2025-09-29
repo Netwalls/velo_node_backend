@@ -5,7 +5,7 @@ import { authMiddleware } from '../middleware/auth';
 const router = Router();
 
 // Get all balances for the authenticated user
-router.get('/balances', authMiddleware, WalletController.getBalances);
+// router.get('/balances', authMiddleware, WalletController.getBalances);
 
 // Get testnet balances for the authenticated user
 router.get(
@@ -38,8 +38,13 @@ router.get(
     WalletController.getMainnetAddresses
 );
 
+router.post('/check-deposits', async (req, res) => {
+    await WalletController.checkForDeposits();
+    res.json({ message: 'Deposit check complete' });
+});
+
 // Get all balances for a specific user by userId (admin/public)
-router.get('/balances/:userId', WalletController.getBalancesByUserId);
+// router.get('/balances/:userId', WalletController.getBalancesByUserId);
 
 // Starknet: Generate and deploy wallet
 // router.post(

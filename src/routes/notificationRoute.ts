@@ -34,4 +34,6 @@ router.post(
     NotificationController.notifySecurityAlert
 );
 
+
+
 export default router;

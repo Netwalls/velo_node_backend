@@ -7,7 +7,8 @@ import { RpcProvider } from 'starknet';
 import { ethers } from 'ethers';
 import axios from 'axios';
 import { Connection, PublicKey } from '@solana/web3.js';
-
+import { Notification } from '../entities/Notification';
+import { NotificationType } from '../types/index';
 export class WalletController {
     /**
      * Get balances for a specific user by userId (admin or public endpoint).
@@ -752,42 +753,57 @@ export class WalletController {
             for (const addr of addresses) {
                 if (addr.chain === 'starknet') {
                     try {
-                        // Starknet testnet balance
+                        // Fixed Starknet testnet balance
                         const provider = new RpcProvider({
                             nodeUrl:
-                                'https://starknet-sepolia.g.alchemy.comundefined/CP1fRkzqgL_nwb9DNNiKI',
+                                'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/CP1fRkzqgL_nwb9DNNiKI',
                         });
 
-                        const contract = {
-                            abi: [
-                                {
-                                    name: 'balanceOf',
-                                    type: 'function',
-                                    inputs: [{ name: 'account', type: 'felt' }],
-                                    outputs: [
-                                        { name: 'balance', type: 'felt' },
-                                    ],
-                                },
-                            ],
-                        };
+                        // CORRECT STRK token contract address for SEPOLIA TESTNET
+                        const strkTokenAddress =
+                            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
-                        const contractInstance = new (provider as any).Contract(
-                            contract.abi,
-                            '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7' // ETH contract
+                        console.log(
+                            `[DEBUG] Fetching STRK balance for address: ${addr.address}`
+                        );
+                        console.log(
+                            `[DEBUG] Using STRK contract: ${strkTokenAddress}`
                         );
 
-                        const balanceResult = await contractInstance.balanceOf(
-                            addr.address
+                        // Use the provider's callContract method instead of Contract class
+                        const result = await provider.callContract({
+                            contractAddress: strkTokenAddress,
+                            entrypoint: 'balanceOf',
+                            calldata: [addr.address],
+                        });
+
+                        console.log(`[DEBUG] Raw balance result:`, result);
+
+                        // FIXED: Parse the result correctly - it should be in result[0]
+                        const balanceHex =
+                            result && result[0] ? result[0] : '0x0';
+                        const balanceDecimal = parseInt(balanceHex, 16);
+                        const balanceInSTRK = (
+                            balanceDecimal / 1e18
+                        ).toString();
+
+                        console.log(`[DEBUG] Balance hex: ${balanceHex}`);
+                        console.log(
+                            `[DEBUG] Balance decimal: ${balanceDecimal}`
+                        );
+                        console.log(
+                            `[DEBUG] Balance in STRK: ${balanceInSTRK}`
                         );
 
                         balances.push({
                             chain: addr.chain,
                             network: 'testnet',
                             address: addr.address,
-                            balance: balanceResult.balance.toString(),
+                            balance: balanceInSTRK,
                             symbol: 'STRK',
                         });
                     } catch (error) {
+                        console.error('Starknet testnet balance error:', error);
                         balances.push({
                             chain: addr.chain,
                             network: 'testnet',
@@ -1074,6 +1090,110 @@ export class WalletController {
         } catch (error) {
             console.error('Get mainnet balances error:', error);
             res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Checks all user addresses for new deposits and creates notifications.
+     * Call this periodically (e.g., with a cron job or background worker).
+     */
+    static async checkForDeposits(): Promise<void> {
+        const addressRepo = AppDataSource.getRepository(UserAddress);
+        const notificationRepo = AppDataSource.getRepository(Notification);
+
+        const allAddresses = await addressRepo.find();
+        for (const addr of allAddresses) {
+            let currentBalance = 0;
+
+            try {
+                if (addr.chain === 'ethereum') {
+                    const provider = new ethers.JsonRpcProvider(
+                        addr.network === 'testnet'
+                            ? 'https://eth-sepolia.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                            : 'https://eth-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                    );
+                    currentBalance = parseFloat(
+                        ethers.formatEther(
+                            await provider.getBalance(addr.address)
+                        )
+                    );
+                } else if (addr.chain === 'bitcoin') {
+                    const url =
+                        (addr.network === 'testnet'
+                            ? 'https://blockstream.info/testnet/api/address/'
+                            : 'https://blockstream.info/api/address/') +
+                        addr.address;
+                    const resp = await axios.get(url);
+                    const data = resp.data as {
+                        chain_stats: {
+                            funded_txo_sum: number;
+                            spent_txo_sum: number;
+                        };
+                    };
+                    const balance =
+                        (data.chain_stats.funded_txo_sum || 0) -
+                        (data.chain_stats.spent_txo_sum || 0);
+                    currentBalance = balance / 1e8;
+                } else if (addr.chain === 'solana') {
+                    const connection = new Connection(
+                        addr.network === 'testnet'
+                            ? 'https://solana-devnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                            : 'https://solana-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                    );
+                    const publicKey = new PublicKey(addr.address);
+                    const balance = await connection.getBalance(publicKey);
+                    currentBalance = balance / 1e9;
+                } else if (addr.chain === 'starknet') {
+                    const provider = new RpcProvider({
+                        nodeUrl:
+                            addr.network === 'testnet'
+                                ? 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/CP1fRkzqgL_nwb9DNNiKI'
+                                : 'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+                    });
+                    const strkTokenAddress =
+                        '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                    const result = await provider.callContract({
+                        contractAddress: strkTokenAddress,
+                        entrypoint: 'balanceOf',
+                        calldata: [addr.address],
+                    });
+                    const balanceHex =
+                        result && result[0]
+                            ? result[0]
+                            : '0x0';
+                    const balanceDecimal = parseInt(balanceHex, 16);
+                    currentBalance = balanceDecimal / 1e18;
+                }
+            } catch (e) {
+                continue; // skip on error
+            }
+
+            // Compare with last known balance
+            if (currentBalance > Number(addr.lastKnownBalance)) {
+                const amount = currentBalance - Number(addr.lastKnownBalance);
+
+                // Create notification
+                await notificationRepo.save(
+                    notificationRepo.create({
+                        userId: addr.userId,
+                        type: NotificationType.DEPOSIT,
+                        title: 'Deposit Received',
+                        message: `Deposit of ${amount} ${addr.chain.toUpperCase()} received at ${
+                            addr.address
+                        }`,
+                        details: {
+                            address: addr.address,
+                            amount,
+                            chain: addr.chain,
+                            network: addr.network,
+                        },
+                    })
+                );
+            }
+
+            // Update last known balance
+            addr.lastKnownBalance = currentBalance;
+            await addressRepo.save(addr);
         }
     }
 }
