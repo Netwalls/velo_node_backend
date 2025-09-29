@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
 import { UserAddress } from '../entities/UserAddress';
@@ -46,7 +46,6 @@ export class UserController {
                         bankName: user.bankName,
                         accountNumber: user.accountNumber,
                         accountName: user.accountName,
-
                     },
                     createdAt: user.createdAt,
                 },
@@ -413,6 +412,88 @@ export class UserController {
         } catch (error) {
             console.error('Get username suggestions error:', error);
             res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Delete the account of the currently authenticated user.
+     * Removes the user and all related data (addresses, KYC documents).
+     */
+    static async deleteAccount(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            if (!req.user || !req.user.id) {
+                res.status(401).json({
+                    error: 'Unauthorized: user not authenticated',
+                });
+                return;
+            }
+            const userId = req.user.id; // assumes authMiddleware sets req.user
+
+            const userRepo = AppDataSource.getRepository(User);
+            const user = await userRepo.findOne({ where: { id: userId } });
+
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            await userRepo.remove(user); // will cascade if relations are set with onDelete: 'CASCADE'
+            res.json({ message: 'Account deleted successfully' });
+        } catch (error) {
+            console.error('Delete account error:', error);
+            res.status(500).json({ error: 'Failed to delete account' });
+        }
+    }
+
+    /**
+     * Delete a user account (admin only).
+     * Expects userId in req.params.
+     */
+    static async adminDeleteAccount(
+        req: Request,
+        res: Response
+    ): Promise<void> {
+        try {
+            const { userId } = req.params;
+            const userRepo = AppDataSource.getRepository(User);
+            const user = await userRepo.findOne({ where: { id: userId } });
+
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            await userRepo.remove(user);
+            res.json({ message: 'User account deleted (no admin check)' });
+        } catch (error) {
+            console.error('Admin delete account error:', error);
+            res.status(500).json({ error: 'Failed to delete user account' });
+        }
+    }
+
+    /**
+     * Delete a user account by email (no auth required).
+     * Expects email in req.params.
+     */
+    static async deleteAccountByEmail(
+        req: Request,
+        res: Response
+    ): Promise<void> {
+        try {
+            const { email } = req.params;
+            const userRepo = AppDataSource.getRepository(User);
+            const user = await userRepo.findOne({ where: { email } });
+
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            await userRepo.remove(user);
+            res.json({ message: 'User account deleted by email (no auth)' });
+        } catch (error) {
+            console.error('Delete account by email error:', error);
+            res.status(500).json({ error: 'Failed to delete user account' });
         }
     }
 }

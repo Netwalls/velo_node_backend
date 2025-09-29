@@ -39,6 +39,10 @@ router.delete(
 // Update KYC status (admin only - demo)
 router.put('/kyc/:userId', authMiddleware, UserController.updateKYCStatus);
 
+// Delete user account
+router.delete('/delete', authMiddleware, UserController.deleteAccount);
+router.delete('/delete-by-email/:email', UserController.deleteAccountByEmail);
+
 export default router;
 
 // getProfile
