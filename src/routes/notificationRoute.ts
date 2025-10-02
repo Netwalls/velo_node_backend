@@ -34,6 +34,11 @@ router.post(
     NotificationController.notifySecurityAlert
 );
 
-
+// Clear all notifications
+router.delete(
+    '/clear',
+    authMiddleware,
+    NotificationController.clearAllNotifications
+);
 
 export default router;

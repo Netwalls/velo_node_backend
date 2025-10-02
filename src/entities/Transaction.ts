@@ -21,7 +21,22 @@ export class Transaction {
     user!: User;
 
     @Column()
+    type!: string; // 'send', 'receive', etc.
+
+    @Column('decimal', { precision: 20, scale: 8 })
+    amount!: number;
+
+    @Column()
     chain!: string;
+
+    @Column({ nullable: true })
+    network?: string; // 'mainnet', 'testnet', etc.
+
+    @Column()
+    toAddress!: string;
+
+    @Column()
+    fromAddress!: string;
 
     @Column()
     txHash!: string;

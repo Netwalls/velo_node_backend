@@ -1,6 +1,5 @@
 import { Transaction } from '../entities/Transaction';
 import { Request, Response } from 'express';
-import { AppDataSource } from '../config/database';
 import { UserAddress } from '../entities/UserAddress';
 import { AuthRequest, NetworkType } from '../types';
 import { RpcProvider, Account, ec, uint256 } from 'starknet';
@@ -20,6 +19,12 @@ const ECPair = ECPairFactory.ECPairFactory(ecc);
 import axios from 'axios';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types/index';
+import { AppDataSource } from '../config/database';
+function padStarknetAddress(address: string): string {
+    if (!address.startsWith('0x')) return address;
+    const hex = address.slice(2).padStart(64, '0');
+    return '0x' + hex;
+}
 export class WalletController {
     /**
      * Get balances for a specific user by userId (admin or public endpoint).
@@ -137,6 +142,11 @@ export class WalletController {
                             (addr.network === 'testnet'
                                 ? BTC_TESTNET
                                 : BTC_MAINNET) + addr.address;
+
+                        console.log(
+                            `[DEBUG] Fetching BTC balance from: ${url}`
+                        );
+
                         const resp = await axios.get(url);
                         const data = resp.data as {
                             chain_stats: {
@@ -144,9 +154,28 @@ export class WalletController {
                                 spent_txo_sum: number;
                             };
                         };
+
+                        console.log(
+                            `[DEBUG] BTC API response for ${addr.address}:`,
+                            data
+                        );
+                        console.log(
+                            `[DEBUG] Funded: ${data.chain_stats.funded_txo_sum} satoshis`
+                        );
+                        console.log(
+                            `[DEBUG] Spent: ${data.chain_stats.spent_txo_sum} satoshis`
+                        );
+
                         const balance =
                             data.chain_stats.funded_txo_sum -
                             data.chain_stats.spent_txo_sum;
+
+                        console.log(
+                            `[DEBUG] Current balance: ${balance} satoshis = ${
+                                balance / 1e8
+                            } BTC`
+                        );
+
                         balances.push({
                             chain: addr.chain,
                             network: addr.network,
@@ -154,6 +183,11 @@ export class WalletController {
                             balance: (balance / 1e8).toString(),
                         });
                     } catch (err) {
+                        console.error(
+                            `[ERROR] Failed to fetch BTC balance for ${addr.address}:`,
+                            err
+                        );
+
                         balances.push({
                             chain: addr.chain,
                             network: addr.network,
@@ -366,507 +400,416 @@ export class WalletController {
             res.status(500).json({ error: 'Internal server error' });
         }
     }
+
     /**
      * Send funds from a user's wallet to another address for a given chain/network.
      * POST /wallet/send
-     * Body: { userId, chain, network, toAddress, amount }
+     * Body: { chain, network, toAddress, amount, fromAddress? }
      */
-    // static async sendTransaction(
-    //     req: AuthRequest,
-    //     res: Response
-    // ): Promise<void> {
-    //     try {
-    //         const { chain, network, toAddress, amount, fromAddress } = req.body;
-    //         if (!req.user || !req.user.id) {
-    //             res.status(401).json({ error: 'Unauthorized' });
-    //             return;
-    //         }
-    //         const userId = req.user.id;
+    static async sendTransaction(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const { chain, network, toAddress, amount, fromAddress } = req.body;
 
-    //         // Find the sender address for this user, chain, network (and optionally fromAddress)
-    //         const addressRepo = AppDataSource.getRepository(UserAddress);
-    //         const where: any = { userId, chain, network };
-    //         if (fromAddress) where.address = fromAddress;
-    //         const userAddress = await addressRepo.findOne({ where });
+            // Validate authenticated user
+            if (!req.user || !req.user.id) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+            const userId = req.user.id;
 
-    //         // Check for private key
-    //         if (!userAddress || !userAddress.encryptedPrivateKey) {
-    //             res.status(400).json({
-    //                 error: 'No private key found for this address. You can only send from wallets you created in Velo.',
-    //             });
-    //             return;
-    //         }
-
-    //         // Decrypt the private key
-    //         const { decrypt } = require('../utils/keygen');
-    //         const privateKey = decrypt(userAddress.encryptedPrivateKey);
-
-    //         let txHash = '';
-
-    //         // ETH & USDT ERC20
-    //         if (chain === 'ethereum' || chain === 'usdt_erc20') {
-    //             const provider = new ethers.JsonRpcProvider(
-    //                 network === 'testnet'
-    //                     ? 'https://eth-sepolia.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
-    //                     : 'https://eth-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
-    //             );
-    //             const wallet = new ethers.Wallet(privateKey, provider);
-
-    //             if (chain === 'ethereum') {
-    //                 const tx = await wallet.sendTransaction({
-    //                     to: toAddress,
-    //                     value: ethers.parseEther(amount.toString()),
-    //                 });
-    //                 txHash = tx.hash;
-    //             } else {
-    //                 const usdtAddress =
-    //                     network === 'testnet'
-    //                         ? '0x516de3a7a567d81737e3a46ec4ff9cfd1fcb0136' // Sepolia USDT
-    //                         : '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // Mainnet USDT
-    //                 const usdtAbi = [
-    //                     'function transfer(address to, uint256 value) public returns (bool)',
-    //                 ];
-    //                 const usdtContract = new ethers.Contract(
-    //                     usdtAddress,
-    //                     usdtAbi,
-    //                     wallet
-    //                 );
-    //                 const decimals = 6;
-    //                 const tx = await usdtContract.transfer(
-    //                     toAddress,
-    //                     ethers.parseUnits(amount.toString(), decimals)
-    //                 );
-    //                 txHash = tx.hash;
-    //             }
-    //         }
-    //         // SOL
-    //         else if (chain === 'solana') {
-    //             const connection = new Connection(
-    //                 network === 'testnet'
-    //                     ? 'https://api.devnet.solana.com'
-    //                     : 'https://api.mainnet-beta.solana.com'
-    //             );
-    //             const fromKeypair = Keypair.fromSecretKey(
-    //                 Uint8Array.from(JSON.parse(privateKey))
-    //             );
-    //             const toPubkey = new PublicKey(toAddress);
-
-    //             const transaction = new SolTx().add(
-    //                 SystemProgram.transfer({
-    //                     fromPubkey: fromKeypair.publicKey,
-    //                     toPubkey,
-    //                     lamports: Math.round(Number(amount) * 1e9),
-    //                 })
-    //             );
-    //             const signature = await sendAndConfirmTransaction(
-    //                 connection,
-    //                 transaction,
-    //                 [fromKeypair]
-    //             );
-    //             txHash = signature;
-    //         }
-    //         // STRK (Starknet)
-    //         else if (chain === 'starknet') {
-    //             const provider = new RpcProvider({
-    //                 nodeUrl:
-    //                     network === 'testnet'
-    //                         ? 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/CP1fRkzqgL_nwb9DNNiKI'
-    //                         : 'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
-    //             });
-    //             const keyPair = ec.getKeyPair(privateKey);
-    //             const account = new Account(
-    //                 provider,
-    //                 userAddress.address,
-    //                 keyPair
-    //             );
-
-    //             const tokenAddress =
-    //                 '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-    //             const recipient = toAddress;
-    //             const amountUint256 = uint256.bnToUint256(BigInt(amount));
-
-    //             const tx = await account.execute({
-    //                 contractAddress: tokenAddress,
-    //                 entrypoint: 'transfer',
-    //                 calldata: [
-    //                     recipient,
-    //                     amountUint256.low,
-    //                     amountUint256.high,
-    //                 ],
-    //             });
-    //             txHash = tx.transaction_hash;
-    //         }
-    //         // BTC
-    //         else if (chain === 'bitcoin') {
-    //             const apiUrl =
-    //                 network === 'testnet'
-    //                     ? `https://blockstream.info/testnet/api/address/${userAddress.address}/utxo`
-    //                     : `https://blockstream.info/api/address/${userAddress.address}/utxo`;
-    //             const utxos = (await axios.get(apiUrl)).data;
-
-    //             const networkParams =
-    //                 network === 'testnet'
-    //                     ? bitcoin.networks.testnet
-    //                     : bitcoin.networks.bitcoin;
-    //             const psbt = new bitcoin.Psbt({ network: networkParams });
-
-    //             let inputSum = 0;
-    //             for (const utxo of utxos) {
-    //                 psbt.addInput({
-    //                     hash: utxo.txid,
-    //                     index: utxo.vout,
-    //                     witnessUtxo: {
-    //                         script: Buffer.from(utxo.scriptpubkey, 'hex'),
-    //                         value: utxo.value,
-    //                     },
-    //                 });
-    //                 inputSum += utxo.value;
-    //                 if (inputSum >= Math.round(Number(amount) * 1e8) + 1000)
-    //                     break;
-    //             }
-    //             if (inputSum < Math.round(Number(amount) * 1e8) + 1000) {
-    //                 throw new Error('Insufficient BTC balance');
-    //             }
-
-    //             psbt.addOutput({
-    //                 address: toAddress,
-    //                 value: Math.round(Number(amount) * 1e8),
-    //             });
-    //             const change =
-    //                 inputSum - Math.round(Number(amount) * 1e8) - 1000;
-    //             if (change > 0) {
-    //                 psbt.addOutput({
-    //                     address: userAddress.address,
-    //                     value: change,
-    //                 });
-    //             }
-    //             const keyPair = ECPair.fromWIF(privateKey, networkParams);
-    //             // Patch keyPair to ensure publicKey is a Buffer (not Uint8Array)
-    //             const patchedKeyPair = {
-    //                 ...keyPair,
-    //                 publicKey: Buffer.from(keyPair.publicKey),
-    //                 sign: (hash: Buffer, lowR?: boolean) => {
-    //                     const sig = keyPair.sign(hash, lowR);
-    //                     return Buffer.from(sig);
-    //                 },
-    //                 signSchnorr: (hash: Buffer) => {
-    //                     // Convert the result to Buffer to satisfy the Signer interface
-    //                     const sig = keyPair.signSchnorr(hash);
-    //                     return Buffer.from(sig);
-    //                 },
-    //             };
-    //             psbt.signAllInputs(patchedKeyPair);
-    //             psbt.finalizeAllInputs();
-
-    //             const rawTx = psbt.extractTransaction().toHex();
-    //             const broadcastUrl =
-    //                 network === 'testnet'
-    //                     ? 'https://blockstream.info/testnet/api/tx'
-    //                     : 'https://blockstream.info/api/tx';
-    //             const resp = await axios.post(broadcastUrl, rawTx, {
-    //                 headers: { 'Content-Type': 'text/plain' },
-    //             });
-    //             txHash = resp.data as string;
-    //         }
-    //         // USDT TRC20 (Tron) - NOT IMPLEMENTED
-    //         else if (chain === 'usdt_trc20') {
-    //             throw new Error(
-    //                 'USDT TRC20 transfers not implemented. Use TronWeb.'
-    //             );
-    //         } else {
-    //             throw new Error('Unsupported chain');
-    //         }
-
-    //         res.json({ message: 'Transaction sent', txHash });
-    //     } catch (error) {
-    //         console.error('Send transaction error:', error);
-    //         res.status(500).json({
-    //             error: 'Failed to send transaction',
-    //             details:
-    //                 typeof error === 'object' &&
-    //                 error !== null &&
-    //                 'message' in error
-    //                     ? (error as any).message
-    //                     : String(error),
-    //         });
-    //     }
-    // }
-
-    /**
- * Send funds from a user's wallet to another address for a given chain/network.
- * POST /wallet/send
- * Body: { chain, network, toAddress, amount, fromAddress? }
- */
-static async sendTransaction(
-    req: AuthRequest,
-    res: Response
-): Promise<void> {
-    try {
-        const { chain, network, toAddress, amount, fromAddress } = req.body;
-        
-        // Validate authenticated user
-        if (!req.user || !req.user.id) {
-            res.status(401).json({ error: 'Unauthorized' });
-            return;
-        }
-        const userId = req.user.id;
-
-        // Validation
-        if (!chain || !network || !toAddress || !amount) {
-            res.status(400).json({ error: 'Missing required fields: chain, network, toAddress, amount' });
-            return;
-        }
-        if (Number(amount) <= 0) {
-            res.status(400).json({ error: 'Amount must be positive.' });
-            return;
-        }
-
-        // Find the user's wallet for this chain/network
-        const addressRepo = AppDataSource.getRepository(UserAddress);
-        const where: any = { userId, chain, network };
-        if (fromAddress) {
-            where.address = fromAddress;
-        }
-        
-        const userAddress = await addressRepo.findOne({ where });
-
-        if (!userAddress || !userAddress.encryptedPrivateKey) {
-            res.status(404).json({ 
-                error: 'No wallet found for this chain/network. You can only send from wallets you created in Velo.' 
-            });
-            return;
-        }
-
-        // Decrypt the private key
-        const { decrypt } = require('../utils/keygen');
-        const privateKey = decrypt(userAddress.encryptedPrivateKey);
-
-        let txHash = '';
-
-        // ETH & USDT ERC20
-        if (chain === 'ethereum' || chain === 'usdt_erc20') {
-            const provider = new ethers.JsonRpcProvider(
-                network === 'testnet'
-                    ? 'https://eth-sepolia.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
-                    : 'https://eth-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
-            );
-            const wallet = new ethers.Wallet(privateKey, provider);
-
-            if (chain === 'ethereum') {
-                const tx = await wallet.sendTransaction({
-                    to: toAddress,
-                    value: ethers.parseEther(amount.toString()),
+            // Validation
+            if (!chain || !network || !toAddress || !amount) {
+                res.status(400).json({
+                    error: 'Missing required fields: chain, network, toAddress, amount',
                 });
-                txHash = tx.hash;
-            } else {
-                const usdtAddress =
-                    network === 'testnet'
-                        ? '0x516de3a7a567d81737e3a46ec4ff9cfd1fcb0136' // Sepolia USDT
-                        : '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // Mainnet USDT
-                const usdtAbi = [
-                    'function transfer(address to, uint256 value) public returns (bool)',
-                ];
-                const usdtContract = new ethers.Contract(
-                    usdtAddress,
-                    usdtAbi,
-                    wallet
-                );
-                const decimals = 6;
-                const tx = await usdtContract.transfer(
-                    toAddress,
-                    ethers.parseUnits(amount.toString(), decimals)
-                );
-                txHash = tx.hash;
+                return;
             }
-        }
-        // SOL
-        else if (chain === 'solana') {
-            const connection = new Connection(
-                network === 'testnet'
-                    ? 'https://api.devnet.solana.com'
-                    : 'https://api.mainnet-beta.solana.com'
-            );
-            const fromKeypair = Keypair.fromSecretKey(
-                Uint8Array.from(JSON.parse(privateKey))
-            );
-            const toPubkey = new PublicKey(toAddress);
-
-            const transaction = new SolTx().add(
-                SystemProgram.transfer({
-                    fromPubkey: fromKeypair.publicKey,
-                    toPubkey,
-                    lamports: Math.round(Number(amount) * 1e9),
-                })
-            );
-            const signature = await sendAndConfirmTransaction(
-                connection,
-                transaction,
-                [fromKeypair]
-            );
-            txHash = signature;
-        }
-        // STRK (Starknet) with auto-deployment
-        else if (chain === 'starknet') {
-            const provider = new RpcProvider({
-                nodeUrl:
-                    network === 'testnet'
-                        ? 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/CP1fRkzqgL_nwb9DNNiKI'
-                        : 'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
-            });
-
-            // Check if account is deployed
-            let isDeployed = false;
-            try {
-                await provider.getClassHashAt(userAddress.address);
-                isDeployed = true;
-            } catch {
-                isDeployed = false;
+            if (Number(amount) <= 0) {
+                res.status(400).json({ error: 'Amount must be positive.' });
+                return;
             }
 
-            // Auto-deploy if needed
-            if (!isDeployed) {
-                console.log(`[INFO] Deploying Starknet account: ${userAddress.address}`);
-                
-                // Account constructor accepts privateKey directly
-                const account = new Account(provider, userAddress.address, privateKey);
-                
-                const publicKey = ec.starkCurve.getStarkKey(privateKey);
-                const OZ_ACCOUNT_CLASS_HASH = '0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f';
-                
-                const deployPayload = {
-                    classHash: OZ_ACCOUNT_CLASS_HASH,
-                    constructorCalldata: [publicKey],
-                    addressSalt: publicKey,
-                };
+            // Find the user's wallet for this chain/network
+            const addressRepo = AppDataSource.getRepository(UserAddress);
+            const where: any = { userId, chain, network };
+            if (fromAddress) {
+                where.address = fromAddress;
+            }
 
-                try {
-                    const { transaction_hash } = await account.deployAccount(deployPayload);
-                    await provider.waitForTransaction(transaction_hash);
-                    console.log(`[INFO] Account deployed successfully: ${transaction_hash}`);
-                } catch (deployError) {
-                    res.status(400).json({ 
-                        error: 'Account deployment failed. Ensure you have enough STRK for gas fees (~0.001-0.003 STRK).',
-                        details: deployError instanceof Error ? deployError.message : String(deployError)
+            const userAddress = await addressRepo.findOne({ where });
+
+            if (!userAddress || !userAddress.encryptedPrivateKey) {
+                res.status(404).json({
+                    error: 'No wallet found for this chain/network. You can only send from wallets you created in Velo.',
+                });
+                return;
+            }
+
+            // Decrypt the private key
+            const { decrypt } = require('../utils/keygen');
+            const privateKey = decrypt(userAddress.encryptedPrivateKey);
+
+            let txHash = '';
+
+            // ETH & USDT ERC20
+            if (chain === 'ethereum' || chain === 'usdt_erc20') {
+                const provider = new ethers.JsonRpcProvider(
+                    network === 'testnet'
+                        ? 'https://eth-sepolia.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                        : 'https://eth-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                );
+                const wallet = new ethers.Wallet(privateKey, provider);
+
+                if (chain === 'ethereum') {
+                    const tx = await wallet.sendTransaction({
+                        to: toAddress,
+                        value: ethers.parseEther(amount.toString()),
                     });
-                    return;
+                    txHash = tx.hash;
+                } else {
+                    const usdtAddress =
+                        network === 'testnet'
+                            ? '0x516de3a7a567d81737e3a46ec4ff9cfd1fcb0136' // Sepolia USDT
+                            : '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // Mainnet USDT
+                    const usdtAbi = [
+                        'function transfer(address to, uint256 value) public returns (bool)',
+                    ];
+                    const usdtContract = new ethers.Contract(
+                        usdtAddress,
+                        usdtAbi,
+                        wallet
+                    );
+                    const decimals = 6;
+                    const tx = await usdtContract.transfer(
+                        toAddress,
+                        ethers.parseUnits(amount.toString(), decimals)
+                    );
+                    txHash = tx.hash;
                 }
             }
+            // SOL
 
-            // Proceed with transfer
-            const account = new Account(provider, userAddress.address, privateKey);
-            const tokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-            const amountUint256 = uint256.bnToUint256(BigInt(Math.floor(Number(amount) * 1e18)));
+            // SOL
+            else if (chain === 'solana') {
+                const connection = new Connection(
+                    network === 'testnet'
+                        ? 'https://api.devnet.solana.com'
+                        : 'https://api.mainnet-beta.solana.com'
+                );
 
-            const tx = await account.execute({
-                contractAddress: tokenAddress,
-                entrypoint: 'transfer',
-                calldata: [
-                    toAddress,
-                    amountUint256.low,
-                    amountUint256.high,
-                ],
-            });
-            txHash = tx.transaction_hash;
-        }
-        // BTC
-        else if (chain === 'bitcoin') {
-            const apiUrl =
-                network === 'testnet'
-                    ? `https://blockstream.info/testnet/api/address/${userAddress.address}/utxo`
-                    : `https://blockstream.info/api/address/${userAddress.address}/utxo`;
-            const utxos = (await axios.get(apiUrl)).data as Array<{
-                txid: string;
-                vout: number;
-                value: number;
-                status?: any;
-                scriptpubkey: string;
-            }>;
+                // Handle different private key formats
+                let secretKeyArray: Uint8Array;
 
-            const networkParams =
-                network === 'testnet'
-                    ? bitcoin.networks.testnet
-                    : bitcoin.networks.bitcoin;
-            const psbt = new bitcoin.Psbt({ network: networkParams });
+                try {
+                    // Try parsing as JSON array first (if stored as [1,2,3,...])
+                    const parsed = JSON.parse(privateKey);
+                    if (Array.isArray(parsed)) {
+                        secretKeyArray = Uint8Array.from(parsed);
+                    } else {
+                        throw new Error('Not an array');
+                    }
+                } catch {
+                    // If JSON.parse fails, treat as hex string
+                    const cleanHex = privateKey.startsWith('0x')
+                        ? privateKey.slice(2)
+                        : privateKey;
+                    const buffer = Buffer.from(cleanHex, 'hex');
 
-            let inputSum = 0;
-            for (const utxo of utxos) {
-                psbt.addInput({
-                    hash: utxo.txid,
-                    index: utxo.vout,
-                    witnessUtxo: {
-                        script: Buffer.from(utxo.scriptpubkey, 'hex'),
-                        value: utxo.value,
-                    },
-                });
-                inputSum += utxo.value;
-                if (inputSum >= Math.round(Number(amount) * 1e8) + 1000)
-                    break;
+                    // Solana keypairs are 64 bytes (32 private + 32 public)
+                    if (buffer.length === 32) {
+                        // If only private key, we need to generate the full keypair
+                        const tempKeypair = Keypair.fromSeed(buffer);
+                        secretKeyArray = tempKeypair.secretKey;
+                    } else if (buffer.length === 64) {
+                        secretKeyArray = new Uint8Array(buffer);
+                    } else {
+                        throw new Error(
+                            `Invalid Solana private key length: ${buffer.length}`
+                        );
+                    }
+                }
+
+                const fromKeypair = Keypair.fromSecretKey(secretKeyArray);
+                const toPubkey = new PublicKey(toAddress);
+
+                const transaction = new SolTx().add(
+                    SystemProgram.transfer({
+                        fromPubkey: fromKeypair.publicKey,
+                        toPubkey,
+                        lamports: Math.round(Number(amount) * 1e9),
+                    })
+                );
+
+                const signature = await sendAndConfirmTransaction(
+                    connection,
+                    transaction,
+                    [fromKeypair]
+                );
+                txHash = signature;
             }
-            if (inputSum < Math.round(Number(amount) * 1e8) + 1000) {
-                throw new Error('Insufficient BTC balance');
-            }
+            // STRK (Starknet) with auto-deployment
+            // else if (chain === 'starknet') {
+            //     // Validate toAddress
+            //     const toAddr = padStarknetAddress(toAddress);
+            //     if (!/^0x[0-9a-fA-F]{64}$/.test(toAddr)) {
+            //         res.status(400).json({
+            //             error: 'Invalid Starknet address after padding.',
+            //         });
+            //         return;
+            //     }
 
-            psbt.addOutput({
-                address: toAddress,
-                value: Math.round(Number(amount) * 1e8),
-            });
-            const change =
-                inputSum - Math.round(Number(amount) * 1e8) - 1000;
-            if (change > 0) {
+            //     const provider = new RpcProvider({
+            //         nodeUrl:
+            //             network === 'testnet'
+            //                 ? 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/CP1fRkzqgL_nwb9DNNiKI'
+            //                 : 'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+            //     });
+
+            //     const fromAddr = padStarknetAddress(userAddress.address);
+
+            //     // Check if account is deployed
+            //     let isDeployed = false;
+            //     try {
+            //         await provider.getClassHashAt(fromAddr);
+            //         isDeployed = true;
+            //     } catch {
+            //         isDeployed = false;
+            //     }
+
+            //     // Prepare private key for Starknet.js
+            //     let starknetPrivateKey: string;
+            //     if (Buffer.isBuffer(privateKey)) {
+            //         starknetPrivateKey = '0x' + privateKey.toString('hex');
+            //     } else if (
+            //         typeof privateKey === 'string' &&
+            //         !privateKey.startsWith('0x')
+            //     ) {
+            //         try {
+            //             const buf = Buffer.from(privateKey, 'base64');
+            //             starknetPrivateKey = '0x' + buf.toString('hex');
+            //         } catch {
+            //             starknetPrivateKey = privateKey;
+            //         }
+            //     } else {
+            //         starknetPrivateKey = privateKey;
+            //     }
+
+            //     console.log(
+            //         '[DEBUG] Decrypted privateKey:',
+            //         privateKey,
+            //         typeof privateKey
+            //     );
+            //     console.log(
+            //         '[DEBUG] Using starknetPrivateKey:',
+            //         starknetPrivateKey
+            //     );
+
+            //     // Auto-deploy if needed
+            //     if (!isDeployed) {
+            //         console.log(
+            //             `[INFO] Deploying Starknet account: ${fromAddr} using paymaster`
+            //         );
+
+            //         // Paymaster config for Sepolia
+            //         const paymasterAddress =
+            //             '0x06106B7472A8991F60EDf9e3b4738AE6dBfE6882410403aA3f4381B9B14E7032';
+            //         const paymasterPrivateKey =
+            //             '0x05bff331a0bc5f346c2b098ec243e62491dc9f4104a8d2093881bffdb0674251';
+
+            //         // Prepare deploy payload for the user's account
+            //         const publicKey =
+            //             ec.starkCurve.getStarkKey(starknetPrivateKey);
+            //         const OZ_ACCOUNT_CLASS_HASH =
+            //             '0x061dac032f228abef9c6626f995015233097ae253a7f72d68552db02f2971b8f';
+            //         const deployPayload = {
+            //             classHash: OZ_ACCOUNT_CLASS_HASH,
+            //             constructorCalldata: [publicKey],
+            //             addressSalt: publicKey,
+            //         };
+
+            //         // Use paymaster account to deploy
+            //         const paymasterAccount = new Account(
+            //             provider,
+            //             paymasterAddress,
+            //             paymasterPrivateKey
+            //         );
+            //         try {
+            //             const { transaction_hash } =
+            //                 await paymasterAccount.deployAccount(deployPayload);
+            //             await provider.waitForTransaction(transaction_hash);
+            //             console.log(
+            //                 `[INFO] Account deployed successfully by paymaster: ${transaction_hash}`
+            //             );
+            //         } catch (deployError) {
+            //             res.status(400).json({
+            //                 error: 'Account deployment by paymaster failed. Ensure paymaster has enough STRK for gas fees.',
+            //                 details:
+            //                     deployError instanceof Error
+            //                         ? deployError.message
+            //                         : String(deployError),
+            //             });
+            //             return;
+            //         }
+            //     }
+
+            //     // Proceed with transfer
+            //     const account = new Account(
+            //         provider,
+            //         fromAddr,
+            //         starknetPrivateKey
+            //     );
+            //     const tokenAddress =
+            //         '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+            //     const amountStr =
+            //         typeof amount === 'string' ? amount : String(amount);
+            //     const amountWei = BigInt(Math.floor(Number(amountStr) * 1e18));
+            //     const amountUint256 = uint256.bnToUint256(amountWei);
+
+            //     // Ensure calldata values are strings
+            //     const low = amountUint256.low.toString();
+            //     const high = amountUint256.high.toString();
+
+            //     const tx = await account.execute({
+            //         contractAddress: tokenAddress,
+            //         entrypoint: 'transfer',
+            //         calldata: [toAddr, low, high],
+            //     });
+            //     txHash = tx.transaction_hash;
+            // }
+
+            // BTC
+            else if (chain === 'bitcoin') {
+                const apiUrl =
+                    network === 'testnet'
+                        ? `https://blockstream.info/testnet/api/address/${userAddress.address}/utxo`
+                        : `https://blockstream.info/api/address/${userAddress.address}/utxo`;
+                const utxos = (await axios.get(apiUrl)).data as Array<{
+                    txid: string;
+                    vout: number;
+                    value: number;
+                    status?: any;
+                    scriptpubkey: string;
+                }>;
+
+                const networkParams =
+                    network === 'testnet'
+                        ? bitcoin.networks.testnet
+                        : bitcoin.networks.bitcoin;
+                const psbt = new bitcoin.Psbt({ network: networkParams });
+
+                let inputSum = 0;
+                for (const utxo of utxos) {
+                    psbt.addInput({
+                        hash: utxo.txid,
+                        index: utxo.vout,
+                        witnessUtxo: {
+                            script: Buffer.from(utxo.scriptpubkey, 'hex'),
+                            value: utxo.value,
+                        },
+                    });
+                    inputSum += utxo.value;
+                    if (inputSum >= Math.round(Number(amount) * 1e8) + 1000)
+                        break;
+                }
+                if (inputSum < Math.round(Number(amount) * 1e8) + 1000) {
+                    throw new Error('Insufficient BTC balance');
+                }
+
                 psbt.addOutput({
-                    address: userAddress.address,
-                    value: change,
+                    address: toAddress,
+                    value: Math.round(Number(amount) * 1e8),
                 });
+                const change =
+                    inputSum - Math.round(Number(amount) * 1e8) - 1000;
+                if (change > 0) {
+                    psbt.addOutput({
+                        address: userAddress.address,
+                        value: change,
+                    });
+                }
+                const keyPair = ECPair.fromWIF(privateKey, networkParams);
+                const patchedKeyPair = {
+                    ...keyPair,
+                    publicKey: Buffer.from(keyPair.publicKey),
+                    sign: (hash: Buffer, lowR?: boolean) => {
+                        const sig = keyPair.sign(hash, lowR);
+                        return Buffer.from(sig);
+                    },
+                    signSchnorr: (hash: Buffer) => {
+                        const sig = keyPair.signSchnorr(hash);
+                        return Buffer.from(sig);
+                    },
+                };
+                psbt.signAllInputs(patchedKeyPair);
+                psbt.finalizeAllInputs();
+
+                const rawTx = psbt.extractTransaction().toHex();
+                const broadcastUrl =
+                    network === 'testnet'
+                        ? 'https://blockstream.info/testnet/api/tx'
+                        : 'https://blockstream.info/api/tx';
+                const resp = await axios.post(broadcastUrl, rawTx, {
+                    headers: { 'Content-Type': 'text/plain' },
+                });
+                txHash = resp.data as string;
             }
-            const keyPair = ECPair.fromWIF(privateKey, networkParams);
-            const patchedKeyPair = {
-                ...keyPair,
-                publicKey: Buffer.from(keyPair.publicKey),
-                sign: (hash: Buffer, lowR?: boolean) => {
-                    const sig = keyPair.sign(hash, lowR);
-                    return Buffer.from(sig);
-                },
-                signSchnorr: (hash: Buffer) => {
-                    const sig = keyPair.signSchnorr(hash);
-                    return Buffer.from(sig);
-                },
-            };
-            psbt.signAllInputs(patchedKeyPair);
-            psbt.finalizeAllInputs();
+            // USDT TRC20 (Tron) - NOT IMPLEMENTED
+            else if (chain === 'usdt_trc20') {
+                throw new Error(
+                    'USDT TRC20 transfers not implemented. Use TronWeb.'
+                );
+            } else {
+                throw new Error('Unsupported chain');
+            }
 
-            const rawTx = psbt.extractTransaction().toHex();
-            const broadcastUrl =
-                network === 'testnet'
-                    ? 'https://blockstream.info/testnet/api/tx'
-                    : 'https://blockstream.info/api/tx';
-            const resp = await axios.post(broadcastUrl, rawTx, {
-                headers: { 'Content-Type': 'text/plain' },
+            // Save transaction details to the database
+            await AppDataSource.getRepository(Transaction).save({
+                userId: req.user.id,
+                type: 'send',
+                amount,
+                chain: chain, // e.g., 'ethereum'
+                toAddress,
+                fromAddress: userAddress.address,
+                txHash,
+                status: 'confirmed',
+                createdAt: new Date(),
             });
-            txHash = resp.data as string;
-        }
-        // USDT TRC20 (Tron) - NOT IMPLEMENTED
-        else if (chain === 'usdt_trc20') {
-            throw new Error(
-                'USDT TRC20 transfers not implemented. Use TronWeb.'
-            );
-        } else {
-            throw new Error('Unsupported chain');
-        }
 
-        res.json({ message: 'Transaction sent successfully', txHash });
-    } catch (error) {
-        console.error('Send transaction error:', error);
-        res.status(500).json({
-            error: 'Failed to send transaction',
-            details:
-                typeof error === 'object' &&
-                error !== null &&
-                'message' in error
-                    ? (error as any).message
-                    : String(error),
-        });
+            // Create a notification for the sent transaction
+            await AppDataSource.getRepository(Notification).save({
+                userId: req.user.id,
+                type: NotificationType.SEND, // or just 'send'
+                title: 'Tokens Sent',
+                message: `You sent ${amount} ${chain.toUpperCase()} to ${toAddress}`,
+                details: {
+                    amount,
+                    chain,
+                    network,
+                    toAddress,
+                    fromAddress: userAddress.address,
+                    txHash,
+                },
+                isRead: false,
+                createdAt: new Date(),
+            });
+
+            res.json({ message: 'Transaction sent successfully', txHash });
+        } catch (error) {
+            console.error('Send transaction error:', error);
+            res.status(500).json({
+                error: 'Failed to send transaction',
+                details:
+                    typeof error === 'object' &&
+                    error !== null &&
+                    'message' in error
+                        ? (error as any).message
+                        : String(error),
+            });
+        }
     }
-}
 
     /**
      * Get user wallet addresses
@@ -961,9 +904,13 @@ static async sendTransaction(
                 address: addr.address,
             }));
 
+            // Sort addresses before sending
+            const sortedAddresses =
+                sortAddressesByChainOrder(simplifiedAddresses);
+
             res.status(200).json({
                 message: 'Testnet addresses retrieved successfully',
-                addresses: simplifiedAddresses,
+                addresses: sortedAddresses,
             });
         } catch (error) {
             console.error('Get testnet addresses error:', error);
@@ -1480,4 +1427,33 @@ static async sendTransaction(
             await addressRepo.save(addr);
         }
     }
+}
+
+// Add this helper at the top or inside the WalletController class
+function sortAddressesByChainOrder(addresses: any[]): any[] {
+    const order = ['eth', 'btc', 'sol', 'strk', 'usdterc20', 'usdttrc20'];
+    // Normalize chain names for sorting
+    const normalize = (chain: string) => {
+        switch (chain) {
+            case 'ethereum':
+                return 'eth';
+            case 'bitcoin':
+                return 'btc';
+            case 'solana':
+                return 'sol';
+            case 'starknet':
+                return 'strk';
+            case 'usdt_erc20':
+                return 'usdterc20';
+            case 'usdt_trc20':
+                return 'usdttrc20';
+            default:
+                return chain;
+        }
+    };
+    return addresses.sort(
+        (a, b) =>
+            order.indexOf(normalize(a.chain)) -
+            order.indexOf(normalize(b.chain))
+    );
 }

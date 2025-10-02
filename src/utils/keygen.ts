@@ -1,22 +1,20 @@
 // Generate and deploy a real ArgentX account (Starknet)
 
-
 import { Wallet as EthWallet } from 'ethers';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
 import { ECPairFactory } from 'ecpair';
 import { Keypair as SolKeypair } from '@solana/web3.js';
 import {
-  Account,
-  ec,
-  json,
-  stark,
-  RpcProvider,
-  hash,
-  CallData,
-  CairoOption,
-  CairoOptionVariant,
-  CairoCustomEnum,
+    Account,
+    ec,
+    RpcProvider,
+    hash,
+    CallData,
+    CairoOption,
+    CairoOptionVariant,
+    CairoCustomEnum,
+    uint256,
 } from 'starknet';
 import crypto from 'crypto';
 
@@ -147,64 +145,120 @@ export function generateStrkWallet(
 
 /**
  * Generates and deploys a real ArgentX account on Starknet.
- * @param nodeUrl The Starknet node URL (e.g., https://starknet-mainnet.infura.io/v3/...) 
+ * @param nodeUrl The Starknet node URL (e.g., https://starknet-mainnet.infura.io/v3/...)
  * @returns Object with privateKey, publicKey, precalculated address, and deployed address
  */
-export async function generateAndDeployArgentXAccount() {
-  const nodeUrl= "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/CP1fRkzqgL_nwb9DNNiKI"
-    // 1. Provider
+const faucetAccountAddress =
+    '0x0bbc850380670ae92b3a24a9ca533a20c03ced12b765b58ab6a2de4c6e04f52';
+const faucetPrivateKey = process.env.FAUCET_PRIVATE_KEY as string;
+const ethTokenAddress = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7'; // <-- Replace with actual ETH contract address
+
+async function fundStarknetAccount(
+    provider: RpcProvider,
+    recipient: string,
+    amountEth: string
+) {
+    const faucetAccount = new Account(
+        provider,
+        faucetAccountAddress,
+        faucetPrivateKey
+    );
+    const amountWei = BigInt(Number(amountEth) * 1e18).toString();
+    const amountUint256 = uint256.bnToUint256(amountWei);
+
+    const tx = await faucetAccount.execute({
+        contractAddress: ethTokenAddress,
+        entrypoint: 'transfer',
+        calldata: [recipient, amountUint256.low, amountUint256.high],
+    });
+    return tx;
+}
+
+async function waitForFunding(
+    provider: RpcProvider,
+    address: string,
+    minEth = 0.001,
+    timeoutMs = 120_000
+) {
+    const minWei = BigInt(Math.floor(minEth * 1e18));
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        try {
+            const result = await provider.callContract({
+                contractAddress: ethTokenAddress,
+                entrypoint: 'balanceOf',
+                calldata: [address],
+            });
+            const balance = uint256.uint256ToBN({
+                low: result[0],
+                high: result[1],
+            });
+            if (balance >= minWei) return true;
+        } catch (e) {}
+        await new Promise((res) => setTimeout(res, 4000));
+    }
+    throw new Error('Funding did not arrive in time');
+}
+
+export async function generateAndDeployArgentXAccount(
+    network: 'mainnet' | 'testnet' = 'testnet'
+) {
+    const nodeUrl =
+        network === 'mainnet'
+            ? `https://starknet-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+            : `https://starknet-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
     const provider = new RpcProvider({ nodeUrl });
 
-    // 2. ArgentX class hash (v0.4.0)
     const argentXaccountClassHash =
         '0x036078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f';
 
-    // 3. Generate private/public key
-    const privateKeyAX = stark.randomAddress();
-    console.log('AX_ACCOUNT_PRIVATE_KEY=', privateKeyAX);
-    const starkKeyPubAX = ec.starkCurve.getStarkKey(privateKeyAX);
-console.log('AX_ACCOUNT_PUBLIC_KEY=', starkKeyPubAX);
-    // const privateKey = ec.starkCurve.utils.randomPrivateKey();
-    // const publicKey = ec.starkCurve.getStarkKey(privateKey);
+    // Generate a valid private key as hex string
+    const privateKeyAX = ec.starkCurve.utils.randomPrivateKey();
+    const privateKeyHex = '0x' + Buffer.from(privateKeyAX).toString('hex');
+    const starkKeyPubAX = ec.starkCurve.getStarkKey(privateKeyHex);
 
-    // 4. Prepare constructor calldata (ArgentX expects Cairo enums)
-    // If you have the CairoCustomEnum and CairoOption types, use them. Otherwise, use plain publicKey for owner and 0 for guardian.
-    // For most backend use-cases, this is sufficient:
+    // Use Cairo enums for constructor calldata
+    const axSigner = new CairoCustomEnum({
+        Starknet: { pubkey: starkKeyPubAX },
+    });
+    const axGuardian = new CairoOption(CairoOptionVariant.None);
     const AXConstructorCallData = CallData.compile({
-        owner: starkKeyPubAX,
-        guardian: '0',
+        owner: axSigner,
+        guardian: axGuardian,
     });
 
-    // 5. Precompute address
     const AXcontractAddress = hash.calculateContractAddressFromHash(
-  starkKeyPubAX,
-  argentXaccountClassHash,
-  AXConstructorCallData,
-  0
+        starkKeyPubAX,
+        argentXaccountClassHash,
+        AXConstructorCallData,
+        0
     );
-    // 6. Create Account instance (not yet deployed)
-const accountAX = new Account(provider, AXcontractAddress, privateKeyAX);
 
-    // 7. Prepare deploy payload
-const deployAccountPayload = {
-  classHash: argentXaccountClassHash,
-  constructorCalldata: AXConstructorCallData,
-  contractAddress: AXcontractAddress,
-  addressSalt: starkKeyPubAX,
-};
-    // 8. Deploy account (requires fee/funded deployer)
-    // const { transaction_hash, contract_address } = await accountAX.deployAccount(deployAccountPayload);
-const { transaction_hash: AXdAth, contract_address: AXcontractFinalAddress } =
-  await accountAX.deployAccount(deployAccountPayload);
-console.log('✅ ArgentX wallet deployed at:', AXcontractFinalAddress);
+    // 1. Fund the new account
+    await fundStarknetAccount(provider, AXcontractAddress, '0.01'); // 0.01 ETH
 
+    // 2. Wait for funding to arrive
+    await waitForFunding(provider, AXcontractAddress, 0.001);
+
+    // 3. Deploy the account
+    const accountAX = new Account(provider, AXcontractAddress, privateKeyHex);
+    const deployAccountPayload = {
+        classHash: argentXaccountClassHash,
+        constructorCalldata: AXConstructorCallData,
+        contractAddress: AXcontractAddress,
+        addressSalt: starkKeyPubAX,
+    };
+
+    const {
+        transaction_hash: AXdAth,
+        contract_address: AXcontractFinalAddress,
+    } = await accountAX.deployAccount(deployAccountPayload);
 
     return {
-        privateKeyAX,
-        starkKeyPubAX,
+        privateKey: privateKeyHex,
+        publicKey: starkKeyPubAX,
         AXcontractAddress,
         deployedAddress: AXcontractFinalAddress,
         deployTxHash: AXdAth,
     };
 }
-

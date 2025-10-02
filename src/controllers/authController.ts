@@ -23,10 +23,9 @@ import {
     generateBtcWallet,
     generateSolWallet,
     generateStrkWallet,
+    generateAndDeployArgentXAccount
 } from '../utils/keygen';
-import {
-    createUserIfNotExists,
-} from '../services/userService';
+import { createUserIfNotExists } from '../services/userService';
 import { sendRegistrationEmails } from '../services/emailService';
 import { NotificationService } from '../services/notificationService';
 import { UserAddress } from '../entities/UserAddress';
@@ -84,7 +83,10 @@ export class AuthController {
             const eth = generateEthWallet();
             const btc = generateBtcWallet();
             const sol = generateSolWallet();
-            const strk = generateStrkWallet('argentx');
+           const strk =  generateStrkWallet();
+
+// const strkMainnet = await generateAndDeployArgentXAccount('mainnet');
+// const strkTestnet = await generateAndDeployArgentXAccount('testnet');            
 
             // For USDT, we'll use the same addresses as ETH (since USDT-ERC20 uses Ethereum addresses)
             // and generate separate Tron addresses for USDT-TRC20
@@ -128,6 +130,21 @@ export class AuthController {
                     address: sol.testnet.address,
                     encryptedPrivateKey: encrypt(sol.testnet.privateKey),
                 },
+
+//                 {
+//     chain: 'starknet',
+//     network: 'mainnet',
+//     address: strkMainnet.AXcontractAddress,
+//     encryptedPrivateKey: encrypt(strkMainnet.privateKeyAX),
+// },
+// {
+//     chain: 'starknet',
+//     network: 'testnet',
+//     address: strkTestnet.AXcontractAddress,
+//     encryptedPrivateKey: encrypt(strkTestnet.privateKeyAX),
+//}
+
+
                 {
                     chain: 'starknet',
                     network: 'mainnet',
@@ -229,15 +246,24 @@ export class AuthController {
 
             // Return user profile with addresses (no private keys)
             const userAddresses = addresses.map((a) => ({
-                chain: a.chain,
+                chain: AuthController.mapChainName(a.chain),
                 network: a.network,
                 address: a.address,
             }));
+            // Sort addresses before sending
+            const sortedAddresses = AuthController.sortAddresses(userAddresses);
+
+            // Always log sorted addresses for debugging
+            console.log(
+                '[DEBUG] Sorted addresses:',
+                JSON.stringify(sortedAddresses, null, 2)
+            );
+
             res.status(201).json({
                 message:
                     'User registered successfully. Please verify your email.',
                 userId: user.id,
-                addresses: userAddresses,
+                addresses: sortedAddresses,
             });
         } catch (error) {
             console.error('Registration error:', error);
@@ -908,5 +934,41 @@ export class AuthController {
             console.error('Reset password error:', error);
             res.status(500).json({ error: 'Internal server error' });
         }
+    }
+
+    /**
+     * Map chain names to internal format
+     * - Converts common chain names to internal identifiers
+     * - Used for consistency in address handling
+     */
+    static mapChainName(chain: string): string {
+        switch (chain) {
+            case 'ethereum':
+                return 'eth';
+            case 'bitcoin':
+                return 'btc';
+            case 'solana':
+                return 'sol';
+            case 'starknet':
+                return 'strk';
+            case 'usdt_erc20':
+                return 'usdterc20';
+            case 'usdt_trc20':
+                return 'usdttrc20';
+            default:
+                return chain;
+        }
+    }
+
+    /**
+     * Helper to sort addresses by desired chain order.
+     */
+    static sortAddresses(addresses: any[]): any[] {
+        const order = ['eth', 'btc', 'sol', 'strk', 'usdterc20', 'usdttrc20'];
+        return addresses.sort((a, b) => {
+            const aIndex = order.indexOf(a.chain);
+            const bIndex = order.indexOf(b.chain);
+            return aIndex - bIndex;
+        });
     }
 }

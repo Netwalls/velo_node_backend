@@ -11,16 +11,17 @@ import { ChainType, NetworkType } from '../types';
 
 @Entity('user_addresses')
 export class UserAddress {
-    @Column({ type: 'enum', enum: NetworkType, default: NetworkType.MAINNET })
-    network!: NetworkType;
-    @PrimaryGeneratedColumn('uuid')
-    id!: string;
-
     @Column({
         type: 'enum',
         enum: ChainType,
     })
     chain!: ChainType;
+
+    @Column({ type: 'enum', enum: NetworkType, default: NetworkType.MAINNET })
+    network!: NetworkType;
+
+    @PrimaryGeneratedColumn('uuid')
+    id!: string;
 
     @Column('text')
     address!: string;

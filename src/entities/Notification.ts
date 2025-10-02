@@ -39,6 +39,9 @@ export class Notification {
     @Column({ default: false })
     isRead!: boolean;
 
+    @Column({ default: false })
+    isArchived!: boolean;
+
     @CreateDateColumn()
     createdAt!: Date;
 }

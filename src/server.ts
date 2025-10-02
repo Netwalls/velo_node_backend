@@ -3,7 +3,16 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import { connectDB } from './config/database';
 import { PaymentMonitoringService } from './services/paymentMonitoringService';
-
+import authRouter from './routes/authRoute';
+import userRouter from './routes/userRoute';
+import walletRouter from './routes/walletRoute';
+import notificationRouter from './routes/notificationRoute';
+import historyRouter from './routes/historyRoute';
+import paymentRouter from './routes/payment';
+import fiatRoutes from './routes/fiatRoute';
+import transactionRoutes from './routes/transactionRoute';
+import merchantRoutes from './routes/merchantRoute';
+import deployRoute from './routes/deployRoute';
 // Load environment variables
 dotenv.config();
 
@@ -17,19 +26,16 @@ app.get('/', (req, res) => {
     res.send('Velo Backend Server is running!');
 });
 
-import authRouter from './routes/authRoute';
-import userRouter from './routes/userRoute';
-import walletRouter from './routes/walletRoute';
-import notificationRouter from './routes/notificationRoute';
-import historyRouter from './routes/historyRoute';
-import paymentRouter from './routes/payment';
-
+app.use('/fiat', fiatRoutes);
 app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/wallet', walletRouter);
 app.use('/notification', notificationRouter);
 app.use('/history', historyRouter);
 app.use('/payments', paymentRouter);
+app.use('/transactions', transactionRoutes);
+app.use('/merchant', merchantRoutes);
+app.use('/deploy', deployRoute);
 
 connectDB().then(() => {
     app.listen(PORT, () => {
@@ -38,5 +44,9 @@ connectDB().then(() => {
         // Start payment monitoring service
         PaymentMonitoringService.start();
         console.log('Payment monitoring service started');
+
+        // setInterval(() => {
+        //     MerchantController.detectDeposits();
+        // }, 60_000); // every 60 seconds
     });
 });

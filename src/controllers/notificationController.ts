@@ -242,4 +242,23 @@ export class NotificationController {
             res.status(500).json({ error: 'Internal server error' });
         }
     }
+
+    /**
+     * Clear all notifications for the authenticated user
+     */
+    static async clearAllNotifications(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const notificationRepo = AppDataSource.getRepository(Notification);
+            await notificationRepo.update(
+                { userId: req.user!.id },
+                { isArchived: true }
+            );
+            res.json({ message: 'All notifications cleared' });
+        } catch (error) {
+            res.status(500).json({ error: 'Failed to clear notifications' });
+        }
+    }
 }
