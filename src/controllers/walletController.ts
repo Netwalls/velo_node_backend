@@ -137,6 +137,14 @@ export class WalletController {
                         });
                     }
                 } else if (addr.chain === 'bitcoin') {
+                    console.log(
+                        `[DEBUG] Checking BTC balance for address: ${addr.address}`
+                    );
+                    console.log(`[DEBUG] Network: ${addr.network}`);
+                    console.log(
+                        `[DEBUG] Expected address: mymoYSk7wH2cSCJRNDfmMj8t3CTE1X87aK`
+                    );
+
                     try {
                         const url =
                             (addr.network === 'testnet'
@@ -332,6 +340,14 @@ export class WalletController {
                     }
                 } else if (addr.chain === 'bitcoin') {
                     // BTC balance using blockstream.info API
+                    console.log(
+                        `[DEBUG] Checking BTC balance for address: ${addr.address}`
+                    );
+                    console.log(`[DEBUG] Network: ${addr.network}`);
+                    console.log(
+                        `[DEBUG] Expected address: mymoYSk7wH2cSCJRNDfmMj8t3CTE1X87aK`
+                    );
+
                     try {
                         // Use blockstream.info public API to get BTC address stats
                         const url = `https://blockstream.info/api/address/${addr.address}`;
@@ -682,17 +698,61 @@ export class WalletController {
 
             // BTC
             else if (chain === 'bitcoin') {
+                console.log('[DEBUG] Bitcoin transaction start');
+                console.log(
+                    '[DEBUG] Decrypted private key:',
+                    privateKey,
+                    typeof privateKey
+                );
+
+                if (!privateKey) {
+                    throw new Error(
+                        'Private key is undefined after decryption'
+                    );
+                }
+
+                let privateKeyStr =
+                    typeof privateKey === 'string'
+                        ? privateKey
+                        : String(privateKey);
+                console.log('[DEBUG] Private key as string:', privateKeyStr);
+
                 const apiUrl =
                     network === 'testnet'
                         ? `https://blockstream.info/testnet/api/address/${userAddress.address}/utxo`
                         : `https://blockstream.info/api/address/${userAddress.address}/utxo`;
+
+                console.log('[DEBUG] Fetching UTXOs from:', apiUrl);
+
                 const utxos = (await axios.get(apiUrl)).data as Array<{
                     txid: string;
                     vout: number;
                     value: number;
                     status?: any;
-                    scriptpubkey: string;
+                    scriptpubkey?: string;
                 }>;
+
+                console.log('[DEBUG] Found UTXOs:', utxos.length);
+                console.log(
+                    '[DEBUG] UTXO details:',
+                    JSON.stringify(utxos, null, 2)
+                );
+
+                if (utxos.length === 0) {
+                    throw new Error('No UTXOs available for this address');
+                }
+
+                // Filter for confirmed UTXOs only
+                const confirmedUtxos = utxos.filter(
+                    (utxo) => utxo.status?.confirmed
+                );
+                console.log('[DEBUG] Confirmed UTXOs:', confirmedUtxos.length);
+
+                if (confirmedUtxos.length === 0) {
+                    throw new Error(
+                        'No confirmed UTXOs available. Please wait for your previous transactions to confirm.'
+                    );
+                }
 
                 const networkParams =
                     network === 'testnet'
@@ -701,60 +761,249 @@ export class WalletController {
                 const psbt = new bitcoin.Psbt({ network: networkParams });
 
                 let inputSum = 0;
-                for (const utxo of utxos) {
-                    psbt.addInput({
-                        hash: utxo.txid,
-                        index: utxo.vout,
-                        witnessUtxo: {
-                            script: Buffer.from(utxo.scriptpubkey, 'hex'),
-                            value: utxo.value,
-                        },
+                let addedInputs = 0;
+                const targetAmount = Math.round(Number(amount) * 1e8);
+                const estimatedFee = 1000; // 1000 satoshis fee
+
+                for (const utxo of confirmedUtxos) {
+                    console.log('[DEBUG] Processing confirmed UTXO:', {
+                        txid: utxo.txid,
+                        vout: utxo.vout,
+                        value: utxo.value,
+                        confirmed: utxo.status?.confirmed,
                     });
-                    inputSum += utxo.value;
-                    if (inputSum >= Math.round(Number(amount) * 1e8) + 1000)
-                        break;
-                }
-                if (inputSum < Math.round(Number(amount) * 1e8) + 1000) {
-                    throw new Error('Insufficient BTC balance');
+
+                    try {
+                        // Get the full transaction details
+                        const txUrl =
+                            network === 'testnet'
+                                ? `https://blockstream.info/testnet/api/tx/${utxo.txid}`
+                                : `https://blockstream.info/api/tx/${utxo.txid}`;
+
+                        console.log(
+                            '[DEBUG] Fetching transaction from:',
+                            txUrl
+                        );
+                        const txResp = await axios.get(txUrl);
+                        const txData = txResp.data as {
+                            vout: Array<{
+                                value: number;
+                                scriptpubkey_hex: string;
+                                scriptpubkey_type: string;
+                                scriptpubkey_address?: string;
+                            }>;
+                        };
+
+                        // Get the specific output
+                        const output = txData.vout[utxo.vout];
+                        if (!output) {
+                            console.log(
+                                '[DEBUG] Skipping UTXO - output not found at index',
+                                utxo.vout
+                            );
+                            continue;
+                        }
+
+                        if (!output.scriptpubkey_hex) {
+                            console.log(
+                                '[DEBUG] Skipping UTXO - missing scriptpubkey_hex'
+                            );
+                            continue;
+                        }
+
+                        console.log('[DEBUG] Output details:', {
+                            value: output.value,
+                            scriptpubkey_hex: output.scriptpubkey_hex,
+                            scriptpubkey_type: output.scriptpubkey_type,
+                            scriptpubkey_address: output.scriptpubkey_address,
+                        });
+
+                        // Verify the output value matches the UTXO value
+                        const outputValueSatoshis = Math.round(
+                            output.value * 1e8
+                        );
+                        if (outputValueSatoshis !== utxo.value) {
+                            console.log('[DEBUG] Value mismatch:', {
+                                utxoValue: utxo.value,
+                                outputValue: outputValueSatoshis,
+                            });
+                            // Use the UTXO value as it's more reliable
+                        }
+
+                        // Add the input to PSBT
+                        psbt.addInput({
+                            hash: utxo.txid,
+                            index: utxo.vout,
+                            witnessUtxo: {
+                                script: Buffer.from(
+                                    output.scriptpubkey_hex,
+                                    'hex'
+                                ),
+                                value: utxo.value, // Use UTXO value
+                            },
+                        });
+
+                        inputSum += utxo.value;
+                        addedInputs++;
+
+                        console.log('[DEBUG] Successfully added input:', {
+                            inputSum,
+                            addedInputs,
+                            target: targetAmount + estimatedFee,
+                            remaining: targetAmount + estimatedFee - inputSum,
+                        });
+
+                        // Check if we have enough for the transaction + fee
+                        if (inputSum >= targetAmount + estimatedFee) {
+                            console.log('[DEBUG] Sufficient inputs collected');
+                            break;
+                        }
+                    } catch (inputError) {
+                        console.log('[DEBUG] Error processing UTXO:', {
+                            txid: utxo.txid,
+                            vout: utxo.vout,
+                            error:
+                                inputError instanceof Error
+                                    ? inputError.message
+                                    : String(inputError),
+                        });
+                        continue; // Skip this UTXO and try the next one
+                    }
                 }
 
+                if (addedInputs === 0) {
+                    throw new Error(
+                        'No valid UTXOs found for this transaction. All UTXOs may be unconfirmed or invalid.'
+                    );
+                }
+
+                if (inputSum < targetAmount + estimatedFee) {
+                    throw new Error(
+                        `Insufficient BTC balance. Have: ${
+                            inputSum / 1e8
+                        } BTC, Need: ${
+                            (targetAmount + estimatedFee) / 1e8
+                        } BTC (including ${estimatedFee / 1e8} BTC fee)`
+                    );
+                }
+
+                console.log('[DEBUG] Adding outputs...');
+
+                // Add output to recipient
                 psbt.addOutput({
                     address: toAddress,
-                    value: Math.round(Number(amount) * 1e8),
+                    value: targetAmount,
                 });
-                const change =
-                    inputSum - Math.round(Number(amount) * 1e8) - 1000;
+
+                // Add change output if necessary
+                const change = inputSum - targetAmount - estimatedFee;
                 if (change > 0) {
+                    console.log(
+                        '[DEBUG] Adding change output:',
+                        change,
+                        'satoshis'
+                    );
                     psbt.addOutput({
                         address: userAddress.address,
                         value: change,
                     });
+                } else {
+                    console.log('[DEBUG] No change needed');
                 }
-                const keyPair = ECPair.fromWIF(privateKey, networkParams);
+
+                console.log('[DEBUG] Creating keypair...');
+
+                // Create keypair from private key
+                let keyPair;
+                try {
+                    // Try WIF format first
+                    keyPair = ECPair.fromWIF(privateKeyStr, networkParams);
+                    console.log(
+                        '[DEBUG] Successfully created keypair from WIF'
+                    );
+                } catch (wifError) {
+                    console.log('[DEBUG] WIF failed, trying hex format...');
+                    try {
+                        // Try hex format
+                        const cleanHex = privateKeyStr.startsWith('0x')
+                            ? privateKeyStr.slice(2)
+                            : privateKeyStr;
+
+                        if (cleanHex.length !== 64) {
+                            throw new Error(
+                                `Invalid hex length: ${cleanHex.length}, expected 64`
+                            );
+                        }
+
+                        const buffer = Buffer.from(cleanHex, 'hex');
+                        keyPair = ECPair.fromPrivateKey(buffer, {
+                            network: networkParams,
+                        });
+                        console.log(
+                            '[DEBUG] Successfully created keypair from hex'
+                        );
+                    } catch (hexError) {
+                        throw new Error(
+                            `Invalid Bitcoin private key format. WIF error: ${
+                                wifError instanceof Error
+                                    ? wifError.message
+                                    : String(wifError)
+                            }, Hex error: ${
+                                hexError instanceof Error
+                                    ? hexError.message
+                                    : String(hexError)
+                            }`
+                        );
+                    }
+                }
+
+                if (!keyPair) {
+                    throw new Error('Failed to create Bitcoin keypair');
+                }
+
+                console.log('[DEBUG] Signing transaction...');
+
+                // Sign the transaction
+                // Patch keyPair to ensure publicKey is a Buffer and sign/signSchnorr return Buffer for bitcoinjs-lib compatibility
                 const patchedKeyPair = {
                     ...keyPair,
                     publicKey: Buffer.from(keyPair.publicKey),
-                    sign: (hash: Buffer, lowR?: boolean) => {
+                    sign(hash: Buffer, lowR?: boolean) {
+                        // @ts-ignore
                         const sig = keyPair.sign(hash, lowR);
-                        return Buffer.from(sig);
+                        // If sig is already a Buffer, return as is; otherwise, convert
+                        return Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
                     },
-                    signSchnorr: (hash: Buffer) => {
+                    signSchnorr(hash: Uint8Array) {
+                        // @ts-ignore
                         const sig = keyPair.signSchnorr(hash);
-                        return Buffer.from(sig);
+                        // Always return Buffer for compatibility
+                        return Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
                     },
                 };
                 psbt.signAllInputs(patchedKeyPair);
                 psbt.finalizeAllInputs();
 
                 const rawTx = psbt.extractTransaction().toHex();
+                console.log(
+                    '[DEBUG] Transaction signed, raw tx length:',
+                    rawTx.length
+                );
+                console.log('[DEBUG] Broadcasting transaction...');
+
                 const broadcastUrl =
                     network === 'testnet'
                         ? 'https://blockstream.info/testnet/api/tx'
                         : 'https://blockstream.info/api/tx';
+
                 const resp = await axios.post(broadcastUrl, rawTx, {
                     headers: { 'Content-Type': 'text/plain' },
                 });
                 txHash = resp.data as string;
+                console.log(
+                    '[DEBUG] Transaction broadcast successful:',
+                    txHash
+                );
             }
             // USDT TRC20 (Tron) - NOT IMPLEMENTED
             else if (chain === 'usdt_trc20') {
@@ -770,7 +1019,8 @@ export class WalletController {
                 userId: req.user.id,
                 type: 'send',
                 amount,
-                chain: chain, // e.g., 'ethereum'
+                chain: chain,
+                network: network, // ✅ Add network field
                 toAddress,
                 fromAddress: userAddress.address,
                 txHash,
@@ -781,13 +1031,13 @@ export class WalletController {
             // Create a notification for the sent transaction
             await AppDataSource.getRepository(Notification).save({
                 userId: req.user.id,
-                type: NotificationType.SEND, // or just 'send'
+                type: NotificationType.SEND,
                 title: 'Tokens Sent',
                 message: `You sent ${amount} ${chain.toUpperCase()} to ${toAddress}`,
                 details: {
                     amount,
                     chain,
-                    network,
+                    network, // ✅ Add network to notification details
                     toAddress,
                     fromAddress: userAddress.address,
                     txHash,
