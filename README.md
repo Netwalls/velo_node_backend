@@ -9,6 +9,7 @@
 -   [Authentication Endpoints](#authentication-endpoints)
 -   [User Management](#user-management)
 -   [Wallet Endpoints](#wallet-endpoints)
+-   [Split Payment System](#split-payment-system)
 -   [QR Payment System](#qr-payment-system)
 -   [Conversion & Exchange](#conversion--exchange)
 -   [Merchant Payments](#merchant-payments)
@@ -23,7 +24,7 @@
 
 ## Overview
 
-The Velo API provides comprehensive multi-chain wallet functionality supporting Ethereum (ETH), Bitcoin (BTC), Solana (SOL), Starknet (STRK), and USDT (ERC20/TRC20). This RESTful API enables user registration, authentication, wallet management, **QR code payments**, **currency conversion**, **merchant payment processing**, notifications, transaction history, **automatic deposit detection**, and **sending funds to any address**.
+The Velo API provides comprehensive multi-chain wallet functionality supporting Ethereum (ETH), Bitcoin (BTC), Solana (SOL), Starknet (STRK), and USDT (ERC20/TRC20). This RESTful API enables user registration, authentication, wallet management, **Split Payments for Bulk Transactions**, **QR code payments**, **currency conversion**, **merchant payment processing**, notifications, transaction history, **automatic deposit detection**, and **sending funds to any address**.
 
 ## Base URL
 
@@ -786,6 +787,392 @@ If you have multiple addresses per chain, you can add:
 
 ```json
 { "message": "Deposit check complete" }
+```
+
+---
+
+# Split Payment System
+
+The Split Payment System allows you to create reusable payment templates for sending money to multiple recipients at once. Perfect for payroll, family allowances, or any recurring bulk payments.
+
+## 1. Create Split Payment Template
+
+**Endpoint:** `POST /split-payment/create`
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Description:** Create a reusable split payment template that can be executed multiple times. Perfect for recurring payments like monthly salaries or family allowances.
+
+**Request Body:**
+
+```json
+{
+    "title": "Family Monthly Allowance",
+    "description": "Monthly allowance for family members",
+    "chain": "ethereum", // "ethereum", "bitcoin", "solana", "usdt_erc20"
+    "network": "testnet", // or "mainnet"
+    "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
+    "recipients": [
+        {
+            "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+            "amount": "0.1",
+            "name": "John (Son)",
+            "email": "john@family.com"
+        },
+        {
+            "address": "0x456...789",
+            "amount": "0.15",
+            "name": "Mary (Daughter)",
+            "email": "mary@family.com"
+        },
+        {
+            "address": "0x789...abc",
+            "amount": "0.05",
+            "name": "Mom",
+            "email": "mom@family.com"
+        }
+    ]
+}
+```
+
+**Response (201):**
+
+```json
+{
+    "message": "Split payment template created successfully",
+    "splitPayment": {
+        "id": "split_1234567890abcdef",
+        "title": "Family Monthly Allowance",
+        "description": "Monthly allowance for family members",
+        "totalAmount": "0.3",
+        "totalRecipients": 3,
+        "chain": "ethereum",
+        "network": "testnet",
+        "status": "active",
+        "executionCount": 0,
+        "createdAt": "2025-10-03T15:30:00.000Z"
+    },
+    "recipients": [
+        {
+            "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+            "name": "John (Son)",
+            "amount": "0.1"
+        },
+        {
+            "address": "0x456...789",
+            "name": "Mary (Daughter)",
+            "amount": "0.15"
+        },
+        {
+            "address": "0x789...abc",
+            "name": "Mom",
+            "amount": "0.05"
+        }
+    ]
+}
+```
+
+---
+
+## 2. Execute Split Payment
+
+**Endpoint:** `POST /split-payment/:id/execute`
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Description:** Execute a split payment template. Can be executed multiple times - perfect for recurring payments like monthly salaries.
+
+**Response (200):**
+
+```json
+{
+    "message": "Split payment executed successfully",
+    "execution": {
+        "id": "exec_1234567890abcdef",
+        "status": "completed",
+        "total": 3,
+        "successful": 3,
+        "failed": 0,
+        "executionNumber": 1
+    },
+    "splitPayment": {
+        "id": "split_1234567890abcdef",
+        "title": "Family Monthly Allowance",
+        "totalExecutions": 1,
+        "lastExecutedAt": "2025-10-03T15:45:00.000Z"
+    },
+    "results": [
+        {
+            "recipient": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+            "name": "John (Son)",
+            "amount": "0.1",
+            "success": true,
+            "txHash": "0x1234567890abcdef...",
+            "error": null
+        },
+        {
+            "recipient": "0x456...789",
+            "name": "Mary (Daughter)",
+            "amount": "0.15",
+            "success": true,
+            "txHash": "0x2345678901bcdef0...",
+            "error": null
+        },
+        {
+            "recipient": "0x789...abc",
+            "name": "Mom",
+            "amount": "0.05",
+            "success": true,
+            "txHash": "0x3456789012cdef01...",
+            "error": null
+        }
+    ]
+}
+```
+
+---
+
+## 3. Get Split Payment Templates
+
+**Endpoint:** `GET /split-payment/templates`
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+
+-   `status` (optional): Filter by status (active, inactive) - default: active
+
+**Description:** Get all your split payment templates (reusable payment setups).
+
+**Response (200):**
+
+```json
+{
+    "message": "Split payment templates retrieved successfully",
+    "templates": [
+        {
+            "id": "split_1234567890abcdef",
+            "title": "Family Monthly Allowance",
+            "description": "Monthly allowance for family members",
+            "chain": "ethereum",
+            "network": "testnet",
+            "currency": "ETH",
+            "totalAmount": "0.3",
+            "totalRecipients": 3,
+            "executionCount": 5,
+            "status": "active",
+            "createdAt": "2025-09-03T15:30:00.000Z",
+            "lastExecutedAt": "2025-10-03T15:45:00.000Z",
+            "recipientCount": 3,
+            "canExecute": true
+        },
+        {
+            "id": "split_2345678901bcdef0",
+            "title": "Team Weekly Salary",
+            "description": "Weekly salary for development team",
+            "chain": "solana",
+            "network": "testnet",
+            "currency": "SOL",
+            "totalAmount": "50.0",
+            "totalRecipients": 8,
+            "executionCount": 12,
+            "status": "active",
+            "createdAt": "2025-08-15T10:00:00.000Z",
+            "lastExecutedAt": "2025-10-02T16:00:00.000Z",
+            "recipientCount": 8,
+            "canExecute": true
+        }
+    ],
+    "totalTemplates": 2
+}
+```
+
+---
+
+## 4. Get Execution History
+
+**Endpoint:** `GET /split-payment/:id/executions`
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query Parameters:**
+
+-   `page` (optional): Page number (default: 1)
+-   `limit` (optional): Items per page (default: 20)
+
+**Description:** Get execution history for a specific split payment template.
+
+**Response (200):**
+
+```json
+{
+    "message": "Execution history retrieved successfully",
+    "splitPayment": {
+        "id": "split_1234567890abcdef",
+        "title": "Family Monthly Allowance",
+        "totalExecutions": 5
+    },
+    "executions": [
+        {
+            "id": "exec_1234567890abcdef",
+            "status": "completed",
+            "totalAmount": "0.3",
+            "totalRecipients": 3,
+            "successfulPayments": 3,
+            "failedPayments": 0,
+            "totalFees": "0.003",
+            "createdAt": "2025-10-03T15:45:00.000Z",
+            "completedAt": "2025-10-03T15:46:30.000Z",
+            "resultCount": 3
+        },
+        {
+            "id": "exec_2345678901bcdef0",
+            "status": "completed",
+            "totalAmount": "0.3",
+            "totalRecipients": 3,
+            "successfulPayments": 3,
+            "failedPayments": 0,
+            "totalFees": "0.003",
+            "createdAt": "2025-09-03T15:45:00.000Z",
+            "completedAt": "2025-09-03T15:46:15.000Z",
+            "resultCount": 3
+        }
+    ],
+    "pagination": {
+        "page": 1,
+        "limit": 20,
+        "total": 5,
+        "totalPages": 1
+    }
+}
+```
+
+---
+
+## 5. Toggle Split Payment Status
+
+**Endpoint:** `PATCH /split-payment/:id/toggle`
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Description:** Activate or deactivate a split payment template. Inactive templates cannot be executed.
+
+**Response (200):**
+
+```json
+{
+    "message": "Split payment activated successfully",
+    "splitPayment": {
+        "id": "split_1234567890abcdef",
+        "title": "Family Monthly Allowance",
+        "status": "active",
+        "canExecute": true
+    }
+}
+```
+
+---
+
+## Split Payment Features
+
+### ✨ **Chain Support**
+
+-   **Ethereum**: Individual transactions per recipient
+-   **Bitcoin**: Individual transactions per recipient
+-   **Solana**: Batch transaction (all recipients in one transaction - most efficient!)
+-   **USDT ERC20**: Individual transactions per recipient
+
+### 🔄 **Reusable Templates**
+
+-   Create once, execute multiple times
+-   Perfect for recurring payments (monthly salaries, family allowances)
+-   Track execution count and history
+
+### 📊 **Execution Tracking**
+
+-   Detailed execution history
+-   Individual recipient success/failure tracking
+-   Transaction hash for each payment
+-   Fee tracking and reporting
+
+### 🔔 **Automatic Notifications**
+
+-   Notification when split payment is created
+-   Notification when split payment is executed
+-   Detailed execution results in notifications
+
+### 💰 **Cost Efficiency**
+
+-   **Solana**: Most efficient - all payments in single transaction
+-   **Ethereum/Bitcoin**: Individual transactions (higher fees but more reliable)
+-   **Fee tracking**: Monitor total costs per execution
+
+### 👥 **Recipient Management**
+
+-   Support for 5 to 1000 recipients per split
+-   Include recipient names and emails
+-   Individual recipient tracking
+-   Activate/deactivate specific recipients
+
+---
+
+## Split Payment Use Cases
+
+### 👨‍👩‍👧‍👦 **Family Allowances**
+
+```bash
+curl -X POST "http://localhost:5500/split-payment/create" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Kids Weekly Allowance",
+    "chain": "ethereum",
+    "network": "testnet",
+    "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
+    "recipients": [
+      {"address": "0x742d35...", "amount": "0.02", "name": "Alex (Age 16)"},
+      {"address": "0x456...", "amount": "0.015", "name": "Emma (Age 14)"},
+      {"address": "0x789...", "amount": "0.01", "name": "Jake (Age 12)"}
+    ]
+  }'
+```
+
+### 💼 **Team Salaries**
+
+```bash
+curl -X POST "http://localhost:5500/split-payment/create" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Development Team Monthly Salary",
+    "chain": "solana",
+    "network": "testnet",
+    "fromAddress": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+    "recipients": [
+      {"address": "ADDR1", "amount": "100", "name": "Senior Developer", "email": "dev1@company.com"},
+      {"address": "ADDR2", "amount": "80", "name": "Frontend Developer", "email": "dev2@company.com"},
+      {"address": "ADDR3", "amount": "90", "name": "Backend Developer", "email": "dev3@company.com"}
+    ]
+  }'
+```
+
+### 🎁 **Crypto Airdrops**
+
+```bash
+curl -X POST "http://localhost:5500/split-payment/create" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Community Airdrop October 2025",
+    "chain": "usdt_erc20",
+    "network": "testnet",
+    "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
+    "recipients": [
+      {"address": "0x742d35...", "amount": "50", "name": "Early Supporter 1"},
+      {"address": "0x456...", "amount": "50", "name": "Early Supporter 2"},
+      {"address": "0x789...", "amount": "25", "name": "Community Member"}
+    ]
+  }'
 ```
 
 ---
@@ -1659,7 +2046,34 @@ curl -X GET "http://localhost:5500/wallet/addresses" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-## 5. Generate QR Code for Payment
+## 5. Create Split Payment for Family Allowance
+
+```bash
+curl -X POST "http://localhost:5500/split-payment/create" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Family Monthly Allowance",
+    "description": "Monthly allowance for family members",
+    "chain": "ethereum",
+    "network": "testnet",
+    "fromAddress": "YOUR_ETH_ADDRESS",
+    "recipients": [
+      {"address": "0x742d35...", "amount": "0.1", "name": "John (Son)"},
+      {"address": "0x456...", "amount": "0.15", "name": "Mary (Daughter)"},
+      {"address": "0x789...", "amount": "0.05", "name": "Mom"}
+    ]
+  }'
+```
+
+## 6. Execute Split Payment
+
+```bash
+curl -X POST "http://localhost:5500/split-payment/SPLIT_ID/execute" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+## 7. Generate QR Code for Payment
 
 ```bash
 curl -X POST "http://localhost:5500/qr/generate" \
@@ -1673,200 +2087,8 @@ curl -X POST "http://localhost:5500/qr/generate" \
   }'
 ```
 
-## 6. Get Exchange Rates
+## 8. Get Exchange Rates
 
 ```bash
 curl -X GET "http://localhost:5500/conversion/rates?from=BTC&to=ETH&amount=1.0"
 ```
-
-## 7. Send Transaction
-
-```bash
-curl -X POST "http://localhost:5500/wallet/send" \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "chain": "bitcoin",
-    "network": "testnet",
-    "toAddress": "mnWBTqGfj295Qq8uuzCf7ZMmfETagJ6wSZ",
-    "amount": "0.00001"
-  }'
-```
-
----
-
-# Supported Chains & Networks
-
-| Chain          | Mainnet | Testnet      | Native Currency | Notes                     |
-| -------------- | ------- | ------------ | --------------- | ------------------------- |
-| **Ethereum**   | ✅      | ✅ (Sepolia) | ETH             | Full transaction support  |
-| **Bitcoin**    | ✅      | ✅           | BTC             | P2PKH and SegWit support  |
-| **Solana**     | ✅      | ✅ (Devnet)  | SOL             | High-speed transactions   |
-| **Starknet**   | ✅      | ✅ (Sepolia) | STRK            | Layer 2 scaling solution  |
-| **USDT ERC20** | ✅      | ✅           | USDT            | Ethereum-based stablecoin |
-| **USDT TRC20** | 🚧      | 🚧           | USDT            | Tron-based (planned)      |
-
----
-
-# New Features
-
-## 🎯 QR Code Payments
-
--   **Generate QR codes** for receiving payments
--   **Scan QR codes** to parse payment details
--   **Execute payments** using QR data
--   **Track payment status** in real-time
--   **Expiration handling** for security
-
-## 💱 Currency Conversion
-
--   **Real-time exchange rates** from multiple sources
--   **Conversion quotes** with fees and slippage
--   **Execute conversions** between supported currencies
--   **Conversion history** tracking
--   **Multiple currency support**
-
-## 🏪 Merchant Payments
-
--   **Create payment requests** for businesses
--   **QR code generation** for merchant payments
--   **Order tracking** with custom order IDs
--   **Webhook notifications** for payment updates
--   **Customer information** collection
-
-## 📋 Enhanced KYC
-
--   **Document upload** support (passport, ID, utility bills)
--   **KYC status tracking** with progress indicators
--   **Multi-step verification** process
--   **Document status management**
-
-## 🔔 Improved Notifications
-
--   **Enhanced notification types** (deposit, send, conversion, merchant)
--   **Rich notification details** with transaction info
--   **Bulk operations** (mark all as read)
--   **Notification filtering** by type and status
--   **Delete notifications** capability
-
-## 📊 Advanced Transaction History
-
--   **Enhanced filtering** by date, chain, network, type
--   **Transaction summaries** with totals
--   **Detailed transaction view** with metadata
--   **Fee breakdown** information
--   **Confirmation tracking**
-
----
-
-# Automatic Features
-
--   **Auto-Generated Wallets:** Upon registration, the system automatically generates wallet addresses for all supported chains on both mainnet and testnet, and stores encrypted private keys.
--   **Auto-Notifications:** The system automatically creates notifications for deposits, sends, conversions, and merchant payments.
--   **Deposit Monitoring:** The backend continuously monitors for incoming payments and creates notifications.
--   **QR Code Management:** Automatic QR code generation and validation for payments.
--   **Exchange Rate Updates:** Real-time rate fetching from multiple sources.
-
----
-
-# Rate Limiting & Security
-
--   **JWT Access Tokens**: Expire after 30 minutes
--   **Refresh Tokens**: Expire after 7 days
--   **OTP Codes**: Expire after 15 minutes
--   **Password Reset Tokens**: Expire after 15 minutes
--   **QR Payment Codes**: Configurable expiration (default 30 minutes)
--   **Conversion Quotes**: Expire after 15 minutes
--   All sensitive data is encrypted
--   Private keys are encrypted and stored securely
--   Input validation on all endpoints
--   CORS enabled for cross-origin requests
--   Username uniqueness validation
--   Bank details encryption support
--   File upload validation for KYC documents
-
----
-
-# API Response Codes
-
-| Code  | Description           | Usage                                             |
-| ----- | --------------------- | ------------------------------------------------- |
-| `200` | OK                    | Successful GET, PUT, PATCH requests               |
-| `201` | Created               | Successful POST requests (registration, creation) |
-| `400` | Bad Request           | Invalid input, validation errors                  |
-| `401` | Unauthorized          | Missing or invalid authentication                 |
-| `403` | Forbidden             | Access denied, insufficient permissions           |
-| `404` | Not Found             | Resource not found                                |
-| `409` | Conflict              | Duplicate resource (email, username)              |
-| `422` | Unprocessable Entity  | Valid input but business logic failure            |
-| `429` | Too Many Requests     | Rate limiting exceeded                            |
-| `500` | Internal Server Error | Server-side errors                                |
-
----
-
-# Webhook Events (For Merchants)
-
-## Payment Events
-
--   `payment.created` - New payment request created
--   `payment.completed` - Payment successfully processed
--   `payment.failed` - Payment failed or expired
--   `payment.expired` - Payment request expired
-
-## Conversion Events
-
--   `conversion.completed` - Currency conversion completed
--   `conversion.failed` - Conversion failed
-
-**Webhook Payload Example:**
-
-```json
-{
-    "event": "payment.completed",
-    "timestamp": "2025-10-03T15:45:00.000Z",
-    "data": {
-        "paymentId": "pay_1234567890abcdef",
-        "merchantId": "merchant_12345",
-        "amount": "25.99",
-        "currency": "USDT",
-        "txHash": "0x1234567890abcdef...",
-        "orderId": "ORDER_2025_001"
-    }
-}
-```
-
----
-
-# Support
-
-For technical support or questions about the Velo API, please contact the development team.
-
-**API Version:** 2.0  
-**Last Updated:** October 2025  
-**Documentation Version:** 2.1.0
-
----
-
-# Changelog
-
-## Version 2.0.0 (October 2025)
-
--   ✅ Added QR code payment system
--   ✅ Added currency conversion features
--   ✅ Added merchant payment processing
--   ✅ Enhanced KYC document management
--   ✅ Improved notification system
--   ✅ Advanced transaction history with filtering
--   ✅ Real-time exchange rate integration
--   ✅ Webhook support for merchants
--   ✅ Bitcoin transaction improvements (P2PKH and SegWit)
--   ✅ Enhanced security and validation
-
-## Version 1.0.0 (September 2025)
-
--   ✅ Initial release with basic wallet functionality
--   ✅ Multi-chain support (ETH, BTC, SOL, STRK, USDT)
--   ✅ User authentication and management
--   ✅ Basic transaction sending and receiving
--   ✅ Deposit monitoring
--   ✅ Basic notification system
