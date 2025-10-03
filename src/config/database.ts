@@ -9,7 +9,11 @@ import { RefreshToken } from '../entities/RefreshToken';
 import { Notification } from '../entities/Notification';
 import { Transaction } from '../entities/Transaction';
 import { Conversion } from '../entities/Conversion';
-import { MerchantPayment } from '../entities/MerchantPayment'; // <-- add this import
+import { MerchantPayment } from '../entities/MerchantPayment'; 
+import { SplitPayment } from '../entities/SplitPayment';
+import { SplitPaymentRecipient } from '../entities/SplitPaymentRecipient';
+import { SplitPaymentExecution } from '../entities/SplitPaymentExecution'; // Missing import!
+import { SplitPaymentExecutionResult } from '../entities/SplitPaymentExecutionResult';
 
 
 export const AppDataSource = new DataSource({
@@ -26,11 +30,15 @@ export const AppDataSource = new DataSource({
         Transaction,
         Conversion,
         MerchantPayment,
+        SplitPayment,
+        SplitPaymentExecution,
+        SplitPaymentRecipient,
+        SplitPaymentExecutionResult
     ],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
     // ssl: false,
-    ssl: { rejectUnauthorized: false },
+    // ssl: { rejectUnauthorized: false },
 });
 export const connectDB = async (): Promise<void> => {
     try {

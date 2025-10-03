@@ -13,6 +13,8 @@ import fiatRoutes from './routes/fiatRoute';
 import transactionRoutes from './routes/transactionRoute';
 import merchantRoutes from './routes/merchantRoute';
 import deployRoute from './routes/deployRoute';
+import splitPaymentRoutes from './routes/splitPaymentRoute';
+
 // Load environment variables
 dotenv.config();
 
@@ -36,6 +38,7 @@ app.use('/payments', paymentRouter);
 app.use('/transactions', transactionRoutes);
 app.use('/merchant', merchantRoutes);
 app.use('/deploy', deployRoute);
+app.use('/split-payment', splitPaymentRoutes);
 
 connectDB().then(() => {
     app.listen(PORT, () => {
