@@ -11,6 +11,8 @@ export enum MerchantPaymentStatus {
     PENDING = 'pending',
     COMPLETED = 'completed',
     FAILED = 'failed',
+
+    CANCELLED = 'cancelled',
 }
 
 @Entity('merchant_payments')
@@ -71,4 +73,5 @@ export class MerchantPayment {
     @Column({ nullable: true })
     network!: string; // e.g., 'mainnet', 'testnet'
     updatedAt?: Date;
+    transactionHash?: string;
 }

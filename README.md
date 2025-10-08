@@ -1181,7 +1181,7 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ## 1. Generate QR Code for Payment
 
-**Endpoint:** `POST /qr/generate`
+**Endpoint:** `POST /merchant/create`
 
 **Headers:** `Authorization: Bearer <token>`
 
@@ -1191,11 +1191,10 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "chain": "ethereum",
-    "network": "testnet",
-    "amount": "0.1",
-    "description": "Payment for coffee",
-    "expiresInMinutes": 30
+  "amount": 0.0001,
+  "chain": "ethereum",
+  "network": "testnet",
+  "ethAddress": "0x13f841349C896Bb5aFA689E6007DD5219F3984b0"
 }
 ```
 
@@ -1203,18 +1202,25 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "QR code generated successfully",
-    "qrData": {
-        "paymentId": "qr_pay_1234567890abcdef",
-        "recipientAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-        "chain": "ethereum",
-        "network": "testnet",
-        "amount": "0.1",
-        "description": "Payment for coffee",
-        "createdAt": "2025-10-03T15:30:00.000Z",
-        "expiresAt": "2025-10-03T16:00:00.000Z",
-        "qrCodeString": "velo://pay?id=qr_pay_1234567890abcdef&chain=ethereum&network=testnet&amount=0.1&to=0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47&desc=Payment%20for%20coffee"
-    }
+  "message": "Payment request created",
+  "payment": {
+    "userId": "85a690a3-47b6-41a0-b0cd-acb5df9d55df",
+    "address": "0x13f841349C896Bb5aFA689E6007DD5219F3984b0",
+    "amount": 0.0001,
+    "status": "pending",
+    "ethAddress": "0x13f841349C896Bb5aFA689E6007DD5219F3984b0",
+    "chain": "ethereum",
+    "network": "testnet",
+    "txHash": null,
+    "completedAt": null,
+    "btcAddress": null,
+    "solAddress": null,
+    "strkAddress": null,
+    "usdtErc20Address": null,
+    "usdtTrc20Address": null,
+    "id": "033a8daa-7217-4cca-94ce-b44c2cfb4cbc",
+    "createdAt": "2025-10-08T08:34:18.948Z"
+  }
 }
 ```
 

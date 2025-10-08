@@ -53,5 +53,6 @@ export enum NotificationType {
     QR_PAYMENT_RECEIVED = 'qr_payment_received',
     SEND = "Payment sent",
         DEPLOY = 'DEPLOY',
-        QR_PAYMENT_COMPLETED="QR_PAYMENT_COMPLETED"
+        QR_PAYMENT_COMPLETED="QR_PAYMENT_COMPLETED",
+        CANCELLED="CANCELLED"
 }
