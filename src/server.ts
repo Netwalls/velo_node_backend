@@ -11,11 +11,10 @@ import historyRouter from './routes/historyRoute';
 import paymentRouter from './routes/payment';
 import fiatRoutes from './routes/fiatRoute';
 import transactionRoutes from './routes/transactionRoute';
-import merchantRoutes from './routes/merchantRoute';
 import splitPaymentRoutes from './routes/splitPaymentRoute';
 import { WalletController } from './controllers/walletController';
 import strkRoute from "./routes/strkDeploymentRoute";
-import newmer from './routes/qrpaymentRoute';
+import qrpaymentRoute from './routes/qrpaymentRoute';
 
 // Load environment variables
 dotenv.config();
@@ -38,10 +37,9 @@ app.use('/notification', notificationRouter);
 app.use('/history', historyRouter);
 app.use('/payments', paymentRouter);
 app.use('/transactions', transactionRoutes);
-app.use('/merchant', merchantRoutes);
+app.use('/merchant', qrpaymentRoute);
 app.use('/split-payment', splitPaymentRoutes);
 app.use('/checkdeploy',strkRoute );
-app.use('/new', newmer);
 
 connectDB().then(() => {
     app.listen(PORT, () => {

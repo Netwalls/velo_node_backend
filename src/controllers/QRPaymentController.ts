@@ -1485,7 +1485,9 @@ private static async checkStarknetPayment(
                 }
             );
 
-            const transfers = response.data?.items ?? [];
+            const transfers = (response.data && typeof response.data === 'object' && 'items' in response.data)
+                ? (response.data as { items: any[] }).items
+                : [];
             if (process.env.NODE_ENV !== 'production') {
                 console.log(`[STRK] Voyager returned ${transfers.length} transfers`);
             }
@@ -1559,7 +1561,7 @@ private static async checkStarknetPayment(
                     }
                 );
 
-                const data = response.data || {};
+                const data: any = response.data || {};
                 let events = data.result?.events ?? data.events ?? [];
 
                 // Fallback: try without keys filter if no results
@@ -1578,7 +1580,7 @@ private static async checkStarknetPayment(
                         }
                     );
                     const fallbackData = fallbackResponse.data || {};
-                    events = fallbackData.result?.events ?? fallbackData.events ?? [];
+                    events = (fallbackData as any).result?.events ?? (fallbackData as any).events ?? [];
                 }
 
                 if (process.env.NODE_ENV !== 'production') {
