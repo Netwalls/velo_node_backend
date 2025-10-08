@@ -4,104 +4,318 @@ import { User } from '../entities/User';
 import { Request, Response } from 'express';
 import { UserAddress } from '../entities/UserAddress';
 import { ChainType, NetworkType } from '../types';
+import crypto from 'crypto';
 
 export class FiatController {
-    static async initiateDeposit(req: Request, res: Response) {
-        const { amount, email } = req.body; // amount in NGN, email of user
+    /**
+     * Initiate a Fincra pay-in (deposit) for a user.
+     * Replace endpoint paths/fields with the exact ones from Fincra docs.
+     */
+    static async initiateFincraDeposit(req: Request, res: Response) {
+        const { amount, email, callbackUrl } = req.body; // amount in NGN (number)
+        if (!amount || !email)
+            return res.status(400).json({ error: 'amount and email required' });
 
         try {
+            const payload = {
+                amount: Math.round(amount * 100), // if API expects kobo
+                currency: 'NGN',
+                customer_email: email,
+                callback_url: callbackUrl || process.env.FINCRA_CALLBACK_URL,
+                // add any required fields: provider (bank), account_reference, etc.
+            };
+
             const response = await axios.post(
-                'https://api.paystack.co/transaction/initialize',
-                {
-                    email,
-                    amount: amount * 100, // Paystack expects kobo
-                },
+                `${process.env.FINCRA_BASE_URL}/payins`, // replace with correct path
+                payload,
                 {
                     headers: {
-                        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+                        Authorization: `Bearer ${process.env.FINCRA_API_KEY}`,
                         'Content-Type': 'application/json',
                     },
                 }
             );
-            const data = response.data as { data: { authorization_url: string } };
-            res.json({
-                authorization_url: data.data.authorization_url,
-            });
-        } catch (error) {
-            res.status(500).json({
-                error: 'Failed to initiate Paystack payment',
-            });
+
+            // Inspect provider response to extract payment_url or reference
+            return res.json({ data: response.data });
+        } catch (err) {
+            console.error('Fincra deposit init error', err);
+            return res
+                .status(500)
+                .json({ error: 'Failed to initiate deposit' });
         }
     }
 
-    static async paystackWebhook(req: Request, res: Response) {
+    /**
+     * Webhook endpoint for Fincra events (payin / payout status).
+     * Configure your Fincra webhook URL to point here.
+     */
+    static async fincraWebhook(req: Request, res: Response) {
         try {
-            const event = req.body;
+            const signatureHeader = req.headers['x-fincra-signature'] as
+                | string
+                | undefined; // replace header name if different
+            const rawBody = JSON.stringify(req.body); // express must not have parsed/modified body for exact verification
+            const secret = process.env.FINCRA_WEBHOOK_SECRET || '';
 
-            // Optionally: verify Paystack signature here for security
-
-            if (event.event === 'charge.success') {
-                const { email, amount } = event.data;
-
-                // 1. Find user by email
-                const userRepo = AppDataSource.getRepository(User);
-                const user = await userRepo.findOne({ where: { email } });
-
-                if (!user) {
-                    console.log(
-                        `User with email ${email} not found for Paystack webhook.`
-                    );
-                    return res.sendStatus(200);
+            if (secret && signatureHeader) {
+                const computed = crypto
+                    .createHmac('sha256', secret)
+                    .update(rawBody)
+                    .digest('hex');
+                if (computed !== signatureHeader) {
+                    console.warn('Invalid fincra webhook signature');
+                    return res.status(400).send('invalid signature');
                 }
-
-                // 2. Get real ETH/NGN rate
-                const ethPriceNgn = await FiatController.getEthPriceInNGN();
-
-                // 3. Convert NGN to ETH
-                const amountNgn = amount / 100; // kobo to NGN
-                const cryptoAmount = amountNgn / ethPriceNgn;
-
-                // 4. Credit user's ETH wallet
-                if (user.id) {
-                    await FiatController.creditUserEthWallet(user.id, cryptoAmount);
-                } else {
-                    console.error(`User ID is undefined for user with email ${email}`);
-                    return res.sendStatus(200);
-                }
-
-                // 5. Log transaction
-                console.log(
-                    `Paystack deposit successful for user ${email}: NGN ${amountNgn}, credited ${cryptoAmount} ETH`
-                );
-
-                return res.sendStatus(200);
             }
+
+            const event = req.body;
+            // Example handling:
+            // if (event.type === 'payin.success') { credit user; }
+            // if (event.type === 'payin.failed') { mark failed; }
+            // if (event.type === 'transfer.success') { mark withdrawal completed; }
+
+            // Map event.data to your internal users/addresses, update balances, log transactions
+            console.log('Fincra webhook received', event.type || event);
 
             res.sendStatus(200);
         } catch (error) {
-            console.error('Paystack webhook error:', error);
+            console.error('Fincra webhook error', error);
             res.sendStatus(500);
         }
     }
 
-    // Helper to get ETH/NGN price from CoinGecko
-    static async getEthPriceInNGN(): Promise<number> {
-        const resp = await axios.get(
-            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=ngn'
-        );
-        const data = resp.data as { ethereum: { ngn: number } };
-        return data.ethereum.ngn;
+    /**
+     * Initiate a withdrawal (payout) via Fincra:
+     * - create beneficiary (bank account) if required
+     * - create transfer to beneficiary
+     */
+    static async initiateFincraWithdrawal(req: Request, res: Response) {
+        const { userId, amountNgN, account } = req.body;
+        // account: { bank_code, account_number, name } or beneficiary id depending on Fincra API
+        if (!userId || !amountNgN || !account)
+            return res.status(400).json({ error: 'missing params' });
+
+        try {
+            // 1) Optionally create beneficiary
+            const beneficiaryPayload = {
+                type: 'bank_account', // placeholder
+                name: account.name,
+                account_number: account.account_number,
+                bank_code: account.bank_code,
+                currency: 'NGN',
+            };
+
+            interface BeneficiaryResponse {
+                data?: {
+                    id?: string;
+                };
+                id?: string;
+            }
+
+            const beneficiaryResp = await axios.post<BeneficiaryResponse>(
+                `${process.env.FINCRA_BASE_URL}/beneficiaries`, // replace with accurate path
+                beneficiaryPayload,
+                {
+                    headers: {
+                        Authorization: `Bearer ${process.env.FINCRA_API_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                }
+            );
+
+            const beneficiaryId =
+                beneficiaryResp.data?.data?.id || beneficiaryResp.data?.id;
+
+            // 2) Create transfer/payout
+            const transferPayload = {
+                beneficiary_id: beneficiaryId,
+                amount: Math.round(amountNgN * 100), // if API expects kobo
+                currency: 'NGN',
+                reference: `withdraw_${userId}_${Date.now()}`,
+                // metadata: { userId }
+            };
+
+            const transferResp = await axios.post(
+                `${process.env.FINCRA_BASE_URL}/transfers`, // replace with correct path
+                transferPayload,
+                {
+                    headers: {
+                        Authorization: `Bearer ${process.env.FINCRA_API_KEY}`,
+                        'Content-Type': 'application/json',
+                    },
+                }
+            );
+
+            // Persist transfer reference/status in DB mapped to user and debit internal wallet now or on success depending on your rules
+            return res.json({ data: transferResp.data });
+        } catch (err) {
+            let errorMsg = '';
+            if (err && typeof err === 'object') {
+                if (
+                    'response' in err &&
+                    err.response &&
+                    typeof err.response === 'object' &&
+                    'data' in err.response
+                ) {
+                    // @ts-ignore
+                    errorMsg = err.response.data;
+                } else if (
+                    'message' in err &&
+                    typeof err.message === 'string'
+                ) {
+                    // @ts-ignore
+                    errorMsg = err.message;
+                } else {
+                    errorMsg = JSON.stringify(err);
+                }
+            } else {
+                errorMsg = String(err);
+            }
+            console.error('Fincra withdrawal error', errorMsg);
+            return res
+                .status(500)
+                .json({ error: 'Failed to initiate withdrawal' });
+        }
     }
 
-    // Helper to credit user's ETH wallet
-    static async creditUserEthWallet(userId: string, amountEth: number) {
-        const addressRepo = AppDataSource.getRepository(UserAddress);
-        const ethWallet = await addressRepo.findOne({
-    where: { userId, chain: ChainType.ETHEREUM, network: NetworkType.TESTNET },
-});
-        if (!ethWallet) throw new Error('ETH wallet not found for user');
-        ethWallet.lastKnownBalance =
-            Number(ethWallet.lastKnownBalance || 0) + amountEth;
-        await addressRepo.save(ethWallet);
+    /**
+     * Verify a bank account / mobile money / IBAN via Fincra.
+     * Expects request body to include `type` and the relevant fields:
+     * - bank_account / nuban: { accountNumber, bankCode, currency? }
+     * - mobile_money: { accountNumber, mobileMoneyCode, currency? }
+     * - iban: { iban }
+     */
+    static async verifyFincraBankAccount(req: Request, res: Response) {
+        const body = req.body || {};
+        const type = (body.type || '').toString();
+
+        if (!type) {
+            return res.status(400).json({
+                error: 'type is required (bank_account | mobile_money | iban | nuban)',
+            });
+        }
+
+        // Normalize input keys (accept snake_case or camelCase)
+        const accountNumber = body.accountNumber || body.account_number;
+        const bankCode = body.bankCode || body.bank_code;
+        const mobileMoneyCode = body.mobileMoneyCode || body.mobile_money_code;
+        const iban = body.iban;
+        const currency = body.currency || 'NGN';
+
+        // Build payload according to Fincra docs
+        let payload: any = { type };
+
+        if (type === 'bank_account' || type === 'nuban') {
+            if (!accountNumber || !bankCode) {
+                return res.status(400).json({
+                    error: 'accountNumber and bankCode are required for bank_account / nuban',
+                });
+            }
+            payload.accountNumber = accountNumber
+                .toString()
+                .replace(/\s+/g, '');
+            payload.bankCode = bankCode.toString();
+            payload.currency = currency;
+        } else if (type === 'mobile_money') {
+            if (!accountNumber || !mobileMoneyCode) {
+                return res.status(400).json({
+                    error: 'accountNumber and mobileMoneyCode are required for mobile_money',
+                });
+            }
+            payload.accountNumber = accountNumber
+                .toString()
+                .replace(/\s+/g, '');
+            payload.mobileMoneyCode = mobileMoneyCode.toString();
+            payload.currency = currency;
+        } else if (type === 'iban') {
+            if (!iban) {
+                return res
+                    .status(400)
+                    .json({ error: 'iban is required for type=iban' });
+            }
+            payload.iban = iban.toString().replace(/\s+/g, '');
+        } else {
+            return res.status(400).json({
+                error: 'unsupported type. Use bank_account | mobile_money | iban | nuban',
+            });
+        }
+
+        try {
+            const url = `${
+                process.env.FINCRA_BASE_URL?.replace(/\/+$/, '') || ''
+            }/core/accounts/resolve`;
+            const response = await axios.post(url, payload, {
+                headers: {
+                    Authorization: `Bearer ${process.env.FINCRA_API_KEY}`,
+                    'Content-Type': 'application/json',
+                },
+                timeout: 10000,
+            });
+
+            const data: any = response.data || {};
+            // Normalize provider response to a stable shape
+            const normalized = {
+                success: !!data?.success,
+                message: data.message || null,
+                data: {
+                    account_name:
+                        data?.data?.accountName ||
+                        data?.data?.account_name ||
+                        data?.accountName ||
+                        data?.account_name ||
+                        null,
+                    account_number:
+                        data?.data?.accountNumber ||
+                        data?.data?.account_number ||
+                        data?.accountNumber ||
+                        data?.account_number ||
+                        accountNumber ||
+                        null,
+                    bank_code:
+                        data?.data?.bankCode ||
+                        data?.data?.bank_code ||
+                        data?.bankCode ||
+                        data?.bank_code ||
+                        bankCode ||
+                        null,
+                    iban: data?.data?.iban || null,
+                    raw: data,
+                },
+            };
+
+            return res.json(normalized);
+        } catch (err) {
+            // simplified: do not rely on axios.isAxiosError
+            let errorMsg = 'Failed to verify account';
+            const status =
+                err &&
+                typeof err === 'object' &&
+                'response' in err &&
+                (err as any).response?.status
+                    ? (err as any).response.status
+                    : undefined;
+            const respData =
+                err &&
+                typeof err === 'object' &&
+                'response' in err &&
+                (err as any).response?.data
+                    ? (err as any).response.data
+                    : undefined;
+
+            if (respData) {
+                errorMsg = respData?.message || JSON.stringify(respData);
+                console.error('Bank verification error', errorMsg);
+                return res
+                    .status(status || 500)
+                    .json({ error: errorMsg, details: respData });
+            }
+
+            if (err instanceof Error) errorMsg = err.message;
+            else errorMsg = String(err);
+
+            console.error('Bank verification error', errorMsg);
+            return res.status(status || 500).json({ error: errorMsg });
+        }
     }
 }

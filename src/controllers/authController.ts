@@ -23,7 +23,6 @@ import {
     generateBtcWallet,
     generateSolWallet,
     generateStrkWallet,
-    generateAndDeployArgentXAccount
 } from '../utils/keygen';
 import { createUserIfNotExists } from '../services/userService';
 import { sendRegistrationEmails } from '../services/emailService';

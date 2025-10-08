@@ -36,6 +36,15 @@ export class UserAddress {
     @JoinColumn()
     user!: User;
 
+    @Column({ nullable: true })
+    publicKey?: string;
+
+    @Column({ nullable: true })
+    constructorCalldata?: string;
+
+    @Column({ nullable: true })
+    classHash?: string;
+
     @Column()
     userId!: string;
 

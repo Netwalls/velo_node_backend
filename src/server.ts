@@ -12,8 +12,10 @@ import paymentRouter from './routes/payment';
 import fiatRoutes from './routes/fiatRoute';
 import transactionRoutes from './routes/transactionRoute';
 import merchantRoutes from './routes/merchantRoute';
-import deployRoute from './routes/deployRoute';
 import splitPaymentRoutes from './routes/splitPaymentRoute';
+import { WalletController } from './controllers/walletController';
+import strkRoute from "./routes/strkRoute";
+import newmer from './routes/newmer'
 
 // Load environment variables
 dotenv.config();
@@ -37,17 +39,15 @@ app.use('/history', historyRouter);
 app.use('/payments', paymentRouter);
 app.use('/transactions', transactionRoutes);
 app.use('/merchant', merchantRoutes);
-app.use('/deploy', deployRoute);
 app.use('/split-payment', splitPaymentRoutes);
+app.use('/checkdeploy',strkRoute );
+app.use('/new', newmer);
 
 connectDB().then(() => {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
-
-        // Start payment monitoring service
-        PaymentMonitoringService.start();
-        console.log('Payment monitoring service started');
-
+// WalletController.deployFundedStarknetAccounts().catch((err) =>
+//             
         // setInterval(() => {
         //     MerchantController.detectDeposits();
         // }, 60_000); // every 60 seconds

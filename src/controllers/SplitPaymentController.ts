@@ -26,6 +26,8 @@ import {
 import ECPairFactory from 'ecpair';
 import * as ecc from 'tiny-secp256k1';
 import { ChainType, NetworkType } from '../types';
+import * as bitcoin from 'bitcoinjs-lib';
+import axios from 'axios';
 
 const ECPair = ECPairFactory(ecc);
 
@@ -634,30 +636,29 @@ export class SplitPaymentController {
         recipients: SplitPaymentRecipient[],
         privateKey: string
     ): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
-        const results = [];
+        try {
+            // Create one transaction with multiple outputs (true batch payment)
+            const txHash =
+                await SplitPaymentController.sendBitcoinBatchTransaction(
+                    splitPayment.fromAddress,
+                    recipients,
+                    splitPayment.network,
+                    privateKey
+                );
 
-        for (const recipient of recipients) {
-            try {
-                // Individual Bitcoin transactions
-                const txHash =
-                    await SplitPaymentController.sendBitcoinTransaction(
-                        splitPayment.fromAddress,
-                        recipient.recipientAddress,
-                        recipient.amount,
-                        splitPayment.network,
-                        privateKey
-                    );
-                results.push({ success: true, txHash });
-            } catch (error) {
-                results.push({
-                    success: false,
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                });
-            }
+            // All recipients share the same transaction hash
+            return recipients.map(() => ({
+                success: true,
+                txHash: txHash,
+            }));
+        } catch (error) {
+            console.error('Bitcoin batch payment failed:', error);
+            // If batch fails, all recipients fail
+            return recipients.map(() => ({
+                success: false,
+                error: error instanceof Error ? error.message : String(error),
+            }));
         }
-
-        return results;
     }
 
     private static async processSolanaBatch(
@@ -699,31 +700,103 @@ export class SplitPaymentController {
             }
 
             const fromKeypair = Keypair.fromSecretKey(secretKeyArray);
-            const transaction = new SolTx();
 
-            for (const recipient of recipients) {
-                const toPubkey = new PublicKey(recipient.recipientAddress);
-                transaction.add(
-                    SystemProgram.transfer({
-                        fromPubkey: fromKeypair.publicKey,
-                        toPubkey,
-                        lamports: Math.round(Number(recipient.amount) * 1e9),
-                    })
+            // Check sender balance
+            const senderBalance = await connection.getBalance(
+                fromKeypair.publicKey
+            );
+            const rentExemptMinimum =
+                await connection.getMinimumBalanceForRentExemption(0);
+
+            // Calculate total amount needed (transfers + fees + rent buffer)
+            const totalTransferAmount = recipients.reduce(
+                (sum, recipient) =>
+                    sum + Math.round(Number(recipient.amount) * 1e9),
+                0
+            );
+
+            // Estimate fees (5000 lamports per signature is conservative)
+            const estimatedFees = 5000 * recipients.length;
+            const totalNeeded =
+                totalTransferAmount + estimatedFees + rentExemptMinimum;
+
+            if (senderBalance < totalNeeded) {
+                throw new Error(
+                    `Insufficient balance. Available: ${
+                        senderBalance / 1e9
+                    } SOL, ` +
+                        `Required: ${
+                            totalNeeded / 1e9
+                        } SOL (including transfers, fees, and rent)`
                 );
             }
 
-            const signature = await sendAndConfirmTransaction(
-                connection,
-                transaction,
-                [fromKeypair]
-            );
-
-            // All recipients get the same transaction hash for Solana batch
+            // Process individual transactions instead of batch
             for (const recipient of recipients) {
-                results.push({ success: true, txHash: signature });
+                try {
+                    const toPubkey = new PublicKey(recipient.recipientAddress);
+                    const transferAmount = Math.round(
+                        Number(recipient.amount) * 1e9
+                    );
+
+                    // Check if recipient account exists and needs rent
+                    const recipientInfo = await connection.getAccountInfo(
+                        toPubkey
+                    );
+                    let finalTransferAmount = transferAmount;
+
+                    // If account doesn't exist, add rent-exempt minimum
+                    if (!recipientInfo) {
+                        finalTransferAmount =
+                            transferAmount + rentExemptMinimum;
+                    }
+
+                    const transaction = new SolTx();
+                    transaction.add(
+                        SystemProgram.transfer({
+                            fromPubkey: fromKeypair.publicKey,
+                            toPubkey,
+                            lamports: finalTransferAmount,
+                        })
+                    );
+
+                    // Get recent blockhash and fee calculator
+                    const { blockhash } = await connection.getLatestBlockhash();
+                    transaction.recentBlockhash = blockhash;
+                    transaction.feePayer = fromKeypair.publicKey;
+
+                    // Send and confirm individual transaction
+                    const signature = await sendAndConfirmTransaction(
+                        connection,
+                        transaction,
+                        [fromKeypair],
+                        {
+                            commitment: 'confirmed',
+                            preflightCommitment: 'confirmed',
+                        }
+                    );
+
+                    results.push({ success: true, txHash: signature });
+
+                    // Small delay between transactions to avoid rate limiting
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                } catch (error) {
+                    console.error(
+                        `Failed to send to ${recipient.recipientAddress}:`,
+                        error
+                    );
+                    results.push({
+                        success: false,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    });
+                }
             }
         } catch (error) {
-            // If batch fails, mark all as failed
+            console.error('Solana batch processing error:', error);
+            // If setup fails, mark all as failed
             for (const recipient of recipients) {
                 results.push({
                     success: false,
@@ -736,6 +809,229 @@ export class SplitPaymentController {
         return results;
     }
 
+    private static async sendBitcoinBatchTransaction(
+        fromAddress: string,
+        recipients: SplitPaymentRecipient[],
+        network: string,
+        privateKey: string
+    ): Promise<string> {
+        try {
+            // Setup network
+            const isTestnet = network === 'testnet';
+            const btcNetwork = isTestnet
+                ? bitcoin.networks.testnet
+                : bitcoin.networks.bitcoin;
+            const apiBaseUrl = isTestnet
+                ? 'https://blockstream.info/testnet/api'
+                : 'https://blockstream.info/api';
+
+            // Create key pair from private key
+            let keyPair = ECPair.fromWIF(privateKey, btcNetwork);
+            // Patch keyPair.publicKey to Buffer if needed for compatibility with bitcoinjs-lib
+            if (keyPair.publicKey && !(keyPair.publicKey instanceof Buffer)) {
+                // Convert Uint8Array to Buffer for compatibility
+                keyPair = Object.assign(Object.create(Object.getPrototypeOf(keyPair)), keyPair, {
+                    publicKey: Buffer.from(keyPair.publicKey as Uint8Array),
+                });
+            }
+
+            // Calculate total amount needed
+            const totalTransferAmount = recipients.reduce(
+                (sum, recipient) =>
+                    sum + Math.round(parseFloat(recipient.amount) * 100000000),
+                0
+            );
+
+            // Get UTXOs for the sender address
+            const utxosResponse = await axios.get(
+                `${apiBaseUrl}/address/${fromAddress}/utxo`
+            );
+            const utxos = Array.isArray(utxosResponse.data) ? utxosResponse.data : [];
+
+            if (utxos.length === 0) {
+                throw new Error('No UTXOs found for sender address');
+            }
+
+            // Calculate fee (estimate bytes for multi-output transaction)
+            // Base transaction: ~10 bytes
+            // Each input: ~150 bytes
+            // Each output: ~35 bytes
+            const estimatedInputs = Math.min(utxos.length, 10); // Limit inputs for efficiency
+            const totalOutputs = recipients.length + 1; // recipients + change
+            const estimatedSize =
+                10 + estimatedInputs * 150 + totalOutputs * 35;
+            const feeRate = 20; // satoshis per byte (adjustable)
+            const estimatedFee = estimatedSize * feeRate;
+
+            const totalRequired = totalTransferAmount + estimatedFee;
+
+            // Select UTXOs
+            let inputAmount = 0;
+            const selectedUtxos = [];
+
+            // Sort UTXOs by value (largest first) for efficient selection
+            const sortedUtxos = utxos.sort(
+                (a: any, b: any) => b.value - a.value
+            );
+
+            for (const utxo of sortedUtxos) {
+                selectedUtxos.push(utxo);
+                inputAmount += utxo.value;
+
+                if (inputAmount >= totalRequired) {
+                    break;
+                }
+
+                // Limit number of inputs to avoid overly complex transactions
+                if (selectedUtxos.length >= 10) {
+                    break;
+                }
+            }
+
+            if (inputAmount < totalRequired) {
+                throw new Error(
+                    `Insufficient balance. Required: ${totalRequired} satoshis (${
+                        totalRequired / 100000000
+                    } BTC), ` +
+                        `Available: ${inputAmount} satoshis (${
+                            inputAmount / 100000000
+                        } BTC)`
+                );
+            }
+
+            // Create transaction with multiple outputs
+            const psbt = new bitcoin.Psbt({ network: btcNetwork });
+
+            // Add inputs
+            for (const utxo of selectedUtxos) {
+                try {
+                    // Get transaction hex for each UTXO
+                    const txResponse = await axios.get(
+                        `${apiBaseUrl}/tx/${utxo.txid}/hex`
+                    );
+                    const nonWitnessUtxo = Buffer.from(txResponse.data as string, 'hex');
+
+                    psbt.addInput({
+                        hash: utxo.txid,
+                        index: utxo.vout,
+                        nonWitnessUtxo,
+                    });
+                } catch (error) {
+                    console.error(
+                        `Failed to get transaction data for UTXO ${utxo.txid}:`,
+                        error
+                    );
+                    throw new Error(`Failed to fetch UTXO data: ${utxo.txid}`);
+                }
+            }
+
+            // Add outputs for each recipient
+            for (const recipient of recipients) {
+                const amount = Math.round(
+                    parseFloat(recipient.amount) * 100000000
+                );
+
+                if (amount < 546) {
+                    // Bitcoin dust threshold
+                    throw new Error(
+                        `Amount too small for recipient ${recipient.recipientAddress}: ` +
+                            `${amount} satoshis (minimum 546 satoshis)`
+                    );
+                }
+
+                psbt.addOutput({
+                    address: recipient.recipientAddress,
+                    value: amount,
+                });
+            }
+
+            // // Calculate actual fee based on final transaction size
+            // const tempTx = psbt.clone();
+            // for (let i = 0; i < selectedUtxos.length; i++) {
+            //     tempTx.signInput(i, keyPair);
+            // }
+            // tempTx.finalizeAllInputs();
+            // const actualSize = tempTx.extractTransaction().toBuffer().length;
+            // const actualFee = actualSize * feeRate;
+
+            // // Add change output if necessary
+            // const change = inputAmount - totalTransferAmount - actualFee;
+            // if (change > 546) {
+            //     // Only add change if above dust threshold
+            //     psbt.addOutput({
+            //         address: fromAddress,
+            //         value: change,
+            //     });
+            // } else if (change < 0) {
+            //     throw new Error(
+            //         `Insufficient funds for fees. Need additional ${Math.abs(
+            //             change
+            //         )} satoshis`
+            //     );
+            // }
+
+            // // Sign all inputs
+            // for (let i = 0; i < selectedUtxos.length; i++) {
+            //     try {
+            //         psbt.signInput(i, keyPair);
+            //     } catch (error) {
+            //         console.error(`Failed to sign input ${i}:`, error);
+            //         throw new Error(`Failed to sign transaction input ${i}`);
+            //     }
+            // }
+
+            // Finalize and extract transaction
+            psbt.finalizeAllInputs();
+            const tx = psbt.extractTransaction();
+            const txHex = tx.toHex();
+
+            // console.log(`Broadcasting Bitcoin batch transaction:`, {
+            //     size: txHex.length / 2,
+            //     recipients: recipients.length,
+            //     totalAmount: totalTransferAmount / 100000000,
+            //     fee: actualFee / 100000000,
+            //     change: change / 100000000,
+            // });
+
+            // Broadcast transaction
+            const broadcastResponse = await axios.post(
+                `${apiBaseUrl}/tx`,
+                txHex,
+                {
+                    headers: {
+                        'Content-Type': 'text/plain',
+                    },
+                }
+            );
+
+            // The response should be the transaction ID
+            const txId =
+                typeof broadcastResponse.data === 'string'
+                    ? broadcastResponse.data
+                    : tx.getId();
+
+            console.log(`Bitcoin batch transaction successful: ${txId}`);
+            return txId;
+        } catch (error) {
+            console.error('Bitcoin batch transaction error:', error);
+
+            // if (axios.isAxiosError(error)) {
+            //     const errorMessage =
+            //         error.response?.data?.message ||
+            //         error.response?.data ||
+            //         error.message;
+            //     throw new Error(`Bitcoin API error: ${errorMessage}`);
+            // }
+
+            throw new Error(
+                `Failed to send Bitcoin batch transaction: ${
+                    error instanceof Error ? error.message : String(error)
+                }`
+            );
+        }
+    }
+
+    // Keep the individual transaction method as backup
     private static async sendBitcoinTransaction(
         fromAddress: string,
         toAddress: string,
@@ -743,8 +1039,19 @@ export class SplitPaymentController {
         network: string,
         privateKey: string
     ): Promise<string> {
-        throw new Error(
-            'Bitcoin individual transactions not implemented in split payment'
+        // Convert single transaction to batch format for code reuse
+        const recipients = [
+            {
+                recipientAddress: toAddress,
+                amount: amount,
+            },
+        ] as SplitPaymentRecipient[];
+
+        return this.sendBitcoinBatchTransaction(
+            fromAddress,
+            recipients,
+            network,
+            privateKey
         );
     }
 }

@@ -70,4 +70,5 @@ export class MerchantPayment {
 
     @Column({ nullable: true })
     network!: string; // e.g., 'mainnet', 'testnet'
+    updatedAt?: Date;
 }

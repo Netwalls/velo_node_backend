@@ -17,13 +17,14 @@ import * as bitcoin from 'bitcoinjs-lib';
 import * as bitcoinjs from 'bitcoinjs-lib';
 import ECPairFactory from 'ecpair';
 import * as ecc from 'tiny-secp256k1';
-
 // Initialize ECPair
 const ECPair = ECPairFactory(ecc);
 import axios from 'axios';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types/index';
 import { AppDataSource } from '../config/database';
+import { decrypt } from '../utils/keygen';
+import { checkBalance, deployStrkWallet } from '../utils/keygen';
 
 function padStarknetAddress(address: string): string {
     if (!address.startsWith('0x')) return address;
@@ -57,24 +58,18 @@ export class WalletController {
             const balances: any[] = [];
             for (const addr of addresses) {
                 // ETH endpoints
-                const ETH_MAINNET =
-                    `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
-                const ETH_TESTNET =
-                    `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
+                const ETH_MAINNET = `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
+                const ETH_TESTNET = `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                 // BTC endpoints
                 const BTC_MAINNET = 'https://blockstream.info/api/address/';
                 const BTC_TESTNET =
                     'https://blockstream.info/testnet/api/address/';
                 // SOL endpoints
-                const SOL_MAINNET =
-                    `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
-                const SOL_TESTNET =
-                    `https://solana-testnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
+                const SOL_MAINNET = `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
+                const SOL_TESTNET = `https://solana-testnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                 // STRK endpoints
-                const STRK_MAINNET =
-                    `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
-                const STRK_TESTNET =
-                    `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
+                const STRK_MAINNET = `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
+                const STRK_TESTNET = `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
 
                 if (addr.chain === 'starknet') {
                     try {
@@ -261,8 +256,7 @@ export class WalletController {
                     try {
                         // Create a Starknet RPC provider
                         const provider = new RpcProvider({
-                            nodeUrl:
-                                `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
+                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
                         });
                         // STRK token contract address
                         const tokenAddress =
@@ -544,6 +538,158 @@ export class WalletController {
                 );
                 txHash = signature;
             }
+            // Add this to your sendTransaction method after the Solana section and before Bitcoin
+
+            // STRK (Starknet)
+            else if (chain === 'starknet') {
+                const provider = new RpcProvider({
+                    nodeUrl:
+                        network === 'testnet'
+                            ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                            : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+                });
+
+                // Decrypt the private key
+                const privateKey = decrypt(userAddress.encryptedPrivateKey);
+
+                // Get public key from private key
+                const publicKey = ec.starkCurve.getStarkKey(privateKey);
+
+                // Check if account is deployed
+                let isDeployed = false;
+                try {
+                    await provider.getClassHashAt(userAddress.address);
+                    isDeployed = true;
+                    console.log(
+                        `[DEBUG] Starknet account ${userAddress.address} is deployed`
+                    );
+                } catch (error) {
+                    console.log(
+                        `[DEBUG] Starknet account ${userAddress.address} is NOT deployed`
+                    );
+
+                    // Check if account has sufficient funds for deployment
+                    const { hasSufficientFunds, balance } = await checkBalance(
+                        provider,
+                        userAddress.address
+                    );
+
+                    if (hasSufficientFunds) {
+                        console.log(
+                            `[DEBUG] Deploying Starknet account ${userAddress.address}...`
+                        );
+
+                        try {
+                            // Deploy the account
+                            await deployStrkWallet(
+                                provider,
+                                privateKey,
+                                publicKey,
+                                userAddress.address,
+                                false // Skip balance check since we already did it
+                            );
+
+                            isDeployed = true;
+                            console.log(
+                                `[SUCCESS] Starknet account ${userAddress.address} deployed successfully`
+                            );
+
+                            // Create notification for deployment
+                            await AppDataSource.getRepository(
+                                Notification
+                            ).save({
+                                userId: req.user.id,
+                                type: NotificationType.DEPOSIT,
+                                title: 'Starknet Account Deployed',
+                                message: `Your Starknet ${network} account has been successfully deployed at ${userAddress.address}`,
+                                details: {
+                                    address: userAddress.address,
+                                    chain: 'starknet',
+                                    network: network,
+                                    balance: balance,
+                                },
+                                isRead: false,
+                                createdAt: new Date(),
+                            });
+                        } catch (deployError) {
+                            throw new Error(
+                                `Failed to deploy Starknet account: ${
+                                    deployError instanceof Error
+                                        ? deployError.message
+                                        : String(deployError)
+                                }`
+                            );
+                        }
+                    } else {
+                        throw new Error(
+                            `Starknet account not deployed and insufficient funds for deployment. Current balance: ${balance}`
+                        );
+                    }
+                }
+
+                if (!isDeployed) {
+                    throw new Error(
+                        'Starknet account must be deployed before sending transactions'
+                    );
+                }
+
+                // Create Account instance for sending transactions
+                const account = new Account(
+                    provider,
+                    userAddress.address,
+                    privateKey
+                );
+
+                // Determine which token to send (ETH or STRK)
+                // For simplicity, we'll send ETH on Starknet by default
+                // You can modify this to support STRK token transfers as well
+                const ethTokenAddress =
+                    '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
+                const strkTokenAddress =
+                    '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+
+                // Use STRK token by default, you can add logic to choose between ETH/STRK
+                const tokenAddress = strkTokenAddress;
+
+                // Convert amount to uint256 (18 decimals for STRK/ETH)
+                const amountInWei = uint256.bnToUint256(
+                    BigInt(Math.floor(Number(amount) * 1e18))
+                );
+
+                // Call the transfer function on the token contract
+                const transferCall = {
+                    contractAddress: tokenAddress,
+                    entrypoint: 'transfer',
+                    calldata: [toAddress, amountInWei.low, amountInWei.high],
+                };
+
+                console.log(
+                    `[DEBUG] Sending ${amount} STRK from ${userAddress.address} to ${toAddress}`
+                );
+
+                try {
+                    const result = await account.execute(transferCall);
+                    txHash = result.transaction_hash;
+
+                    console.log(
+                        `[SUCCESS] Starknet transaction sent: ${txHash}`
+                    );
+
+                    // Wait for transaction confirmation (optional but recommended)
+                    await provider.waitForTransaction(txHash);
+                    console.log(
+                        `[SUCCESS] Starknet transaction confirmed: ${txHash}`
+                    );
+                } catch (executeError) {
+                    throw new Error(
+                        `Failed to execute Starknet transaction: ${
+                            executeError instanceof Error
+                                ? executeError.message
+                                : String(executeError)
+                        }`
+                    );
+                }
+            }
             // BTC
             else if (chain === 'bitcoin') {
                 console.log('[DEBUG] Bitcoin transaction start');
@@ -730,37 +876,37 @@ export class WalletController {
                             break;
                         }
 
-                         // Save transaction details to the database
-            await AppDataSource.getRepository(Transaction).save({
-                userId: req.user.id,
-                type: 'send',
-                amount,
-                chain: chain,
-                network: network, // ✅ Add network field
-                toAddress,
-                fromAddress: userAddress.address,
-                txHash,
-                status: 'confirmed',
-                createdAt: new Date(),
-            });
+                        // Save transaction details to the database
+                        await AppDataSource.getRepository(Transaction).save({
+                            userId: req.user.id,
+                            type: 'send',
+                            amount,
+                            chain: chain,
+                            network: network, // ✅ Add network field
+                            toAddress,
+                            fromAddress: userAddress.address,
+                            txHash,
+                            status: 'confirmed',
+                            createdAt: new Date(),
+                        });
 
-            // Create a notification for the sent transaction
-            await AppDataSource.getRepository(Notification).save({
-                userId: req.user.id,
-                type: NotificationType.SEND,
-                title: 'Tokens Sent',
-                message: `You sent ${amount} ${chain.toUpperCase()} to ${toAddress}`,
-                details: {
-                    amount,
-                    chain,
-                    network, // ✅ Add network to notification details
-                    toAddress,
-                    fromAddress: userAddress.address,
-                    txHash,
-                },
-                isRead: false,
-                createdAt: new Date(),
-            });
+                        // Create a notification for the sent transaction
+                        await AppDataSource.getRepository(Notification).save({
+                            userId: req.user.id,
+                            type: NotificationType.SEND,
+                            title: 'Tokens Sent',
+                            message: `You sent ${amount} ${chain.toUpperCase()} to ${toAddress}`,
+                            details: {
+                                amount,
+                                chain,
+                                network, // ✅ Add network to notification details
+                                toAddress,
+                                fromAddress: userAddress.address,
+                                txHash,
+                            },
+                            isRead: false,
+                            createdAt: new Date(),
+                        });
                     } catch (error) {
                         console.error(
                             `[DEBUG] Error processing UTXO ${utxo.txid}:${utxo.vout}:`,
@@ -802,68 +948,71 @@ export class WalletController {
                 // Sign all inputs
                 // Replace the Bitcoin signing section (around lines 760-790) with this fixed version:
 
-// Sign all inputs
-console.log('[DEBUG] Signing inputs...');
-try {
-    // Create a compatible signer wrapper that converts Uint8Array to Buffer
-    const signer = {
-        publicKey: Buffer.from(keyPair.publicKey),
-        sign: (hash: Buffer, lowR?: boolean) => {
-            const signature = keyPair.sign(hash, lowR);
-            return Buffer.from(signature);
-        },
-        network: keyPair.network,
-        compressed: keyPair.compressed,
-        privateKey: keyPair.privateKey,
-    };
+                // Sign all inputs
+                console.log('[DEBUG] Signing inputs...');
+                try {
+                    // Create a compatible signer wrapper that converts Uint8Array to Buffer
+                    const signer = {
+                        publicKey: Buffer.from(keyPair.publicKey),
+                        sign: (hash: Buffer, lowR?: boolean) => {
+                            const signature = keyPair.sign(hash, lowR);
+                            return Buffer.from(signature);
+                        },
+                        network: keyPair.network,
+                        compressed: keyPair.compressed,
+                        privateKey: keyPair.privateKey,
+                    };
 
-    for (let i = 0; i < addedInputs; i++) {
-        psbt.signInput(i, signer);
-        console.log(`[DEBUG] Signed input ${i}`);
-    }
-} catch (signError) {
-    console.error('[DEBUG] Signing error:', signError);
-    throw new Error(
-        `Failed to sign inputs: ${
-            signError instanceof Error
-                ? signError.message
-                : String(signError)
-        }`
-    );
-}
+                    for (let i = 0; i < addedInputs; i++) {
+                        psbt.signInput(i, signer);
+                        console.log(`[DEBUG] Signed input ${i}`);
+                    }
+                } catch (signError) {
+                    console.error('[DEBUG] Signing error:', signError);
+                    throw new Error(
+                        `Failed to sign inputs: ${
+                            signError instanceof Error
+                                ? signError.message
+                                : String(signError)
+                        }`
+                    );
+                }
 
-// Validate signatures
-console.log('[DEBUG] Validating signatures...');
-const validated = psbt.validateSignaturesOfAllInputs(
-    (pubkey, msghash, signature) => {
-        return ECPair.fromPublicKey(pubkey, {
-            network: networkParams,
-        }).verify(msghash, signature);
-    }
-);
+                // Validate signatures
+                console.log('[DEBUG] Validating signatures...');
+                const validated = psbt.validateSignaturesOfAllInputs(
+                    (pubkey, msghash, signature) => {
+                        return ECPair.fromPublicKey(pubkey, {
+                            network: networkParams,
+                        }).verify(msghash, signature);
+                    }
+                );
 
-if (!validated) {
-    throw new Error('Signature validation failed');
-}
-console.log('[DEBUG] All signatures validated');
+                if (!validated) {
+                    throw new Error('Signature validation failed');
+                }
+                console.log('[DEBUG] All signatures validated');
 
-// Finalize
-psbt.finalizeAllInputs();
-console.log('[DEBUG] Inputs finalized');
+                // Finalize
+                psbt.finalizeAllInputs();
+                console.log('[DEBUG] Inputs finalized');
 
-const rawTx = psbt.extractTransaction().toHex();
-const broadcastUrl =
-    network === 'testnet'
-        ? 'https://blockstream.info/testnet/api/tx'
-        : 'https://blockstream.info/api/tx';
+                const rawTx = psbt.extractTransaction().toHex();
+                const broadcastUrl =
+                    network === 'testnet'
+                        ? 'https://blockstream.info/testnet/api/tx'
+                        : 'https://blockstream.info/api/tx';
 
-console.log('[DEBUG] Broadcasting transaction...');
-const resp = await axios.post(broadcastUrl, rawTx, {
-    headers: { 'Content-Type': 'text/plain' },
-});
+                console.log('[DEBUG] Broadcasting transaction...');
+                const resp = await axios.post(broadcastUrl, rawTx, {
+                    headers: { 'Content-Type': 'text/plain' },
+                });
 
-txHash = resp.data as string;
-console.log('[DEBUG] Transaction broadcast successful:', txHash);
+                txHash = resp.data as string;
+                console.log(
+                    '[DEBUG] Transaction broadcast successful:',
+                    txHash
+                );
             }
 
             // Save transaction details to the database
@@ -1094,8 +1243,7 @@ console.log('[DEBUG] Transaction broadcast successful:', txHash);
                     try {
                         // Fixed Starknet testnet balance
                         const provider = new RpcProvider({
-                            nodeUrl:
-                                `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
+                            nodeUrl: `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
                         });
 
                         const strkTokenAddress =
@@ -1258,8 +1406,7 @@ console.log('[DEBUG] Transaction broadcast successful:', txHash);
                 if (addr.chain === 'starknet') {
                     try {
                         const provider = new RpcProvider({
-                            nodeUrl:
-                                `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
                         });
 
                         const contract = {
@@ -1494,7 +1641,7 @@ console.log('[DEBUG] Transaction broadcast successful:', txHash);
     }
 }
 
-// Helper function
+//// Helper function
 function sortAddressesByChainOrder(addresses: any[]): any[] {
     const order = ['eth', 'btc', 'sol', 'strk', 'usdterc20', 'usdttrc20'];
     const normalize = (chain: string) => {
