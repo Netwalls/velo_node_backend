@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { StrkController } from '../controllers/strksolu';
+import { StrkController } from '../controllers/StrkDeploymentController';
 import { authMiddleware } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 

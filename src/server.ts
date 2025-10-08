@@ -14,8 +14,8 @@ import transactionRoutes from './routes/transactionRoute';
 import merchantRoutes from './routes/merchantRoute';
 import splitPaymentRoutes from './routes/splitPaymentRoute';
 import { WalletController } from './controllers/walletController';
-import strkRoute from "./routes/strkRoute";
-// import newmer from './routes/newmer'
+import strkRoute from "./routes/strkDeploymentRoute";
+import newmer from './routes/qrpaymentRoute';
 
 // Load environment variables
 dotenv.config();
@@ -41,7 +41,7 @@ app.use('/transactions', transactionRoutes);
 app.use('/merchant', merchantRoutes);
 app.use('/split-payment', splitPaymentRoutes);
 app.use('/checkdeploy',strkRoute );
-// app.use('/new', newmer);
+app.use('/new', newmer);
 
 connectDB().then(() => {
     app.listen(PORT, () => {

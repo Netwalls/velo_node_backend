@@ -74,4 +74,6 @@ export class MerchantPayment {
     network!: string; // e.g., 'mainnet', 'testnet'
     updatedAt?: Date;
     transactionHash?: string;
+
+    description?: string; // Add this line if not present
 }
