@@ -23,6 +23,8 @@ import {
     generateBtcWallet,
     generateSolWallet,
     generateStrkWallet,
+    generateStellarWallet,
+    generatePolkadotWallet,
 } from '../utils/keygen';
 import { createUserIfNotExists } from '../services/userService';
 import { sendRegistrationEmails } from '../services/emailService';
@@ -82,6 +84,8 @@ export class AuthController {
             const eth = generateEthWallet();
             const btc = generateBtcWallet();
             const sol = generateSolWallet();
+            const stellar = generateStellarWallet();
+            const polkadot = await generatePolkadotWallet();
            const strk =  generateStrkWallet();
 
 // const strkMainnet = await generateAndDeployArgentXAccount('mainnet');
@@ -181,6 +185,32 @@ export class AuthController {
                     network: 'testnet',
                     address: tron.testnet.address,
                     encryptedPrivateKey: encrypt(tron.testnet.privateKey),
+                },
+                // Stellar
+                {
+                    chain: 'stellar',
+                    network: 'mainnet',
+                    address: stellar.mainnet.address,
+                    encryptedPrivateKey: encrypt(stellar.mainnet.privateKey),
+                },
+                {
+                    chain: 'stellar',
+                    network: 'testnet',
+                    address: stellar.testnet.address,
+                    encryptedPrivateKey: encrypt(stellar.testnet.privateKey),
+                },
+                // Polkadot
+                {
+                    chain: 'polkadot',
+                    network: 'mainnet',
+                    address: polkadot.mainnet.address,
+                    encryptedPrivateKey: encrypt(polkadot.mainnet.privateKey),
+                },
+                {
+                    chain: 'polkadot',
+                    network: 'testnet',
+                    address: polkadot.testnet.address,
+                    encryptedPrivateKey: encrypt(polkadot.testnet.privateKey),
                 },
             ];
 
@@ -336,6 +366,47 @@ export class AuthController {
                     isEmailVerified: user.isEmailVerified,
                 },
             });
+
+            // After successful login, ensure user has Stellar and Polkadot addresses
+            try {
+                const addressRepo = AppDataSource.getRepository('UserAddress');
+                const existing = await addressRepo.find({ where: { userId: user.id } });
+                const chains = existing.map((e: any) => e.chain);
+                const toCreate: any[] = [];
+                if (!chains.includes('stellar')) {
+                    const stellar = generateStellarWallet();
+                    toCreate.push({
+                        chain: 'stellar',
+                        network: 'mainnet',
+                        address: stellar.mainnet.address,
+                        encryptedPrivateKey: encrypt(stellar.mainnet.privateKey),
+                        user,
+                        userId: user.id,
+                    });
+                }
+                if (!chains.includes('polkadot')) {
+                    const polkadot = await generatePolkadotWallet();
+                    toCreate.push({
+                        chain: 'polkadot',
+                        network: 'mainnet',
+                        address: polkadot.mainnet.address,
+                        encryptedPrivateKey: encrypt(polkadot.mainnet.privateKey),
+                        user,
+                        userId: user.id,
+                    });
+                }
+                if (toCreate.length) {
+                    for (const row of toCreate) {
+                        try {
+                            await addressRepo.save(row);
+                        } catch (err) {
+                            console.error('Failed to save generated address on login', err);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Post-login address generation failed', err);
+            }
 
             // Create login notification
             try {
@@ -950,6 +1021,10 @@ export class AuthController {
                 return 'sol';
             case 'starknet':
                 return 'strk';
+            case 'stellar':
+                return 'xlm';
+            case 'polkadot':
+                return 'dot';
             case 'usdt_erc20':
                 return 'usdterc20';
             case 'usdt_trc20':
@@ -963,7 +1038,7 @@ export class AuthController {
      * Helper to sort addresses by desired chain order.
      */
     static sortAddresses(addresses: any[]): any[] {
-        const order = ['eth', 'btc', 'sol', 'strk', 'usdterc20', 'usdttrc20'];
+        const order = ['eth', 'btc', 'xlm', 'dot', 'sol', 'strk', 'usdterc20', 'usdttrc20'];
         return addresses.sort((a, b) => {
             const aIndex = order.indexOf(a.chain);
             const bIndex = order.indexOf(b.chain);

@@ -105,14 +105,24 @@ export class WalletController {
                             address: addr.address,
                             balance: balanceResult.balance.toString(),
                         });
-                    } catch (err) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: addr.network,
-                            address: addr.address,
-                            balance: '0',
-                            error: 'Failed to fetch',
-                        });
+                    } catch (err: any) {
+                        // If Stellar account not found (404) return zero balance silently
+                        if (err && err.response && err.response.status === 404) {
+                            balances.push({
+                                chain: addr.chain,
+                                network: addr.network,
+                                address: addr.address,
+                                balance: '0',
+                            });
+                        } else {
+                            console.debug('Stellar balance fetch failed:', err?.message || err);
+                            balances.push({
+                                chain: addr.chain,
+                                network: addr.network,
+                                address: addr.address,
+                                balance: '0',
+                            });
+                        }
                     }
                 } else if (addr.chain === 'ethereum') {
                     try {
@@ -129,12 +139,14 @@ export class WalletController {
                             balance: ethers.formatEther(balance),
                         });
                     } catch (err) {
+                        console.debug('Polkadot balance fetch failed:', (err as any)?.message || err);
+                        // Return zero balance without an error field to keep API responses clean
                         balances.push({
                             chain: addr.chain,
                             network: addr.network,
                             address: addr.address,
                             balance: '0',
-                            error: 'Failed to fetch',
+                            symbol: 'DOT',
                         });
                     }
                 } else if (addr.chain === 'bitcoin') {
@@ -217,6 +229,70 @@ export class WalletController {
                             network: addr.network,
                             address: addr.address,
                             balance: '0',
+                            error: 'Failed to fetch',
+                        });
+                    }
+                } else if (addr.chain === 'stellar') {
+                    // Stellar balance via Horizon
+                    try {
+                        const HORIZON_MAIN = 'https://horizon.stellar.org';
+                        const HORIZON_TEST = 'https://horizon-testnet.stellar.org';
+                        if (!addr.address) throw new Error('No stellar address');
+                        const horizonUrl = addr.network === 'testnet' ? HORIZON_TEST : HORIZON_MAIN;
+                        const resp = await axios.get(`${horizonUrl}/accounts/${addr.address}`);
+                        const data = resp.data as any;
+                        const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
+                        const balanceStr = native ? native.balance : '0';
+                        balances.push({
+                            chain: addr.chain,
+                            network: addr.network,
+                            address: addr.address,
+                            balance: balanceStr,
+                        });
+                    } catch (err) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: addr.network,
+                            address: addr.address,
+                            balance: '0',
+                            error: 'Failed to fetch',
+                        });
+                    }
+                } else if (addr.chain === 'polkadot') {
+                    // Polkadot balance via @polkadot/api (use derived balances so "transferable" matches polkadot.js UI)
+                    try {
+                        // @ts-ignore - dynamic require
+                        const { ApiPromise, WsProvider } = require('@polkadot/api');
+                        const wsUrl = addr.network === 'testnet'
+                            ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io')
+                            : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+                        const provider = new WsProvider(wsUrl);
+                        const api = await ApiPromise.create({ provider });
+
+                        // Use derived balances to match UI (available/transferable)
+                        const derived = await api.derive.balances.account(addr.address);
+                        const available = (derived && (derived.availableBalance ?? derived.freeBalance ?? derived.free)) || 0;
+                        const PLANCK = BigInt(10 ** 10);
+                        const availableBig = BigInt(String(available));
+                        const dot = (availableBig / PLANCK).toString();
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: addr.network,
+                            address: addr.address,
+                            balance: dot,
+                            symbol: 'DOT',
+                        });
+
+                        try { await api.disconnect(); } catch {}
+                    } catch (err) {
+                        console.debug('Polkadot balance fetch failed:', (err as any)?.message || err);
+                        balances.push({
+                            chain: addr.chain,
+                            network: addr.network,
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'DOT',
                             error: 'Failed to fetch',
                         });
                     }
@@ -402,6 +478,7 @@ export class WalletController {
     ): Promise<void> {
         try {
             const { chain, network, toAddress, amount, fromAddress } = req.body;
+            const forceSend = req.body && req.body.force === true;
 
             // Validate authenticated user
             if (!req.user || !req.user.id) {
@@ -688,6 +765,182 @@ export class WalletController {
                                 : String(executeError)
                         }`
                     );
+                }
+            }
+            // POLKADOT
+            else if (chain === 'polkadot') {
+                try {
+                    // dynamic require to avoid hard dependency at load time
+                    // @ts-ignore
+                    const { ApiPromise, WsProvider } = require('@polkadot/api');
+                    // @ts-ignore
+                    const { Keyring } = require('@polkadot/keyring');
+
+                    const wsUrl = network === 'testnet'
+                        ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io')
+                        : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+
+                    const provider = new WsProvider(wsUrl);
+                    const api = await ApiPromise.create({ provider });
+
+                    const keyring = new Keyring({ type: 'sr25519' });
+
+                    // Try several private key formats: URI/mnemonic (addFromUri), raw 32-byte seed (addFromSeed)
+                    let sender: any = null;
+                    let derivedAddress: string | null = null;
+                    const pkStr = typeof privateKey === 'string' ? privateKey : String(privateKey);
+
+                    // Try addFromUri (handles mnemonics, <//Alice> style URIs, and raw seed URIs)
+                    try {
+                        sender = keyring.addFromUri(pkStr);
+                        derivedAddress = sender.address;
+                    } catch (e) {
+                        // Not a URI/mnemonic, try as 32-byte hex seed
+                        try {
+                            const seedHex = pkStr.replace(/^0x/, '');
+                            if (seedHex.length === 64) {
+                                const seed = Buffer.from(seedHex, 'hex');
+                                sender = keyring.addFromSeed(seed);
+                                derivedAddress = sender.address;
+                            } else {
+                                throw new Error('Private key is not a valid 32-byte hex seed');
+                            }
+                        } catch (e2) {
+                            // give up and show helpful message
+                            try { await api.disconnect(); } catch {}
+                            throw new Error('Unsupported Polkadot private key format. Expected mnemonic/URI or 32-byte hex seed. Errors: ' + [String(e), String(e2)].filter(Boolean).join(' | '));
+                        }
+                    }
+
+                    // Verify the derived address matches the stored address (safety check)
+                    if (!derivedAddress) {
+                        try { await api.disconnect(); } catch {}
+                        throw new Error('Failed to derive address from provided private key');
+                    }
+                    if (derivedAddress !== userAddress.address) {
+                        // If the encoded SS58 address differs we may still have the same public key
+                        try {
+                            // @ts-ignore
+                            const { decodeAddress, encodeAddress } = require('@polkadot/util-crypto');
+                            let storedPub: Uint8Array | null = null;
+                            try {
+                                storedPub = decodeAddress(userAddress.address);
+                            } catch (decErr) {
+                                storedPub = null;
+                            }
+
+                            const derivedPub: Uint8Array = sender && sender.publicKey ? sender.publicKey : (sender && sender?.pair && sender.pair.publicKey) || null;
+
+                            if (storedPub && derivedPub && Buffer.from(storedPub).toString('hex') === Buffer.from(derivedPub).toString('hex')) {
+                                // Same public key, different SS58 encoding. Try to detect ss58 format used by stored address for logging.
+                                let detectedFormat: number | null = null;
+                                for (let fmt = 0; fmt < 64; fmt++) {
+                                    try {
+                                        const enc = encodeAddress(derivedPub, fmt);
+                                        if (enc === userAddress.address) {
+                                            detectedFormat = fmt;
+                                            break;
+                                        }
+                                    } catch {}
+                                }
+
+                                console.warn(`[WARN] Polkadot address encoding mismatch: derived address ${derivedAddress} !== stored ${userAddress.address}, but public keys match. Detected ss58Format=${detectedFormat}`);
+                                // Proceed — signing is based on the keypair (public key matches), encoding differences are harmless for signing.
+                            } else {
+                                // If forceSend is true, allow operator override (dangerous) — otherwise abort
+                                if (forceSend) {
+                                    console.warn(`[FORCE] Proceeding despite derived/stored address mismatch. Derived=${derivedAddress} Stored=${userAddress.address}`);
+                                } else {
+                                    try { await api.disconnect(); } catch {}
+                                    throw new Error(`Derived address ${derivedAddress} does not match stored address ${userAddress.address}. Aborting to prevent funds loss.`);
+                                }
+                            }
+                        } catch (errCompare) {
+                            try { await api.disconnect(); } catch {}
+                            throw new Error(`Derived address ${derivedAddress} does not match stored address ${userAddress.address}. Additionally, address-compare failed: ${String(errCompare)}`);
+                        }
+                    }
+
+                    // Convert amount DOT -> Planck (1 DOT = 10^10 Planck)
+                    const planck = BigInt(Math.round(Number(amount) * 1e10));
+
+                    // choose available transfer method
+                    let tx: any = null;
+                    if (api.tx && api.tx.balances && api.tx.balances.transfer) {
+                        tx = api.tx.balances.transfer(toAddress, planck.toString());
+                    } else if (api.tx && api.tx.balances && api.tx.balances.transferKeepAlive) {
+                        tx = api.tx.balances.transferKeepAlive(toAddress, planck.toString());
+                    } else {
+                        // Provide helpful debug information about available tx modules
+                        const modules = Object.keys(api.tx || {}).join(', ');
+                        try { await api.disconnect(); } catch {}
+                        throw new Error(`No balances.transfer method found on chain. Available tx modules: ${modules}`);
+                    }
+
+                    // Attempt to sign and send; on fee-related failure, include account balance in diagnostics
+                    try {
+                        // signAndSend without callback returns the HashPromise
+                        const result = await tx.signAndSend(sender);
+                        txHash = result?.toString ? result.toString() : String(result);
+                    } catch (sendErr: any) {
+                        // If fees cannot be paid, fetch account balances for diagnostics
+                        let accountInfoStr = '';
+                        try {
+                            const info = await api.query.system.account(userAddress.address);
+                            const free = info.data?.free?.toString?.() ?? info.data?.free ?? 'unknown';
+                            const reserved = info.data?.reserved?.toString?.() ?? '0';
+                            accountInfoStr = `account.free=${free}, account.reserved=${reserved}`;
+                        } catch (qerr) {
+                            accountInfoStr = 'failed to query account info: ' + String(qerr);
+                        }
+
+                        try { await api.disconnect(); } catch {}
+                        throw new Error(`Failed to send DOT: ${(sendErr && sendErr.message) || sendErr}. ${accountInfoStr}`);
+                    }
+
+                    try { await api.disconnect(); } catch {}
+                } catch (err) {
+                    console.error('Polkadot send error:', err);
+                    throw new Error(((err as any) && (err as any).message) || String(err));
+                }
+            }
+            // XLM / Stellar
+            else if (chain === 'stellar') {
+                try {
+                    // @ts-ignore
+                    const StellarSdk = require('stellar-sdk');
+                    const horizonUrl = network === 'testnet'
+                        ? 'https://horizon-testnet.stellar.org'
+                        : 'https://horizon.stellar.org';
+
+                    const server = new StellarSdk.Server(horizonUrl);
+                    const sourceKeypair = StellarSdk.Keypair.fromSecret(privateKey);
+
+                    // Load account
+                    const account = await server.loadAccount(sourceKeypair.publicKey());
+
+                    const fee = await server.fetchBaseFee();
+                    const networkPassphrase = network === 'testnet' ? StellarSdk.Networks.TESTNET : StellarSdk.Networks.PUBLIC;
+
+                    const txBuilder = new StellarSdk.TransactionBuilder(account, {
+                        fee: String(fee),
+                        networkPassphrase,
+                    })
+                        .addOperation(StellarSdk.Operation.payment({
+                            destination: toAddress,
+                            asset: StellarSdk.Asset.native(),
+                            amount: String(amount),
+                        }))
+                        .setTimeout(30);
+
+                    const tx = txBuilder.build();
+                    tx.sign(sourceKeypair);
+
+                    const resp = await server.submitTransaction(tx);
+                    txHash = resp.hash;
+                } catch (err) {
+                    console.error('Stellar send error:', err);
+                    throw new Error('Failed to send XLM: ' + (((err as any) && (err as any).message) || err));
                 }
             }
             // BTC
@@ -1357,6 +1610,66 @@ export class WalletController {
                             error: 'Failed to fetch balance',
                         });
                     }
+                } else if (addr.chain === 'stellar') {
+                    try {
+                        const horizon = 'https://horizon-testnet.stellar.org';
+                        const resp = await axios.get(
+                            `${horizon}/accounts/${addr.address}`
+                        );
+                        const data = resp.data as any;
+                        const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
+                        const balanceStr = native ? native.balance : '0';
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: balanceStr,
+                            symbol: 'XLM',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'XLM',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'polkadot') {
+                    try {
+                        // Directly create a short-lived ApiPromise using the Paseo/testnet endpoint
+                        // @ts-ignore dynamic require
+                        const { ApiPromise, WsProvider } = require('@polkadot/api');
+                        const wsUrl = process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io';
+                        const provider = new WsProvider(wsUrl);
+                        const api = await ApiPromise.create({ provider });
+
+                        const derived = await api.derive.balances.account(addr.address);
+                        const available = (derived && (derived.availableBalance ?? derived.freeBalance ?? derived.free)) || 0;
+                        const PLANCK = BigInt(10 ** 10);
+                        const availableBig = BigInt(String(available));
+                        const dot = (availableBig / PLANCK).toString();
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: dot,
+                            symbol: 'DOT',
+                        });
+
+                        try { await api.disconnect(); } catch {}
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'DOT',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
                 } else if (
                     addr.chain === 'usdt_erc20' ||
                     addr.chain === 'usdt_trc20'
@@ -1522,6 +1835,63 @@ export class WalletController {
                             address: addr.address,
                             balance: '0',
                             symbol: 'SOL',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'stellar') {
+                    try {
+                        const horizon = 'https://horizon.stellar.org';
+                        const resp = await axios.get(`${horizon}/accounts/${addr.address}`);
+                        const data = resp.data as any;
+                        const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
+                        const balanceStr = native ? native.balance : '0';
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: balanceStr,
+                            symbol: 'XLM',
+                        });
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'XLM',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'polkadot') {
+                    try {
+                        // @ts-ignore dynamic require
+                        const { ApiPromise, WsProvider } = require('@polkadot/api');
+                        const wsUrl = process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io';
+                        const provider = new WsProvider(wsUrl);
+                        const api = await ApiPromise.create({ provider });
+
+                        const derived = await api.derive.balances.account(addr.address);
+                        const available = (derived && (derived.availableBalance ?? derived.freeBalance ?? derived.free)) || 0;
+                        const PLANCK = BigInt(10 ** 10);
+                        const availableBig = BigInt(String(available));
+                        const dot = (availableBig / PLANCK).toString();
+
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: dot,
+                            symbol: 'DOT',
+                        });
+
+                        try { await api.disconnect(); } catch {}
+                    } catch (error) {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'mainnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'DOT',
                             error: 'Failed to fetch balance',
                         });
                     }

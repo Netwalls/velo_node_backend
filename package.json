@@ -14,8 +14,11 @@
     "test": "jest"
   },
   "dependencies": {
+    "@polkadot/api": "^16.4.8",
+    "@polkadot/util-crypto": "^13.5.6",
     "@prisma/client": "^6.16.1",
     "@solana/web3.js": "^1.98.4",
+    "@stellar/stellar-sdk": "^14.2.0",
     "@types/axios": "^0.9.36",
     "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",
@@ -56,6 +59,7 @@
     "@types/nodemailer": "^6.4.19",
     "@types/pg": "^8.10.2",
     "@types/speakeasy": "^2.0.7",
+    "@types/stellar-sdk": "^0.11.1",
     "prisma": "^6.16.1",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.1.6"

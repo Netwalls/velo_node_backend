@@ -38,12 +38,33 @@ export const AppDataSource = new DataSource({
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
     // ssl: false,
-    ssl: { rejectUnauthorized: false },
+    // ssl: { rejectUnauthorized: false },
 });
 export const connectDB = async (): Promise<void> => {
     try {
+        // Log resolved connection parameters (avoid printing password)
+        const opts: any = AppDataSource.options as any;
+        const cfg: Record<string, unknown> = {
+            url: opts.url ?? null,
+            host: opts.host ?? null,
+            port: opts.port ?? null,
+            database: opts.database ?? null,
+            username: opts.username ?? null,
+            ssl: opts.ssl ?? null,
+        };
+        console.log('Attempting DB connect with config:', cfg);
         await AppDataSource.initialize();
         console.log('PostgreSQL Connected successfully');
+        // Query the server for the active database and user to help debugging
+        try {
+            const result: any = await AppDataSource.query("SELECT current_database() AS db, current_user AS user");
+            if (Array.isArray(result) && result[0]) {
+                console.log('Active DB connection info:', result[0]);
+            }
+        } catch (err) {
+            // Non-fatal: just log the error
+            console.error('Failed to read current_database/current_user:', err);
+        }
     } catch (error) {
         console.error('Database connection failed:', error);
         process.exit(1);

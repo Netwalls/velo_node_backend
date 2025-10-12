@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { AuthController } from '../controllers/authController';
 import { authMiddleware } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
+import createRateLimiter from '../middleware/rateLimiter';
 import {
     forgotPasswordSchema,
     verifyResetTokenSchema,
@@ -10,11 +11,19 @@ import {
 
 const router = Router();
 
-// Register new user
-router.post('/register', AuthController.register);
+// Register new user (strict rate limit: 5 reqs/min)
+router.post(
+    '/register',
+    createRateLimiter({ windowMs: 60 * 1000, max: 5, message: 'Too many registration attempts, please try again in a minute.' }),
+    AuthController.register
+);
 
-// Login user
-router.post('/login', AuthController.login);
+// Login user (rate limit: 10 reqs/min)
+router.post(
+    '/login',
+    createRateLimiter({ windowMs: 60 * 1000, max: 10, message: 'Too many login attempts, please try again in a minute.' }),
+    AuthController.login
+);
 
 // Verify OTP
 router.post('/verify-otp', AuthController.verifyOTP);

@@ -29,6 +29,8 @@ export enum ChainType {
     BSC = 'bsc',
     SOLANA = 'solana',
     STARKNET = 'starknet',
+    STELLAR = 'stellar',
+    POLKADOT = 'polkadot',
     USDT_ERC20 = 'usdt_erc20',
     USDT_TRC20 = 'usdt_trc20',
 }
