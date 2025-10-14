@@ -213,27 +213,50 @@ export function generateStellarWallet() {
         }
     }
 }
-
 export async function generatePolkadotWallet() {
     try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const polka = require('@polkadot/util-crypto');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { Keyring } = require('@polkadot/keyring');
+        
         // ensure WASM crypto initialized
         if (polka.cryptoWaitReady) {
             await polka.cryptoWaitReady();
         }
-        const mnemonic = polka.mnemonicGenerate ? polka.mnemonicGenerate() : '';
-        const seed = polka.mnemonicToMiniSecret
-            ? polka.mnemonicToMiniSecret(mnemonic)
-            : Buffer.from([]);
-        const address = polka.encodeAddress ? polka.encodeAddress(seed, 42) : '';
+        
+        const mnemonic = polka.mnemonicGenerate();
+        const seed = polka.mnemonicToMiniSecret(mnemonic);
+        
+        // Create keyring and derive keypair from seed
+        const keyring = new Keyring({ type: 'sr25519' });
+        const pair = keyring.addFromSeed(seed);
+        
+        // Get the public key from the keypair
+        const publicKey = pair.publicKey;
+        
+        // Encode addresses with proper SS58 formats
+        // Format 0 = Polkadot mainnet
+        // Format 42 = Generic Substrate (testnet)
+        const mainnetAddress = polka.encodeAddress(publicKey, 0);
+        const testnetAddress = polka.encodeAddress(publicKey, 42);
+        
+        // Store the seed (32 bytes) as the private key
+        const privateKey = Buffer.from(seed).toString('hex');
+        
         return {
-            mainnet: { address, privateKey: Buffer.from(seed).toString('hex') },
-            testnet: { address, privateKey: Buffer.from(seed).toString('hex') },
+            mainnet: { 
+                address: mainnetAddress, 
+                privateKey: privateKey 
+            },
+            testnet: { 
+                address: testnetAddress, 
+                privateKey: privateKey 
+            },
             mnemonic,
         };
     } catch (err) {
-        console.warn('Polkadot util-crypto not installed, skipping polkadot wallet generation');
+        console.warn('Polkadot wallet generation error:', err);
         return {
             mainnet: { address: '', privateKey: '' },
             testnet: { address: '', privateKey: '' },
@@ -241,6 +264,33 @@ export async function generatePolkadotWallet() {
         };
     }
 }
+// export async function generatePolkadotWallet() {
+//     try {
+//         // eslint-disable-next-line @typescript-eslint/no-var-requires
+//         const polka = require('@polkadot/util-crypto');
+//         // ensure WASM crypto initialized
+//         if (polka.cryptoWaitReady) {
+//             await polka.cryptoWaitReady();
+//         }
+//         const mnemonic = polka.mnemonicGenerate ? polka.mnemonicGenerate() : '';
+//         const seed = polka.mnemonicToMiniSecret
+//             ? polka.mnemonicToMiniSecret(mnemonic)
+//             : Buffer.from([]);
+//         const address = polka.encodeAddress ? polka.encodeAddress(seed, 42) : '';
+//         return {
+//             mainnet: { address, privateKey: Buffer.from(seed).toString('hex') },
+//             testnet: { address, privateKey: Buffer.from(seed).toString('hex') },
+//             mnemonic,
+//         };
+//     } catch (err) {
+//         console.warn('Polkadot util-crypto not installed, skipping polkadot wallet generation');
+//         return {
+//             mainnet: { address: '', privateKey: '' },
+//             testnet: { address: '', privateKey: '' },
+//             mnemonic: '',
+//         };
+//     }
+// }
 
 // Generate a real Starknet account contract address (OpenZeppelin, ArgentX, Ethereum)
 // export function generateStrkWallet(

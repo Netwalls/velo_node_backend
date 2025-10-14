@@ -768,181 +768,187 @@ export class WalletController {
                 }
             }
             // POLKADOT
-            else if (chain === 'polkadot') {
-                try {
-                    // dynamic require to avoid hard dependency at load time
-                    // @ts-ignore
-                    const { ApiPromise, WsProvider } = require('@polkadot/api');
-                    // @ts-ignore
-                    const { Keyring } = require('@polkadot/keyring');
+            // Replace the Polkadot section (around line 440) with this improved version:
+// POLKADOT
+else if (chain === 'polkadot') {
+    try {
+        // @ts-ignore
+        const { ApiPromise, WsProvider } = require('@polkadot/api');
+        // @ts-ignore
+        const { Keyring } = require('@polkadot/keyring');
+        // @ts-ignore  
+        const { decodeAddress, encodeAddress } = require('@polkadot/util-crypto');
+        // @ts-ignore
+        const { u8aToHex } = require('@polkadot/util');
 
-                    const wsUrl = network === 'testnet'
-                        ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io')
-                        : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+        const wsUrl = network === 'testnet'
+            ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io')
+            : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
 
-                    const provider = new WsProvider(wsUrl);
-                    const api = await ApiPromise.create({ provider });
+        const provider = new WsProvider(wsUrl);
+        const api = await ApiPromise.create({ provider });
 
-                    const keyring = new Keyring({ type: 'sr25519' });
+        const keyring = new Keyring({ type: 'sr25519' });
+        let sender: any = null;
+        const pkStr = typeof privateKey === 'string' ? privateKey : String(privateKey);
 
-                    // Try several private key formats: URI/mnemonic (addFromUri), raw 32-byte seed (addFromSeed)
-                    let sender: any = null;
-                    let derivedAddress: string | null = null;
-                    const pkStr = typeof privateKey === 'string' ? privateKey : String(privateKey);
-
-                    // Try addFromUri (handles mnemonics, <//Alice> style URIs, and raw seed URIs)
-                    try {
-                        sender = keyring.addFromUri(pkStr);
-                        derivedAddress = sender.address;
-                    } catch (e) {
-                        // Not a URI/mnemonic, try as 32-byte hex seed
-                        try {
-                            const seedHex = pkStr.replace(/^0x/, '');
-                            if (seedHex.length === 64) {
-                                const seed = Buffer.from(seedHex, 'hex');
-                                sender = keyring.addFromSeed(seed);
-                                derivedAddress = sender.address;
-                            } else {
-                                throw new Error('Private key is not a valid 32-byte hex seed');
-                            }
-                        } catch (e2) {
-                            // give up and show helpful message
-                            try { await api.disconnect(); } catch {}
-                            throw new Error('Unsupported Polkadot private key format. Expected mnemonic/URI or 32-byte hex seed. Errors: ' + [String(e), String(e2)].filter(Boolean).join(' | '));
-                        }
-                    }
-
-                    // Verify the derived address matches the stored address (safety check)
-                    if (!derivedAddress) {
-                        try { await api.disconnect(); } catch {}
-                        throw new Error('Failed to derive address from provided private key');
-                    }
-                    if (derivedAddress !== userAddress.address) {
-                        // If the encoded SS58 address differs we may still have the same public key
-                        try {
-                            // @ts-ignore
-                            const { decodeAddress, encodeAddress } = require('@polkadot/util-crypto');
-                            let storedPub: Uint8Array | null = null;
-                            try {
-                                storedPub = decodeAddress(userAddress.address);
-                            } catch (decErr) {
-                                storedPub = null;
-                            }
-
-                            const derivedPub: Uint8Array = sender && sender.publicKey ? sender.publicKey : (sender && sender?.pair && sender.pair.publicKey) || null;
-
-                            if (storedPub && derivedPub && Buffer.from(storedPub).toString('hex') === Buffer.from(derivedPub).toString('hex')) {
-                                // Same public key, different SS58 encoding. Try to detect ss58 format used by stored address for logging.
-                                let detectedFormat: number | null = null;
-                                for (let fmt = 0; fmt < 64; fmt++) {
-                                    try {
-                                        const enc = encodeAddress(derivedPub, fmt);
-                                        if (enc === userAddress.address) {
-                                            detectedFormat = fmt;
-                                            break;
-                                        }
-                                    } catch {}
-                                }
-
-                                console.warn(`[WARN] Polkadot address encoding mismatch: derived address ${derivedAddress} !== stored ${userAddress.address}, but public keys match. Detected ss58Format=${detectedFormat}`);
-                                // Proceed — signing is based on the keypair (public key matches), encoding differences are harmless for signing.
-                            } else {
-                                // If forceSend is true, allow operator override (dangerous) — otherwise abort
-                                if (forceSend) {
-                                    console.warn(`[FORCE] Proceeding despite derived/stored address mismatch. Derived=${derivedAddress} Stored=${userAddress.address}`);
-                                } else {
-                                    try { await api.disconnect(); } catch {}
-                                    throw new Error(`Derived address ${derivedAddress} does not match stored address ${userAddress.address}. Aborting to prevent funds loss.`);
-                                }
-                            }
-                        } catch (errCompare) {
-                            try { await api.disconnect(); } catch {}
-                            throw new Error(`Derived address ${derivedAddress} does not match stored address ${userAddress.address}. Additionally, address-compare failed: ${String(errCompare)}`);
-                        }
-                    }
-
-                    // Convert amount DOT -> Planck (1 DOT = 10^10 Planck)
-                    const planck = BigInt(Math.round(Number(amount) * 1e10));
-
-                    // choose available transfer method
-                    let tx: any = null;
-                    if (api.tx && api.tx.balances && api.tx.balances.transfer) {
-                        tx = api.tx.balances.transfer(toAddress, planck.toString());
-                    } else if (api.tx && api.tx.balances && api.tx.balances.transferKeepAlive) {
-                        tx = api.tx.balances.transferKeepAlive(toAddress, planck.toString());
-                    } else {
-                        // Provide helpful debug information about available tx modules
-                        const modules = Object.keys(api.tx || {}).join(', ');
-                        try { await api.disconnect(); } catch {}
-                        throw new Error(`No balances.transfer method found on chain. Available tx modules: ${modules}`);
-                    }
-
-                    // Attempt to sign and send; on fee-related failure, include account balance in diagnostics
-                    try {
-                        // signAndSend without callback returns the HashPromise
-                        const result = await tx.signAndSend(sender);
-                        txHash = result?.toString ? result.toString() : String(result);
-                    } catch (sendErr: any) {
-                        // If fees cannot be paid, fetch account balances for diagnostics
-                        let accountInfoStr = '';
-                        try {
-                            const info = await api.query.system.account(userAddress.address);
-                            const free = info.data?.free?.toString?.() ?? info.data?.free ?? 'unknown';
-                            const reserved = info.data?.reserved?.toString?.() ?? '0';
-                            accountInfoStr = `account.free=${free}, account.reserved=${reserved}`;
-                        } catch (qerr) {
-                            accountInfoStr = 'failed to query account info: ' + String(qerr);
-                        }
-
-                        try { await api.disconnect(); } catch {}
-                        throw new Error(`Failed to send DOT: ${(sendErr && sendErr.message) || sendErr}. ${accountInfoStr}`);
-                    }
-
-                    try { await api.disconnect(); } catch {}
-                } catch (err) {
-                    console.error('Polkadot send error:', err);
-                    throw new Error(((err as any) && (err as any).message) || String(err));
+        // Try to load the keypair from various formats
+        try {
+            sender = keyring.addFromUri(pkStr);
+        } catch (e1) {
+            try {
+                const seedHex = pkStr.replace(/^0x/, '');
+                if (seedHex.length === 64) {
+                    const seed = Buffer.from(seedHex, 'hex');
+                    sender = keyring.addFromSeed(seed);
+                } else {
+                    throw new Error('Invalid seed length');
                 }
+            } catch (e2) {
+                try { await api.disconnect(); } catch {}
+                throw new Error('Failed to load Polkadot keypair. Ensure private key is in mnemonic or 32-byte hex format.');
             }
+        }
+
+        // Get public keys for comparison
+        const derivedPubKey = sender.publicKey;
+        const derivedPubKeyHex = u8aToHex(derivedPubKey);
+        
+        let storedPubKey: Uint8Array | null = null;
+        let storedPubKeyHex = '';
+        try {
+            storedPubKey = decodeAddress(userAddress.address);
+            storedPubKeyHex = u8aToHex(storedPubKey);
+        } catch (e) {
+            try { await api.disconnect(); } catch {}
+            throw new Error(`Invalid stored address format: ${userAddress.address}`);
+        }
+
+        console.log('[DEBUG] Derived public key:', derivedPubKeyHex);
+        console.log('[DEBUG] Stored public key:', storedPubKeyHex);
+        console.log('[DEBUG] Derived address (default):', sender.address);
+        console.log('[DEBUG] Stored address:', userAddress.address);
+
+        // Check if public keys match
+        if (derivedPubKeyHex !== storedPubKeyHex) {
+            try { await api.disconnect(); } catch {}
+            throw new Error(
+                `CRITICAL: Private key does not match stored address!\n` +
+                `Derived address: ${sender.address}\n` +
+                `Stored address: ${userAddress.address}\n` +
+                `This private key belongs to a different account. Transaction aborted to prevent loss of funds.\n` +
+                `Please verify that you're using the correct wallet.`
+            );
+        }
+
+        // Public keys match! Now try to find the correct SS58 format
+        let correctFormat = 0; // Polkadot mainnet default
+        let matchFound = false;
+        
+        // Try common Polkadot formats
+        const formatsToTry = network === 'testnet' 
+            ? [0, 42] // Polkadot and generic substrate
+            : [0, 2, 42]; // Polkadot, Kusama, generic substrate
+        
+        for (const format of formatsToTry) {
+            try {
+                const encoded = encodeAddress(derivedPubKey, format);
+                if (encoded === userAddress.address) {
+                    correctFormat = format;
+                    matchFound = true;
+                    console.log(`[DEBUG] Address format matched: ${format}`);
+                    break;
+                }
+            } catch {}
+        }
+
+        // Use the stored address for sending (since public keys match)
+        const targetAddress = userAddress.address;
+
+        // Convert amount DOT -> Planck (1 DOT = 10^10 Planck)
+        const planck = BigInt(Math.round(Number(amount) * 1e10));
+
+        // Create transaction - use transferKeepAlive to prevent account reaping
+        const transfer = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
+        if (!transfer) {
+            try { await api.disconnect(); } catch {}
+            throw new Error('No transfer method available on this chain');
+        }
+
+        const tx = transfer(toAddress, planck.toString());
+        
+        // Sign and send
+        const hash = await tx.signAndSend(sender);
+        txHash = hash.toString();
+
+        console.log(`[SUCCESS] Polkadot transaction sent: ${txHash}`);
+
+        try { await api.disconnect(); } catch {}
+    } catch (err) {
+        console.error('Polkadot send error:', err);
+        throw new Error('Failed to send DOT: ' + ((err as any)?.message || String(err)));
+    }
+}
             // XLM / Stellar
-            else if (chain === 'stellar') {
-                try {
-                    // @ts-ignore
-                    const StellarSdk = require('stellar-sdk');
-                    const horizonUrl = network === 'testnet'
-                        ? 'https://horizon-testnet.stellar.org'
-                        : 'https://horizon.stellar.org';
 
-                    const server = new StellarSdk.Server(horizonUrl);
-                    const sourceKeypair = StellarSdk.Keypair.fromSecret(privateKey);
+        // STELLAR
+else if (chain === 'stellar') {
+    try {
+        // Try both import methods for compatibility
+        let StellarSdk;
+        try {
+            StellarSdk = require('stellar-sdk');
+        } catch (e) {
+            // @ts-ignore
+            StellarSdk = require('@stellar/stellar-sdk');
+        }
 
-                    // Load account
-                    const account = await server.loadAccount(sourceKeypair.publicKey());
+        const horizonUrl = network === 'testnet'
+            ? 'https://horizon-testnet.stellar.org'
+            : 'https://horizon.stellar.org';
 
-                    const fee = await server.fetchBaseFee();
-                    const networkPassphrase = network === 'testnet' ? StellarSdk.Networks.TESTNET : StellarSdk.Networks.PUBLIC;
+        // Use Horizon.Server or stellar-sdk.Horizon.Server
+        const Server = StellarSdk.Horizon?.Server || StellarSdk.Server;
+        const Keypair = StellarSdk.Keypair;
+        const TransactionBuilder = StellarSdk.TransactionBuilder;
+        const Networks = StellarSdk.Networks;
+        const Operation = StellarSdk.Operation;
+        const Asset = StellarSdk.Asset;
 
-                    const txBuilder = new StellarSdk.TransactionBuilder(account, {
-                        fee: String(fee),
-                        networkPassphrase,
-                    })
-                        .addOperation(StellarSdk.Operation.payment({
-                            destination: toAddress,
-                            asset: StellarSdk.Asset.native(),
-                            amount: String(amount),
-                        }))
-                        .setTimeout(30);
+        if (!Server) {
+            throw new Error('Unable to find Server constructor in stellar-sdk');
+        }
 
-                    const tx = txBuilder.build();
-                    tx.sign(sourceKeypair);
+        const server = new Server(horizonUrl);
+        const sourceKeypair = Keypair.fromSecret(privateKey);
 
-                    const resp = await server.submitTransaction(tx);
-                    txHash = resp.hash;
-                } catch (err) {
-                    console.error('Stellar send error:', err);
-                    throw new Error('Failed to send XLM: ' + (((err as any) && (err as any).message) || err));
-                }
-            }
+        // Load account
+        const account = await server.loadAccount(sourceKeypair.publicKey());
+
+        const fee = await server.fetchBaseFee();
+        const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
+
+        const txBuilder = new TransactionBuilder(account, {
+            fee: String(fee),
+            networkPassphrase,
+        })
+            .addOperation(Operation.payment({
+                destination: toAddress,
+                asset: Asset.native(),
+                amount: String(amount),
+            }))
+            .setTimeout(30);
+
+        const tx = txBuilder.build();
+        tx.sign(sourceKeypair);
+
+        const resp = await server.submitTransaction(tx);
+        txHash = resp.hash;
+    } catch (err) {
+        console.error('Stellar send error:', err);
+        throw new Error('Failed to send XLM: ' + (((err as any) && (err as any).message) || err));
+    }
+}
             // BTC
             else if (chain === 'bitcoin') {
                 console.log('[DEBUG] Bitcoin transaction start');

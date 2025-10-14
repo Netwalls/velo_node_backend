@@ -2,7 +2,6 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import { connectDB } from './config/database';
-import { PaymentMonitoringService } from './services/paymentMonitoringService';
 import authRouter from './routes/authRoute';
 import userRouter from './routes/userRoute';
 import walletRouter from './routes/walletRoute';
@@ -15,15 +14,21 @@ import splitPaymentRoutes from './routes/splitPaymentRoute';
 import { WalletController } from './controllers/walletController';
 import strkRoute from "./routes/strkDeploymentRoute";
 import qrpaymentRoute from './routes/qrpaymentRoute';
+import createRateLimiter from './middleware/rateLimiter';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+// const PORT = process.env.PORT;
+const PORT = Number(process.env.PORT) || 5500;
+console.log(`Using PORT=${PORT}`);
 
 app.use(cors());
 app.use(express.json());
+// Apply global rate limiter
+// Global rate limit: 60 requests per minute per IP
+app.use(createRateLimiter({ windowMs: 60 * 1000, max: 30 }));
 
 app.get('/', (req, res) => {
     res.send('Velo Backend Server is running!');

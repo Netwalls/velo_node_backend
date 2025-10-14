@@ -154,6 +154,7 @@ export class MerchantController {
                 amount,
                 chain,
                 network,
+                stellarAddress,
                 ethAddress,
                 btcAddress,
                 solAddress,
@@ -179,6 +180,7 @@ export class MerchantController {
             const address =
                 ethAddress ||
                 btcAddress ||
+                stellarAddress ||
                 solAddress ||
                 strkAddress ||
                 usdtErc20Address ||
@@ -194,6 +196,7 @@ export class MerchantController {
             const validations: Record<string, () => boolean> = {
                 bitcoin: () => isValidBtcAddress(address),
                 ethereum: () => isValidEthAddress(address),
+                stellar: () => MerchantController.isValidStellarAddress(address),
                 solana: () => isValidSolAddress(address),
                 starknet: () => isValidStrkAddress(address),
                 'usdt-erc20': () => isValidEthAddress(address),
@@ -209,13 +212,14 @@ export class MerchantController {
             const paymentRepo = AppDataSource.getRepository(MerchantPayment);
 
             // Create payment request
-            const payment = paymentRepo.create({
+            const payload: any = {
                 userId,
                 amount,
                 chain,
                 network: network || 'mainnet',
                 ethAddress,
                 btcAddress,
+                stellarAddress,
                 solAddress,
                 strkAddress,
                 usdtErc20Address,
@@ -225,9 +229,9 @@ export class MerchantController {
                 description:
                     description ||
                     `Payment request for ${amount} ${chain.toUpperCase()}`,
-            });
+            };
 
-            await paymentRepo.save(payment);
+            const payment = (await paymentRepo.save(payload as any)) as MerchantPayment;
 
             // Create notification
             await AppDataSource.getRepository(Notification).save({
@@ -238,7 +242,6 @@ export class MerchantController {
                 details: {
                     amount,
                     chain,
-                    network: payment.network,
                     paymentId: payment.id,
                     address,
                 },
@@ -558,6 +561,8 @@ export class MerchantController {
                     );
                 case 'solana':
                     return await MerchantController.checkSolanaPayment(payment);
+                case 'stellar':
+                    return await MerchantController.checkStellarPayment(payment);
                 case 'starknet':
                     return await MerchantController.checkStarknetPayment(
                         payment
@@ -571,6 +576,75 @@ export class MerchantController {
                 confirmed: false,
                 error: error instanceof Error ? error.message : 'Unknown error',
             };
+        }
+    }
+
+    // Basic Stellar address validation (G... public keys)
+    private static isValidStellarAddress(addr?: string | null): boolean {
+        if (!addr || typeof addr !== 'string') return false;
+        return /^G[A-Z2-7]{55}$/.test(addr);
+    }
+
+    /**
+     * Check Stellar payment using Horizon API
+     */
+    private static async checkStellarPayment(payment: MerchantPayment): Promise<{
+        confirmed: boolean;
+        transactionHash?: string;
+        confirmations?: number;
+    }> {
+        try {
+            const network = (payment.network || 'mainnet').toLowerCase();
+            const horizon =
+                network === 'testnet'
+                    ? 'https://horizon-testnet.stellar.org'
+                    : 'https://horizon.stellar.org';
+
+            const address = payment.address;
+            const expectedAmount = (Number(payment.amount) || 0).toString();
+
+            // Fetch payments for the account (limit recent 50)
+            const res = await axios.get(
+                `${horizon}/accounts/${encodeURIComponent(address)}/payments`,
+                {
+                    params: { limit: 50, order: 'desc' },
+                    timeout: 10000,
+                }
+            );
+
+            const dataAny: any = res.data || {};
+            const records: any[] = Array.isArray(dataAny.records)
+                ? dataAny.records
+                : Array.isArray(dataAny._embedded?.records)
+                ? dataAny._embedded.records
+                : [];
+
+            for (const r of records) {
+                try {
+                    // native XLM payments have asset_type === 'native'
+                    const amount = r.amount?.toString();
+                    const to = r.to;
+                    const txHash = r.transaction_hash || r.hash || r.transaction_hash;
+
+                    if (!amount || !to) continue;
+                    if (to !== address) continue;
+
+                    // Compare amounts (allow tiny rounding differences)
+                    const a = BigInt(Math.round(Number(amount) * 1e7));
+                    const e = BigInt(Math.round(Number(expectedAmount) * 1e7));
+                    const tolerance = e / BigInt(100); // 1%
+                    if (a + tolerance >= e) {
+                        return { confirmed: true, transactionHash: txHash, confirmations: 1 };
+                    }
+                } catch {
+                    continue;
+                }
+            }
+
+            return { confirmed: false };
+        } catch (error) {
+            console.error('Stellar check error:', error instanceof Error ? error.message : error);
+            return { confirmed: false };
         }
     }
 
@@ -2054,7 +2128,7 @@ private static async checkStarknetPayment(
             const payments = await paymentRepo.find({ where: { userId } });
             const totalAmount = payments
                 .filter((p) => p.status === MerchantPaymentStatus.COMPLETED)
-                .reduce((sum, p) => sum + p.amount, 0);
+                .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
             res.json({
                 stats: {

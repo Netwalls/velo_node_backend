@@ -28,6 +28,166 @@ import * as ecc from 'tiny-secp256k1';
 import { ChainType, NetworkType } from '../types';
 import * as bitcoin from 'bitcoinjs-lib';
 import axios from 'axios';
+import * as starknet from 'starknet';
+
+
+// Token definitions for Starknet
+const STARKNET_TOKENS: Record<string, Record<string, Record<string, any>>> = {
+    mainnet: {
+        strk: {
+            address: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f632c0dbb1',
+            decimals: 18,
+        },
+        eth: {
+            address: '0x049d36570d4e46f48e99674bd3fcc84644dff0fcd51e1401197edf75935258d7e',
+            decimals: 18,
+        },
+        usdc: {
+            address: '0x053c91253bc9682c04929ca02ed00b130b7516e012e0dda72b526995fb20ba91d',
+            decimals: 6,
+        },
+        usdt: {
+            address: '0x068f5c6a61780768455de69077e07e89787eaf8a6c72c092d5370d29a7a00d6e',
+            decimals: 6,
+        },
+        dai: {
+            address: '0x00da114221cb83fa859dbdb4c44beeaa0bb37c7537ad5ae66fe5e0efd20e6eb3',
+            decimals: 18,
+        },
+    },
+    testnet: {
+        strk: {
+            address: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f632c0dbb1',
+            decimals: 18,
+        },
+        eth: {
+            address: '0x049d36570d4e46f48e99674bd3fcc84644dff0fcd51e1401197edf75935258d7e',
+            decimals: 18,
+        },
+        usdc: {
+            address: '0x053c91253bc9682c04929ca02ed00b130b7516e012e0dda72b526995fb20ba91d',
+            decimals: 6,
+        },
+        usdt: {
+            address: '0x068f5c6a61780768455de69077e07e89787eaf8a6c72c092d5370d29a7a00d6e',
+            decimals: 6,
+        },
+    },
+};
+
+// Multiple RPC endpoints for fallback
+const RPC_ENDPOINTS = {
+    mainnet: [
+        'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+    ],
+    testnet: [
+        'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+    ],
+};
+
+const ERC20_ABI = [
+    {
+        type: 'function',
+        name: 'transfer',
+        state_mutability: 'external',
+        inputs: [
+            {
+                name: 'recipient',
+                type: 'core::starknet::contract_address::ContractAddress',
+            },
+            {
+                name: 'amount',
+                type: 'core::integer::u256',
+            },
+        ],
+        outputs: [{ type: 'core::bool' }],
+    },
+];
+
+interface TokenConfig {
+    address: string;
+    decimals: number;
+}
+
+function getTokenConfig(network: string, tokenSymbol: string): TokenConfig | null {
+    const normalizedNetwork = network === 'testnet' ? 'testnet' : 'mainnet';
+    const normalizedSymbol = tokenSymbol.toLowerCase();
+    return STARKNET_TOKENS[normalizedNetwork]?.[normalizedSymbol] as TokenConfig || null;
+}
+
+async function getWorkingProvider(network: string): Promise<starknet.RpcProvider> {
+    const isTestnet = network === 'testnet';
+    const endpoints = isTestnet ? RPC_ENDPOINTS.testnet : RPC_ENDPOINTS.mainnet;
+
+    for (const endpoint of endpoints) {
+        try {
+            const provider = new starknet.RpcProvider({ nodeUrl: endpoint });
+            // Test the connection
+            await provider.getChainId();
+            console.log(`✅ Connected to Starknet RPC: ${endpoint}`);
+            return provider;
+        } catch (err) {
+            console.warn(`⚠️ Failed to connect to ${endpoint}:`, (err as any)?.message);
+            continue;
+        }
+    }
+
+    throw new Error(`Failed to connect to any Starknet ${isTestnet ? 'testnet' : 'mainnet'} RPC endpoints`);
+}
+
+// Helper to load Starknet SDK with lazy loading
+let StarknetSdk: any = null;
+
+function getStarknetSdk(): any {
+    if (StarknetSdk) {
+        return StarknetSdk;
+    }
+
+    try {
+        StarknetSdk = require('starknet');
+        console.log('✅ Starknet SDK loaded');
+        return StarknetSdk;
+    } catch (e) {
+        console.warn('⚠️ Starknet SDK not installed. Install with: npm install starknet');
+        return null;
+    }
+}
+
+let StellarSdk: any = null;
+// Try to load at startup (both package names supported). If not available we'll lazy-load later.
+try {
+    StellarSdk = require('@stellar/stellar-sdk');
+    console.log('✅ Stellar SDK loaded at startup: @stellar/stellar-sdk');
+} catch (e1) {
+    try {
+        StellarSdk = require('stellar-sdk');
+        console.log('✅ Stellar SDK loaded at startup: stellar-sdk (legacy)');
+    } catch (e2) {
+        console.warn('⚠️ Stellar SDK not found at startup. Will attempt lazy loading during payment execution.');
+    }
+}
+
+// Helper function to get Stellar SDK with lazy loading
+function getStellarSdk(): any {
+    if (StellarSdk) {
+        return StellarSdk;
+    }
+
+    // Try lazy loading
+    try {
+        StellarSdk = require('@stellar/stellar-sdk');
+        console.log('✅ Stellar SDK lazy loaded: @stellar/stellar-sdk');
+        return StellarSdk;
+    } catch (e1) {
+        try {
+            StellarSdk = require('stellar-sdk');
+            console.log('✅ Stellar SDK lazy loaded: stellar-sdk (legacy)');
+            return StellarSdk;
+        } catch (e2) {
+            return null;
+        }
+    }
+}
 
 const ECPair = ECPairFactory(ecc);
 
@@ -268,7 +428,7 @@ export class SplitPaymentController {
             const privateKey = decrypt(userAddress.encryptedPrivateKey);
 
             // Process payments based on chain
-            let results;
+            let results: Array<{ success: boolean; txHash?: string; error?: string }>;
             if (
                 splitPayment.chain === 'ethereum' ||
                 splitPayment.chain === 'usdt_erc20'
@@ -286,6 +446,18 @@ export class SplitPaymentController {
                 );
             } else if (splitPayment.chain === 'solana') {
                 results = await SplitPaymentController.processSolanaBatch(
+                    splitPayment,
+                    activeRecipients,
+                    privateKey
+                );
+            } else if (splitPayment.chain === 'stellar') {
+                results = await SplitPaymentController.processStellarBatch(
+                    splitPayment,
+                    activeRecipients,
+                    privateKey
+                );
+            } else if (splitPayment.chain === 'starknet' || splitPayment.chain === 'strk') {
+                results = await SplitPaymentController.processStarknetBatch(
                     splitPayment,
                     activeRecipients,
                     privateKey
@@ -402,7 +574,921 @@ export class SplitPaymentController {
         }
     }
 
+    // private static async processStellarBatch(
+    //     splitPayment: SplitPayment,
+    //     recipients: SplitPaymentRecipient[],
+    //     privateKey: string
+    // ): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
+    //     const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
+
+    //     try {
+    //         // Require stellar-sdk at runtime
+    //         let StellarSdk: any;
+    //         try {
+    //             StellarSdk = require('stellar-sdk');
+    //         } catch (reqErr) {
+    //             const msg = "Missing dependency 'stellar-sdk'. Install it with: npm install stellar-sdk and restart the server.";
+    //             console.error('Stellar SDK missing:', reqErr);
+    //             for (const _ of recipients) {
+    //                 results.push({ success: false, error: msg });
+    //             }
+    //             return results;
+    //         }
+
+    //         const network = (splitPayment.network || 'mainnet').toLowerCase();
+    //         const server = new StellarSdk.Server(
+    //             network === 'testnet'
+    //                 ? 'https://horizon-testnet.stellar.org'
+    //                 : 'https://horizon.stellar.org'
+    //         );
+
+    //         if (network === 'testnet') {
+    //             StellarSdk.Networks.TESTNET;
+    //         } else {
+    //             StellarSdk.Networks.PUBLIC;
+    //         }
+
+    //         // Load source keypair
+    //         let sourceKeypair;
+    //         try {
+    //             // try parse as secret seed string
+    //             sourceKeypair = StellarSdk.Keypair.fromSecret(privateKey);
+    //         } catch {
+    //             // try hex -> seed
+    //             const hex = privateKey.startsWith('0x')
+    //                 ? privateKey.slice(2)
+    //                 : privateKey;
+    //             const seedBuf = Buffer.from(hex, 'hex');
+    //             try {
+    //                 sourceKeypair = StellarSdk.Keypair.fromRawEd25519Seed(seedBuf);
+    //             } catch (err) {
+    //                 throw new Error('Invalid Stellar secret');
+    //             }
+    //         }
+
+    //         // Fetch account sequence and base fee
+    //         const account = await server.loadAccount(sourceKeypair.publicKey());
+    //         const baseFee = await server.fetchBaseFee().catch(() => 100);
+
+    //         // Execute payments one-by-one for reliability
+    //         for (const recipient of recipients) {
+    //             try {
+    //                 const dest = recipient.recipientAddress;
+    //                 const amountStr = Number(recipient.amount).toString();
+
+    //                 // Build transaction
+    //                 const txBuilder = new StellarSdk.TransactionBuilder(account, {
+    //                     fee: String(baseFee),
+    //                     networkPassphrase:
+    //                         network === 'testnet'
+    //                             ? StellarSdk.Networks.TESTNET
+    //                             : StellarSdk.Networks.PUBLIC,
+    //                 });
+
+    //                 // If destination doesn't exist, create it (minimum 1 XLM)
+    //                 let destExists = true;
+    //                 try {
+    //                     await server.loadAccount(dest);
+    //                 } catch (err) {
+    //                     destExists = false;
+    //                 }
+
+    //                 if (!destExists) {
+    //                     // create account with amount
+    //                     txBuilder.addOperation(
+    //                         StellarSdk.Operation.createAccount({
+    //                             destination: dest,
+    //                             startingBalance: amountStr,
+    //                         })
+    //                     );
+    //                 } else {
+    //                     txBuilder.addOperation(
+    //                         StellarSdk.Operation.payment({
+    //                             destination: dest,
+    //                             asset: StellarSdk.Asset.native(),
+    //                             amount: amountStr,
+    //                         })
+    //                     );
+    //                 }
+
+    //                 const tx = txBuilder.setTimeout(30).build();
+    //                 tx.sign(sourceKeypair);
+
+    //                 const resp = await server.submitTransaction(tx);
+    //                 results.push({ success: true, txHash: resp.hash });
+    //             } catch (err) {
+    //                 results.push({
+    //                     success: false,
+    //                     error: (err as any)?.message ? (err as any).message : String(err),
+    //                 });
+    //             }
+    //         }
+    //     } catch (error) {
+    //         console.error('Stellar batch processing error:', error);
+    //         for (const _ of recipients) {
+    //             results.push({
+    //                 success: false,
+    //                 error: (error as any)?.message ? (error as any).message : String(error),
+    //             });
+    //         }
+    //     }
+
+    //     return results;
+    // }
+
+    // private static async processStellarBatch(
+    //     splitPayment: SplitPayment,
+    //     recipients: SplitPaymentRecipient[],
+    //     privateKey: string
+    // ): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
+    //     const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
+
+    //     // Try to load Stellar SDK (support both package names)
+    //     let StellarSdk: any = undefined;
+    //     try {
+    //         StellarSdk = require('stellar-sdk');
+    //     } catch (e1) {
+    //         try {
+    //             StellarSdk = require('@stellar/stellar-sdk');
+    //         } catch (e2) {
+    //             const errorMsg = "Stellar SDK not installed. Install it with: npm install @stellar/stellar-sdk (or npm install stellar-sdk) and restart the server.";
+    //             console.error('Stellar SDK missing:', { e1, e2 });
+    //             for (const _ of recipients) {
+    //                 results.push({ success: false, error: errorMsg });
+    //             }
+    //             return results;
+    //         }
+    //     }
+
+    //     try {
+    //         // Normalize default export if present (ESM interop)
+    //         StellarSdk = (StellarSdk && (StellarSdk.default || StellarSdk)) as any;
+
+    //         if (!StellarSdk || typeof StellarSdk.Server !== 'function') {
+    //             const msg = 'Loaded Stellar SDK is missing Server constructor. Check installed version of stellar-sdk.';
+    //             console.error(msg, { StellarSdk });
+    //             for (const _ of recipients) {
+    //                 results.push({ success: false, error: msg });
+    //             }
+    //             return results;
+    //         }
+
+    //         const network = (splitPayment.network || 'mainnet').toLowerCase();
+    //         const server = new StellarSdk.Server(
+    //             network === 'testnet'
+    //                 ? 'https://horizon-testnet.stellar.org'
+    //                 : 'https://horizon.stellar.org'
+    //         );
+
+    //         // Set network passphrase
+    //         const networkPassphrase = network === 'testnet'
+    //             ? StellarSdk.Networks.TESTNET
+    //             : StellarSdk.Networks.PUBLIC;
+
+    //         console.log('Stellar network configuration:', { network, networkPassphrase });
+
+    //         // Load source keypair
+    //         let sourceKeypair;
+    //         try {
+    //             // Try parse as secret seed string (starts with S)
+    //             sourceKeypair = StellarSdk.Keypair.fromSecret(privateKey);
+    //             console.log('Loaded Stellar keypair from secret key, public key:', sourceKeypair.publicKey());
+    //         } catch (secretErr) {
+    //             // Try hex -> seed
+    //             try {
+    //                 const hex = privateKey.startsWith('0x')
+    //                     ? privateKey.slice(2)
+    //                     : privateKey;
+    //                 const seedBuf = Buffer.from(hex, 'hex');
+                    
+    //                 if (seedBuf.length !== 32) {
+    //                     throw new Error(`Invalid seed length: ${seedBuf.length} bytes (expected 32)`);
+    //                 }
+                    
+    //                 sourceKeypair = StellarSdk.Keypair.fromRawEd25519Seed(seedBuf);
+    //                 console.log('Loaded Stellar keypair from hex seed, public key:', sourceKeypair.publicKey());
+    //             } catch (hexErr) {
+    //                 console.error('Failed to parse Stellar private key:', { 
+    //                     secretErr: (secretErr as any)?.message, 
+    //                     hexErr: (hexErr as any)?.message 
+    //                 });
+    //                 throw new Error(`Invalid Stellar secret key format. Must be either a secret key (starting with S) or a 32-byte hex seed. Error: ${(secretErr as any)?.message || String(secretErr)}`);
+    //             }
+    //         }
+
+    //         // Fetch account sequence and base fee
+    //         let account;
+    //         try {
+    //             account = await server.loadAccount(sourceKeypair.publicKey());
+    //             console.log('Loaded Stellar account:', {
+    //                 publicKey: sourceKeypair.publicKey(),
+    //                 sequence: account.sequenceNumber(),
+    //                 balances: account.balances
+    //             });
+    //         } catch (accountErr) {
+    //             console.error('Failed to load Stellar account:', {
+    //                 publicKey: sourceKeypair.publicKey(),
+    //                 network,
+    //                 error: (accountErr as any)?.message || String(accountErr),
+    //                 response: (accountErr as any)?.response?.data
+    //             });
+    //             throw new Error(
+    //                 `Failed to load Stellar account ${sourceKeypair.publicKey()}: ${
+    //                     (accountErr as any)?.response?.data?.detail || 
+    //                     (accountErr as any)?.message || 
+    //                     String(accountErr)
+    //                 }. Make sure the account exists and is funded on ${network}.`
+    //             );
+    //         }
+
+    //         const baseFee = await server.fetchBaseFee().catch((err: unknown) => {
+    //             console.warn('Failed to fetch base fee, using default 100 stroops:', err);
+    //             return 100;
+    //         });
+
+    //         console.log('Base fee:', baseFee);
+
+    //         // Execute payments one-by-one for reliability
+    //         for (let i = 0; i < recipients.length; i++) {
+    //             const recipient = recipients[i];
+    //             try {
+    //                 const dest = recipient.recipientAddress;
+    //                 const amountStr = Number(recipient.amount).toFixed(7); // Stellar supports 7 decimal places
+
+    //                 console.log(`Processing payment ${i + 1}/${recipients.length}:`, {
+    //                     to: dest,
+    //                     amount: amountStr
+    //                 });
+
+    //                 // Reload account to get fresh sequence number
+    //                 const freshAccount = await server.loadAccount(sourceKeypair.publicKey());
+
+    //                 // Build transaction
+    //                 const txBuilder = new StellarSdk.TransactionBuilder(freshAccount, {
+    //                     fee: String(baseFee),
+    //                     networkPassphrase: networkPassphrase,
+    //                 });
+
+    //                 // Check if destination account exists
+    //                 let destExists = true;
+    //                 try {
+    //                     await server.loadAccount(dest);
+    //                     console.log('Destination account exists:', dest);
+    //                 } catch (err) {
+    //                     destExists = false;
+    //                     console.log('Destination account does not exist, will create:', dest);
+    //                 }
+
+    //                 if (!destExists) {
+    //                     // Create account with amount (minimum 1 XLM)
+    //                     const createAmount = Math.max(Number(amountStr), 1).toFixed(7);
+    //                     txBuilder.addOperation(
+    //                         StellarSdk.Operation.createAccount({
+    //                             destination: dest,
+    //                             startingBalance: createAmount,
+    //                         })
+    //                     );
+    //                     console.log('Added createAccount operation with balance:', createAmount);
+    //                 } else {
+    //                     // Send payment to existing account
+    //                     txBuilder.addOperation(
+    //                         StellarSdk.Operation.payment({
+    //                             destination: dest,
+    //                             asset: StellarSdk.Asset.native(),
+    //                             amount: amountStr,
+    //                         })
+    //                     );
+    //                     console.log('Added payment operation');
+    //                 }
+
+    //                 const tx = txBuilder.setTimeout(30).build();
+    //                 tx.sign(sourceKeypair);
+
+    //                 console.log('Transaction built and signed, submitting...');
+    //                 const resp = await server.submitTransaction(tx);
+                    
+    //                 console.log('Payment successful:', {
+    //                     hash: resp.hash,
+    //                     ledger: resp.ledger,
+    //                     recipient: dest
+    //                 });
+
+    //                 results.push({ success: true, txHash: resp.hash });
+
+    //                 // Small delay between transactions to avoid rate limiting
+    //                 if (i < recipients.length - 1) {
+    //                     await new Promise((resolve) => setTimeout(resolve, 500));
+    //                 }
+    //             } catch (err) {
+    //                 const errorMsg = (err as any)?.response?.data?.extras?.result_codes || 
+    //                                (err as any)?.message || 
+    //                                String(err);
+    //                 console.error(`Failed to send payment to ${recipient.recipientAddress}:`, errorMsg);
+    //                 results.push({
+    //                     success: false,
+    //                     error: typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : String(errorMsg),
+    //                 });
+    //             }
+    //         }
+    //     } catch (error) {
+    //         console.error('Stellar batch processing error:', error);
+    //         // If we haven't processed any recipients yet, mark all as failed
+    //         if (results.length === 0) {
+    //             for (const _ of recipients) {
+    //                 results.push({
+    //                     success: false,
+    //                     error: (error as any)?.message ? (error as any).message : String(error),
+    //                 });
+    //             }
+    //         }
+    //     }
+
+    //     return results;
+    // }
+
+    // At the top of your file, replace the Stellar SDK loading section with:
+
+
+
+// Then update your processStellarBatch to use this helper:
+
+// private static async processStellarBatch(
+//     splitPayment: SplitPayment,
+//     recipients: SplitPaymentRecipient[],
+//     privateKey: string
+// ): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
+//     const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
+
+//     const StellarSdkLocal = getStellarSdk();
+    
+//     if (!StellarSdkLocal) {
+//         const errorMsg = "Stellar SDK not installed. Install it with: npm install @stellar/stellar-sdk (or npm install stellar-sdk) and restart the server.";
+//         console.error('Stellar SDK missing');
+//         for (const _ of recipients) {
+//             results.push({ success: false, error: errorMsg });
+//         }
+//         return results;
+//     }
+
+//     try {
+//         // Normalize default export if present (ESM interop)
+//         const SDK = (StellarSdkLocal && (StellarSdkLocal.default || StellarSdkLocal)) as any;
+
+//         if (!SDK || typeof SDK.Server !== 'function') {
+//             const msg = 'Loaded Stellar SDK is missing Server constructor. Check installed version of stellar-sdk.';
+//             console.error(msg, { SDK });
+//             for (const _ of recipients) {
+//                 results.push({ success: false, error: msg });
+//             }
+//             return results;
+//         }
+
+//         const network = (splitPayment.network || 'mainnet').toLowerCase();
+//         const server = new SDK.Server(
+//             network === 'testnet'
+//                 ? 'https://horizon-testnet.stellar.org'
+//                 : 'https://horizon.stellar.org'
+//         );
+
+//         const networkPassphrase = network === 'testnet'
+//             ? SDK.Networks.TESTNET
+//             : SDK.Networks.PUBLIC;
+
+//         console.log('Stellar network configuration:', { network, networkPassphrase });
+
+//         // Load source keypair
+//         let sourceKeypair;
+//         try {
+//             sourceKeypair = SDK.Keypair.fromSecret(privateKey);
+//             console.log('Loaded Stellar keypair from secret key, public key:', sourceKeypair.publicKey());
+//         } catch (secretErr) {
+//             try {
+//                 const hex = privateKey.startsWith('0x')
+//                     ? privateKey.slice(2)
+//                     : privateKey;
+//                 const seedBuf = Buffer.from(hex, 'hex');
+                
+//                 if (seedBuf.length !== 32) {
+//                     throw new Error(`Invalid seed length: ${seedBuf.length} bytes (expected 32)`);
+//                 }
+                
+//                 sourceKeypair = SDK.Keypair.fromRawEd25519Seed(seedBuf);
+//                 console.log('Loaded Stellar keypair from hex seed, public key:', sourceKeypair.publicKey());
+//             } catch (hexErr) {
+//                 console.error('Failed to parse Stellar private key:', { 
+//                     secretErr: (secretErr as any)?.message, 
+//                     hexErr: (hexErr as any)?.message 
+//                 });
+//                 throw new Error(`Invalid Stellar secret key format. Must be either a secret key (starting with S) or a 32-byte hex seed.`);
+//             }
+//         }
+
+//         // Fetch account and base fee
+//         let account;
+//         try {
+//             account = await server.loadAccount(sourceKeypair.publicKey());
+//             console.log('Loaded Stellar account:', {
+//                 publicKey: sourceKeypair.publicKey(),
+//                 sequence: account.sequenceNumber(),
+//                 balances: account.balances
+//             });
+//         } catch (accountErr) {
+//             console.error('Failed to load Stellar account:', {
+//                 publicKey: sourceKeypair.publicKey(),
+//                 network,
+//                 error: (accountErr as any)?.message || String(accountErr),
+//             });
+//             throw new Error(
+//                 `Failed to load Stellar account ${sourceKeypair.publicKey()} on ${network}: ${
+//                     (accountErr as any)?.response?.data?.detail || 
+//                     (accountErr as any)?.message || 
+//                     String(accountErr)
+//                 }`
+//             );
+//         }
+
+//         const baseFee = await server.fetchBaseFee().catch((err: unknown) => {
+//             console.warn('Failed to fetch base fee, using default 100 stroops:', err);
+//             return 100;
+//         });
+
+//         // Process payments
+//         for (let i = 0; i < recipients.length; i++) {
+//             const recipient = recipients[i];
+//             try {
+//                 const dest = recipient.recipientAddress;
+//                 const amountStr = Number(recipient.amount).toFixed(7);
+
+//                 console.log(`Processing payment ${i + 1}/${recipients.length}:`, {
+//                     to: dest,
+//                     amount: amountStr
+//                 });
+
+//                 const freshAccount = await server.loadAccount(sourceKeypair.publicKey());
+
+//                 const txBuilder = new SDK.TransactionBuilder(freshAccount, {
+//                     fee: String(baseFee),
+//                     networkPassphrase: networkPassphrase,
+//                 });
+
+//                 let destExists = true;
+//                 try {
+//                     await server.loadAccount(dest);
+//                 } catch (err) {
+//                     destExists = false;
+//                 }
+
+//                 if (!destExists) {
+//                     const createAmount = Math.max(Number(amountStr), 1).toFixed(7);
+//                     txBuilder.addOperation(
+//                         SDK.Operation.createAccount({
+//                             destination: dest,
+//                             startingBalance: createAmount,
+//                         })
+//                     );
+//                 } else {
+//                     txBuilder.addOperation(
+//                         SDK.Operation.payment({
+//                             destination: dest,
+//                             asset: SDK.Asset.native(),
+//                             amount: amountStr,
+//                         })
+//                     );
+//                 }
+
+//                 const tx = txBuilder.setTimeout(30).build();
+//                 tx.sign(sourceKeypair);
+
+//                 const resp = await server.submitTransaction(tx);
+                
+//                 console.log('Payment successful:', {
+//                     hash: resp.hash,
+//                     ledger: resp.ledger,
+//                     recipient: dest
+//                 });
+
+//                 results.push({ success: true, txHash: resp.hash });
+
+//                 if (i < recipients.length - 1) {
+//                     await new Promise((resolve) => setTimeout(resolve, 500));
+//                 }
+//             } catch (err) {
+//                 const errorMsg = (err as any)?.response?.data?.extras?.result_codes || 
+//                                (err as any)?.message || 
+//                                String(err);
+//                 console.error(`Failed to send payment to ${recipient.recipientAddress}:`, errorMsg);
+//                 results.push({
+//                     success: false,
+//                     error: typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : String(errorMsg),
+//                 });
+//             }
+//         }
+//     } catch (error) {
+//         console.error('Stellar batch processing error:', error);
+//         if (results.length === 0) {
+//             for (const _ of recipients) {
+//                 results.push({
+//                     success: false,
+//                     error: (error as any)?.message ? (error as any).message : String(error),
+//                 });
+//             }
+//         }
+//     }
+
+//     return results;
+// }
+
+private static async processStellarBatch(
+    splitPayment: SplitPayment,
+    recipients: SplitPaymentRecipient[],
+    privateKey: string
+): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
+    const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
+
+    const StellarSdkLocal = getStellarSdk();
+    
+    if (!StellarSdkLocal) {
+        const errorMsg = "Stellar SDK not installed. Install it with: npm install @stellar/stellar-sdk (or npm install stellar-sdk) and restart the server.";
+        console.error('Stellar SDK missing');
+        for (const _ of recipients) {
+            results.push({ success: false, error: errorMsg });
+        }
+        return results;
+    }
+
+    try {
+        // Normalize default export if present (ESM interop)
+        const SDK = (StellarSdkLocal && (StellarSdkLocal.default || StellarSdkLocal)) as any;
+
+        if (!SDK) {
+            const msg = 'Loaded Stellar SDK is invalid';
+            console.error(msg, { SDK });
+            for (const _ of recipients) {
+                results.push({ success: false, error: msg });
+            }
+            return results;
+        }
+
+        // Handle different SDK versions - Server can be at SDK.Server or SDK.Horizon.Server
+        const ServerClass = SDK.Server || (SDK.Horizon && SDK.Horizon.Server);
+        if (!ServerClass || typeof ServerClass !== 'function') {
+            const msg = 'Loaded Stellar SDK is missing Server constructor. Check installed version of stellar-sdk.';
+            console.error(msg, { SDK });
+            for (const _ of recipients) {
+                results.push({ success: false, error: msg });
+            }
+            return results;
+        }
+
+        const network = (splitPayment.network || 'mainnet').toLowerCase();
+        const server = new ServerClass(
+            network === 'testnet'
+                ? 'https://horizon-testnet.stellar.org'
+                : 'https://horizon.stellar.org'
+        );
+
+        const networkPassphrase = network === 'testnet'
+            ? SDK.Networks.TESTNET
+            : SDK.Networks.PUBLIC;
+
+        console.log('Stellar network configuration:', { network, networkPassphrase });
+
+        // Load source keypair
+        let sourceKeypair;
+        try {
+            sourceKeypair = SDK.Keypair.fromSecret(privateKey);
+            console.log('Loaded Stellar keypair from secret key, public key:', sourceKeypair.publicKey());
+        } catch (secretErr) {
+            try {
+                const hex = privateKey.startsWith('0x')
+                    ? privateKey.slice(2)
+                    : privateKey;
+                const seedBuf = Buffer.from(hex, 'hex');
+                
+                if (seedBuf.length !== 32) {
+                    throw new Error(`Invalid seed length: ${seedBuf.length} bytes (expected 32)`);
+                }
+                
+                sourceKeypair = SDK.Keypair.fromRawEd25519Seed(seedBuf);
+                console.log('Loaded Stellar keypair from hex seed, public key:', sourceKeypair.publicKey());
+            } catch (hexErr) {
+                console.error('Failed to parse Stellar private key:', { 
+                    secretErr: (secretErr as any)?.message, 
+                    hexErr: (hexErr as any)?.message 
+                });
+                throw new Error(`Invalid Stellar secret key format. Must be either a secret key (starting with S) or a 32-byte hex seed.`);
+            }
+        }
+
+        // Fetch account and base fee
+        let account;
+        try {
+            account = await server.loadAccount(sourceKeypair.publicKey());
+            console.log('Loaded Stellar account:', {
+                publicKey: sourceKeypair.publicKey(),
+                sequence: account.sequenceNumber(),
+                balances: account.balances
+            });
+        } catch (accountErr) {
+            console.error('Failed to load Stellar account:', {
+                publicKey: sourceKeypair.publicKey(),
+                network,
+                error: (accountErr as any)?.message || String(accountErr),
+            });
+            throw new Error(
+                `Failed to load Stellar account ${sourceKeypair.publicKey()} on ${network}: ${
+                    (accountErr as any)?.response?.data?.detail || 
+                    (accountErr as any)?.message || 
+                    String(accountErr)
+                }`
+            );
+        }
+
+        const baseFee = await server.fetchBaseFee().catch((err: unknown) => {
+            console.warn('Failed to fetch base fee, using default 100 stroops:', err);
+            return 100;
+        });
+
+        // Process payments
+        for (let i = 0; i < recipients.length; i++) {
+            const recipient = recipients[i];
+            try {
+                const dest = recipient.recipientAddress;
+                const amountStr = Number(recipient.amount).toFixed(7);
+
+                console.log(`Processing payment ${i + 1}/${recipients.length}:`, {
+                    to: dest,
+                    amount: amountStr
+                });
+
+                const freshAccount = await server.loadAccount(sourceKeypair.publicKey());
+
+                const txBuilder = new SDK.TransactionBuilder(freshAccount, {
+                    fee: String(baseFee),
+                    networkPassphrase: networkPassphrase,
+                });
+
+                let destExists = true;
+                try {
+                    await server.loadAccount(dest);
+                } catch (err) {
+                    destExists = false;
+                }
+
+                if (!destExists) {
+                    const createAmount = Math.max(Number(amountStr), 1).toFixed(7);
+                    txBuilder.addOperation(
+                        SDK.Operation.createAccount({
+                            destination: dest,
+                            startingBalance: createAmount,
+                        })
+                    );
+                } else {
+                    txBuilder.addOperation(
+                        SDK.Operation.payment({
+                            destination: dest,
+                            asset: SDK.Asset.native(),
+                            amount: amountStr,
+                        })
+                    );
+                }
+
+                const tx = txBuilder.setTimeout(30).build();
+                tx.sign(sourceKeypair);
+
+                const resp = await server.submitTransaction(tx);
+                
+                console.log('Payment successful:', {
+                    hash: resp.hash,
+                    ledger: resp.ledger,
+                    recipient: dest
+                });
+
+                results.push({ success: true, txHash: resp.hash });
+
+                if (i < recipients.length - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                }
+            } catch (err) {
+                const errorMsg = (err as any)?.response?.data?.extras?.result_codes || 
+                               (err as any)?.message || 
+                               String(err);
+                console.error(`Failed to send payment to ${recipient.recipientAddress}:`, errorMsg);
+                results.push({
+                    success: false,
+                    error: typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : String(errorMsg),
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Stellar batch processing error:', error);
+        if (results.length === 0) {
+            for (const _ of recipients) {
+                results.push({
+                    success: false,
+                    error: (error as any)?.message ? (error as any).message : String(error),
+                });
+            }
+        }
+    }
+
+    return results;
+}
+
     /**
+     * Process Starknet split batch — forwards to a relayer if configured or returns a clear error.
+     */
+    // private static async processStarknetBatch(
+    //     splitPayment: SplitPayment,
+    //     recipients: SplitPaymentRecipient[],
+    //     privateKey: string
+    // ): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
+    //     const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
+
+    //     if (!recipients || recipients.length === 0) return results;
+
+    //     const relayer = process.env.STARKNET_RELAYER_URL;
+    //     if (relayer) {
+    //         try {
+    //             const resp = await axios.post(
+    //                 `${relayer.replace(/\/$/, '')}/split/starknet/execute`,
+    //                 {
+    //                     from: splitPayment.fromAddress,
+    //                     network: splitPayment.network,
+    //                     recipients: recipients.map((r) => ({ address: r.recipientAddress, amount: r.amount })),
+    //                     privateKey,
+    //                 },
+    //                 { timeout: 30000 }
+    //             );
+
+    //             const data: any = resp.data || {};
+    //             const remoteResults: any[] = Array.isArray(data.results) ? data.results : [];
+
+    //             for (let i = 0; i < recipients.length; i++) {
+    //                 const rr = remoteResults[i];
+    //                 if (!rr) results.push({ success: false, error: 'Relayer returned no result for recipient' });
+    //                 else results.push({ success: !!rr.success, txHash: rr.txHash, error: rr.error });
+    //             }
+
+    //             return results;
+    //         } catch (err) {
+    //             console.error('Starknet relayer call failed:', err instanceof Error ? err.message : err);
+    //         }
+    //     }
+
+    //     const msg =
+    //         'Server-side Starknet transfers are not configured. Provide STARKNET_RELAYER_URL or implement server-side transfers with a Starknet SDK (e.g. starknet.js).';
+    //     for (const _ of recipients) results.push({ success: false, error: msg });
+    //     return results;
+    // }
+
+    // Add this at the top of your file with other imports:
+
+
+// Replace the processStarknetBatch method with this implementation:
+
+private static async processStarknetBatch(
+    splitPayment: SplitPayment,
+    recipients: SplitPaymentRecipient[],
+    privateKey: string
+): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
+    const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
+
+    if (!recipients || recipients.length === 0) return results;
+
+    try {
+        // Determine token
+        let tokenSymbol = 'eth';
+        if (
+            splitPayment.chain === 'starknet_strk' ||
+            splitPayment.chain === 'strk'
+        ) {
+            tokenSymbol = 'strk';
+        } else if (splitPayment.chain === 'starknet_usdc') {
+            tokenSymbol = 'usdc';
+        } else if (splitPayment.chain === 'starknet_usdt') {
+            tokenSymbol = 'usdt';
+        } else if (splitPayment.chain === 'starknet_dai') {
+            tokenSymbol = 'dai';
+        }
+
+        const tokenConfig = getTokenConfig(splitPayment.network, tokenSymbol);
+        if (!tokenConfig) {
+            throw new Error(
+                `Unsupported token: ${tokenSymbol}. Supported: STRK, ETH, USDC, USDT, DAI`
+            );
+        }
+
+        console.log('Starknet transfer setup:', {
+            token: tokenSymbol,
+            network: splitPayment.network,
+            recipients: recipients.length,
+        });
+
+        // Get working provider
+        let provider: starknet.RpcProvider;
+        try {
+            provider = await getWorkingProvider(splitPayment.network);
+        } catch (err) {
+            throw new Error(`Provider initialization failed: ${(err as any)?.message || String(err)}`);
+        }
+
+        // Initialize account
+        let account: starknet.Account;
+        try {
+            const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey : '0x' + privateKey;
+            const signer = new starknet.Signer(cleanPrivateKey);
+            account = new starknet.Account(provider, splitPayment.fromAddress, signer);
+
+            console.log('Starknet account ready:', splitPayment.fromAddress);
+        } catch (err) {
+            throw new Error(
+                `Account initialization failed: ${(err as any)?.message || String(err)}`
+            );
+        }
+
+        // Create contract instance once
+        let tokenContract: starknet.Contract;
+        try {
+            tokenContract = new starknet.Contract(ERC20_ABI, tokenConfig.address, account);
+        } catch (err) {
+            throw new Error(
+                `Contract initialization failed: ${(err as any)?.message || String(err)}`
+            );
+        }
+
+        // Process each recipient
+        for (let i = 0; i < recipients.length; i++) {
+            const recipient = recipients[i];
+
+            try {
+                const dest = recipient.recipientAddress;
+                
+                // Validate recipient address
+                if (!dest || dest.length < 5) {
+                    throw new Error(`Invalid recipient address: ${dest}`);
+                }
+
+                // Convert amount to Wei
+                const amountBN = BigInt(
+                    Math.floor(parseFloat(recipient.amount) * 10 ** tokenConfig.decimals)
+                );
+                
+                if (amountBN <= 0n) {
+                    throw new Error(`Invalid amount: ${recipient.amount}`);
+                }
+
+                const uint256Amount = starknet.uint256.bnToUint256(amountBN);
+
+                console.log(`[${i + 1}/${recipients.length}] Executing transfer to ${dest}:`, {
+                    amount: recipient.amount,
+                    token: tokenSymbol,
+                });
+
+                // Build and execute transaction
+                const call = tokenContract.populate('transfer', [dest, uint256Amount]);
+                
+                const txResponse = await account.execute(call, undefined);
+
+                // Extract tx hash safely
+                const txHash = txResponse.transaction_hash || String(txResponse);
+
+                if (!txHash || txHash === 'undefined') {
+                    throw new Error('No transaction hash returned');
+                }
+
+                console.log(`✅ Transfer submitted: ${txHash}`);
+                results.push({ success: true, txHash });
+
+                // Delay between transactions
+                if (i < recipients.length - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 2000));
+                }
+
+            } catch (err) {
+                const errorMsg = (err as any)?.message || String(err);
+                console.error(`❌ Transfer failed for ${recipient.recipientAddress}:`, errorMsg);
+                results.push({ success: false, error: errorMsg });
+            }
+        }
+
+    } catch (error) {
+        console.error('❌ Starknet batch error:', error);
+        const errorMsg = (error as any)?.message || String(error);
+
+        // If we haven't processed any yet, mark all as failed
+        if (results.length === 0) {
+            for (const _ of recipients) {
+                results.push({ success: false, error: errorMsg });
+            }
+        }
+    }
+
+    return results;
+}
+
+
+/**
      * Get all split payment templates (reusable)
      * GET /split-payment/templates
      */
