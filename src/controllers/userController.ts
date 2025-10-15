@@ -416,6 +416,80 @@ export class UserController {
     }
 
     /**
+     * Set a 4-digit transaction PIN for the authenticated user.
+     * Expects { pin: '1234' } in body. Stores hashed pin in DB.
+     */
+    static async setTransactionPin(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const { pin } = req.body;
+            if (!pin || typeof pin !== 'string') {
+                res.status(400).json({ error: 'PIN is required' });
+                return;
+            }
+            // Validate 4-digit numeric PIN
+            if (!/^\d{4}$/.test(pin)) {
+                res.status(400).json({ error: 'PIN must be exactly 4 digits' });
+                return;
+            }
+
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOne({ where: { id: req.user!.id } });
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            // Store hashed PIN (use bcrypt)
+            user.transactionPin = pin;
+            await userRepository.save(user);
+
+            res.json({ message: 'Transaction PIN set successfully' });
+        } catch (error) {
+            console.error('Set transaction PIN error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
+     * Verify a provided 4-digit PIN against stored hash.
+     * Expects { pin: '1234' } in body.
+     */
+    static async verifyTransactionPin(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const { pin } = req.body;
+            if (!pin || typeof pin !== 'string') {
+                res.status(400).json({ error: 'PIN is required' });
+                return;
+            }
+            if (!/^\d{4}$/.test(pin)) {
+                res.status(400).json({ error: 'PIN must be exactly 4 digits' });
+                return;
+            }
+
+            const userRepository = AppDataSource.getRepository(User);
+            const user = await userRepository.findOne({ where: { id: req.user!.id } });
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            if (!user.transactionPin) {
+                res.status(400).json({ error: 'Transaction PIN not set' });
+                return;
+            }
+
+            // Compare using bcrypt
+            const bcrypt = (await import('bcryptjs')).default;
+            const match = await bcrypt.compare(pin, user.transactionPin as string);
+
+            res.json({ valid: !!match });
+        } catch (error) {
+            console.error('Verify transaction PIN error:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
+    /**
      * Delete the account of the currently authenticated user.
      * Removes the user and all related data (addresses, KYC documents).
      */

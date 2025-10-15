@@ -29,6 +29,12 @@ router.get(
 // Add blockchain address
 router.post('/address', authMiddleware, UserController.addAddress);
 
+// Set transaction PIN (4-digit)
+router.post('/transaction-pin', authMiddleware, UserController.setTransactionPin);
+
+// Verify transaction PIN
+router.post('/transaction-pin/verify', authMiddleware, UserController.verifyTransactionPin);
+
 // Remove blockchain address
 router.delete(
     '/address/:addressId',

@@ -15,6 +15,7 @@ import { WalletController } from './controllers/walletController';
 import strkRoute from "./routes/strkDeploymentRoute";
 import qrpaymentRoute from './routes/qrpaymentRoute';
 import createRateLimiter from './middleware/rateLimiter';
+import adminRoute from './routes/adminRoute';
 
 // Load environment variables
 dotenv.config();
@@ -45,6 +46,7 @@ app.use('/transactions', transactionRoutes);
 app.use('/merchant', qrpaymentRoute);
 app.use('/split-payment', splitPaymentRoutes);
 app.use('/checkdeploy',strkRoute );
+app.use('/admin', adminRoute);
 
 connectDB().then(() => {
     app.listen(PORT, () => {

@@ -112,6 +112,32 @@ export class User {
             const salt = await bcrypt.genSalt(12);
             this.password = await bcrypt.hash(this.password, salt);
         }
+        // Ensure transaction PIN is hashed as well when present
+        try {
+            await this.hashTransactionPinIfNeeded();
+        } catch (err) {
+            console.error('Failed to hash transaction PIN:', err);
+        }
+    }
+
+    /**
+     * Transaction PIN: stored hashed for security. Expect a 4-digit numeric PIN.
+     */
+    @Column({ nullable: true })
+    transactionPin?: string;
+
+    /**
+     * Hash transaction PIN similarly to the password when set/updated.
+     */
+    async hashTransactionPinIfNeeded() {
+        if (
+            this.transactionPin &&
+            !this.transactionPin.startsWith('$2a$') &&
+            !this.transactionPin.startsWith('$2b$')
+        ) {
+            const salt = await bcrypt.genSalt(12);
+            this.transactionPin = await bcrypt.hash(this.transactionPin, salt);
+        }
     }
 
     async comparePassword(candidatePassword: string): Promise<boolean> {
