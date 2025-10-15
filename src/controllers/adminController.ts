@@ -84,7 +84,10 @@ export class AdminController {
             }));
 
             // Optionally force a live refresh of balances from the chain for all addresses
+            // If refresh=true and wait=true, we will perform the refresh synchronously (slow).
+            // If refresh=true and wait is not set, we start a background refresh and return cached stats immediately.
             const forceRefresh = req.query && String(req.query.refresh) === 'true';
+            const waitForRefresh = req.query && String(req.query.wait) === 'true';
 
             // Compute total holdings across all users by summing lastKnownBalance per chain.
             // If forceRefresh is true or lastKnownBalance is zero/missing, fall back to an on-chain/lightweight query for that address.
@@ -92,81 +95,91 @@ export class AdminController {
             const allAddrs = await addrRepo.find();
             const holdingsByChain: Record<string, number> = {};
 
+            // Refresh balances: if forceRefresh && !waitForRefresh, run in background and return cached results immediately.
+            if (forceRefresh && !waitForRefresh) {
+                // start a background refresh (do not await)
+                (async () => {
+                    console.log('[Admin] Starting background balance refresh');
+                    for (const a of allAddrs) {
+                        const chainKey = (a.chain || 'unknown').toLowerCase();
+                        let bal = Number(a.lastKnownBalance || 0);
+                        if (!bal || bal === 0) {
+                            try {
+                                // Lightweight on-chain fetch (same logic as synchronous path)
+                                if (a.chain === 'ethereum' || a.chain === 'usdt_erc20') {
+                                    // dynamic import ethers to avoid breaking when not installed
+                                    // @ts-ignore
+                                    const ethers = (await import('ethers')) as any;
+                                    const provider = new ethers.JsonRpcProvider(
+                                        a.network === 'testnet'
+                                            ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                            : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                    );
+                                    const b = await provider.getBalance(a.address);
+                                    bal = Number(ethers.formatEther(b));
+                                } else if (a.chain === 'bitcoin') {
+                                    const url =
+                                        (a.network === 'testnet'
+                                            ? 'https://blockstream.info/testnet/api/address/'
+                                            : 'https://blockstream.info/api/address/') +
+                                        a.address;
+                                    const resp = await axios.get(url, { timeout: 10000 });
+                                    const data = resp.data as any;
+                                    const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) - (data.chain_stats?.spent_txo_sum || 0);
+                                    bal = balanceInSatoshis / 1e8;
+                                } else if (a.chain === 'solana') {
+                                    // @ts-ignore
+                                    const solWeb = await import('@solana/web3.js');
+                                    const conn = new solWeb.Connection(
+                                        a.network === 'testnet'
+                                            ? `https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                            : `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                    );
+                                    const pk = new solWeb.PublicKey(a.address);
+                                    const b = await conn.getBalance(pk);
+                                    bal = b / 1e9;
+                                } else if (a.chain === 'stellar') {
+                                    const horizon = a.network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
+                                    const resp = await axios.get(`${horizon}/accounts/${a.address}`, { timeout: 10000 });
+                                    const data = resp.data as any;
+                                    const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
+                                    bal = native ? Number(native.balance) : 0;
+                                } else if (a.chain === 'polkadot') {
+                                    // @ts-ignore
+                                    const { ApiPromise, WsProvider } = await import('@polkadot/api');
+                                    const wsUrl = a.network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+                                    const provider = new WsProvider(wsUrl);
+                                    const api = await ApiPromise.create({ provider });
+                                    const derived = await api.derive.balances.account(a.address);
+                                    const derivedAny = derived as any;
+                                    const available = (derivedAny && (derivedAny.availableBalance ?? derivedAny.freeBalance ?? derivedAny.free)) || 0;
+                                    const PLANCK = BigInt(10 ** 10);
+                                    const availableBig = BigInt(String(available));
+                                    bal = Number(availableBig / PLANCK);
+                                    try { await api.disconnect(); } catch {}
+                                }
+                            } catch (err: any) {
+                                console.warn(`Background: Failed to fetch balance for ${a.chain} ${a.address}:`, err && (err.message || String(err)));
+                            }
+                        }
+
+                        try {
+                            if ((a.lastKnownBalance === null || a.lastKnownBalance === undefined || Number(a.lastKnownBalance) === 0) && bal) {
+                                a.lastKnownBalance = bal;
+                                await addrRepo.save(a);
+                            }
+                        } catch (saveErr: any) {
+                            console.warn('Background: Failed to persist lastKnownBalance for address', a.address, saveErr && (saveErr.message || String(saveErr)));
+                        }
+                    }
+                    console.log('[Admin] Background balance refresh completed');
+                })().catch((e) => console.error('[Admin] Background refresh error:', e));
+            }
+
+            // Build holdingsByChain from cached lastKnownBalance (fast)
             for (const a of allAddrs) {
                 const chainKey = (a.chain || 'unknown').toLowerCase();
-                let bal = Number(a.lastKnownBalance || 0);
-
-                if (forceRefresh || !bal || bal === 0) {
-                    // Try a lightweight on-chain fetch for common chains
-                    try {
-                        if (a.chain === 'ethereum' || a.chain === 'usdt_erc20') {
-                            // dynamic import ethers to avoid breaking when not installed
-                            // @ts-ignore
-                            const ethers = (await import('ethers')) as any;
-                            const provider = new ethers.JsonRpcProvider(
-                                a.network === 'testnet'
-                                    ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                                    : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                            );
-                            const b = await provider.getBalance(a.address);
-                            bal = Number(ethers.formatEther(b));
-                        } else if (a.chain === 'bitcoin') {
-                            const url =
-                                (a.network === 'testnet'
-                                    ? 'https://blockstream.info/testnet/api/address/'
-                                    : 'https://blockstream.info/api/address/') +
-                                a.address;
-                            const resp = await axios.get(url, { timeout: 10000 });
-                            const data = resp.data as any;
-                            const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) - (data.chain_stats?.spent_txo_sum || 0);
-                            bal = balanceInSatoshis / 1e8;
-                        } else if (a.chain === 'solana') {
-                            // @ts-ignore
-                            const solWeb = await import('@solana/web3.js');
-                            const conn = new solWeb.Connection(
-                                a.network === 'testnet'
-                                    ? `https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                                    : `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                            );
-                            const pk = new solWeb.PublicKey(a.address);
-                            const b = await conn.getBalance(pk);
-                            bal = b / 1e9;
-                        } else if (a.chain === 'stellar') {
-                            const horizon = a.network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
-                            const resp = await axios.get(`${horizon}/accounts/${a.address}`, { timeout: 10000 });
-                            const data = resp.data as any;
-                            const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
-                            bal = native ? Number(native.balance) : 0;
-                        } else if (a.chain === 'polkadot') {
-                            // @ts-ignore
-                            const { ApiPromise, WsProvider } = await import('@polkadot/api');
-                            const wsUrl = a.network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
-                            const provider = new WsProvider(wsUrl);
-                            const api = await ApiPromise.create({ provider });
-                            const derived = await api.derive.balances.account(a.address);
-                            const derivedAny = derived as any;
-                            const available = (derivedAny && (derivedAny.availableBalance ?? derivedAny.freeBalance ?? derivedAny.free)) || 0;
-                            const PLANCK = BigInt(10 ** 10);
-                            const availableBig = BigInt(String(available));
-                            bal = Number(availableBig / PLANCK);
-                            try { await api.disconnect(); } catch {}
-                        }
-                    } catch (err: any) {
-                        // if on-chain fetch fails, keep bal as 0 and continue
-                        console.warn(`Failed to fetch balance for ${a.chain} ${a.address}:`, err && (err.message || String(err)));
-                    }
-                }
-
-                // persist updated lastKnownBalance when we forced a refresh or when we fetched a non-zero balance
-                try {
-                    if (forceRefresh || (a.lastKnownBalance === null || a.lastKnownBalance === undefined || Number(a.lastKnownBalance) === 0) ) {
-                        a.lastKnownBalance = bal;
-                        await addrRepo.save(a);
-                    }
-                } catch (saveErr: any) {
-                    console.warn('Failed to persist lastKnownBalance for address', a.address, saveErr && (saveErr.message || String(saveErr)));
-                }
-
+                const bal = Number(a.lastKnownBalance || 0);
                 holdingsByChain[chainKey] = (holdingsByChain[chainKey] || 0) + bal;
             }
 
