@@ -164,12 +164,14 @@ export class AdminController {
                         }
 
                         try {
-                            if ((a.lastKnownBalance === null || a.lastKnownBalance === undefined || Number(a.lastKnownBalance) === 0) && bal) {
+                            const prev = Number(a.lastKnownBalance || 0);
+                            // Persist when fetched balance differs from stored balance (covers initial 0 and updates)
+                            if (!Number.isNaN(bal) && bal !== prev) {
                                 a.lastKnownBalance = bal;
                                 await addrRepo.save(a);
                             }
                         } catch (saveErr: any) {
-                            console.warn('Background: Failed to persist lastKnownBalance for address', a.address, saveErr && (saveErr.message || String(saveErr)));
+                            console.warn('Background: Failed to persist lastKnownBalance for address', a.address, (saveErr as any) && ((saveErr as any).message || String(saveErr)));
                         }
                     }
                     console.log('[Admin] Background balance refresh completed');
