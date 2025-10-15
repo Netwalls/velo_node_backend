@@ -5,6 +5,12 @@ import { MerchantPayment } from '../entities/MerchantPayment';
 import { MerchantPaymentStatus } from '../entities/MerchantPayment';
 import axios from 'axios';
 import { RpcProvider, uint256 } from 'starknet';
+import { UserAddress } from '../entities/UserAddress';
+import { Transaction } from '../entities/Transaction';
+import { ChainType } from '../types';
+
+const STELLAR_HORIZON_MAIN = 'https://horizon.stellar.org';
+const STELLAR_HORIZON_TEST = 'https://horizon-testnet.stellar.org';
 
 
 /**
@@ -94,8 +100,136 @@ export class PaymentMonitoringService {
                     );
                 }
             }
+
+            // Additionally scan for general incoming deposits (non-QR) for supported chains
+            try {
+                await this.scanAllAddressesForDeposits();
+            } catch (scanErr) {
+                console.error('Address scan for deposits failed:', scanErr);
+            }
         } catch (error) {
             console.error('Error checking for incoming payments:', error);
+        }
+    }
+
+    /**
+     * Scan all user Stellar addresses for recent incoming payments and process any new ones.
+     * This is a lightweight scan (limit recent 20 payments per address) and dedupes by txHash.
+     */
+    private static async scanStellarAddressesForDeposits(): Promise<void> {
+        try {
+            const addrRepo = AppDataSource.getRepository(UserAddress);
+            const txRepo = AppDataSource.getRepository(Transaction);
+
+            // Fetch all stellar addresses
+            const stellarAddresses = await addrRepo.find({ where: { chain: ChainType.STELLAR } });
+            for (const addr of stellarAddresses) {
+                try {
+                    const horizon = (addr.network || 'mainnet').toLowerCase() === 'testnet'
+                        ? STELLAR_HORIZON_TEST
+                        : STELLAR_HORIZON_MAIN;
+
+                    const url = `${horizon}/accounts/${encodeURIComponent(addr.address)}/payments`;
+                    const resp = await require('axios').get(url, { params: { limit: 20, order: 'desc' }, timeout: 10000 });
+                    const dataAny: any = resp.data || {};
+                    const records: any[] = Array.isArray(dataAny.records)
+                        ? dataAny.records
+                        : Array.isArray(dataAny._embedded?.records)
+                        ? dataAny._embedded.records
+                        : [];
+
+                    for (const r of records) {
+                        try {
+                            const txHash = r.transaction_hash || r.hash || r.transaction_hash;
+                            if (!txHash) continue;
+
+                            // Only process incoming to this address
+                            const to = r.to;
+                            if (!to || to !== addr.address) continue;
+
+                            // Skip if we've already recorded this txHash
+                            const existing = await txRepo.findOne({ where: { txHash } });
+                            if (existing) continue;
+
+                            const amount = Number(r.amount || 0);
+                            if (!amount || amount <= 0) continue;
+
+                            // Build IncomingPayment object and process it
+                            const incoming: IncomingPayment = {
+                                txHash,
+                                fromAddress: r.from || '',
+                                toAddress: addr.address,
+                                amount,
+                                currency: 'xlm',
+                                confirmations: 1,
+                                timestamp: new Date(r.created_at || Date.now()),
+                                network: addr.network || 'mainnet',
+                            };
+
+                            // Process the incoming payment (this will create conversion and a receive Transaction)
+                            await this.processIncomingPayment(incoming);
+                        } catch (recErr) {
+                            console.debug('Error processing stellar payment record:', recErr);
+                            continue;
+                        }
+                    }
+                } catch (err: any) {
+                    // Log and continue with other addresses
+                    console.debug(`Stellar scan failed for ${addr.address}:`, err && err.message ? err.message : String(err));
+                }
+            }
+        } catch (error) {
+            console.error('scanStellarAddressesForDeposits error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Generic scanner for all user addresses across chains.
+     * Calls checkBlockchainForDeposit with amount=0 to detect any incoming transactions
+     * and processes them (with deduplication by txHash).
+     */
+    private static async scanAllAddressesForDeposits(): Promise<void> {
+        try {
+            const addrRepo = AppDataSource.getRepository(UserAddress);
+            const txRepo = AppDataSource.getRepository(Transaction);
+
+            // Fetch all addresses (limit to active chains)
+            const allAddresses = await addrRepo.find();
+            for (const a of allAddresses) {
+                try {
+                    const chain = a.chain as string;
+                    const network = a.network || 'mainnet';
+
+                    // Call with amount = 0 to detect any incoming tx (function returns first matching tx)
+                    const detected = await checkBlockchainForDeposit(chain, network, a.address, 0);
+                    if (!detected || !detected.txHash) continue;
+
+                    // Skip if already recorded
+                    const already = await txRepo.findOne({ where: { txHash: detected.txHash } });
+                    if (already) continue;
+
+                    // Build incoming payment object and process
+                    const incoming: IncomingPayment = {
+                        txHash: detected.txHash,
+                        fromAddress: '',
+                        toAddress: a.address,
+                        amount: detected.amount ? Number(detected.amount) : 0,
+                        currency: chain,
+                        confirmations: detected.confirmations || 1,
+                        timestamp: new Date(),
+                        network: network,
+                    };
+
+                    await this.processIncomingPayment(incoming);
+                } catch (addrErr) {
+                    const _e: any = addrErr;
+                    console.debug('Address scan error for', a.address, _e && _e.message ? _e.message : String(_e));
+                }
+            }
+        } catch (error) {
+            console.error('scanAllAddressesForDeposits error:', error);
+            throw error;
         }
     }
 
@@ -139,6 +273,25 @@ export class PaymentMonitoringService {
                 amount: payment.amount,
                 currency: payment.currency,
             });
+
+            // Record a receive transaction so admin stats and user history include the incoming payment
+            try {
+                const txRepo = AppDataSource.getRepository(Transaction);
+                await txRepo.save({
+                    userId: user.id!,
+                    type: 'receive',
+                    amount: payment.amount,
+                    chain: (payment.currency || '').toString().toLowerCase(),
+                    network: payment.network || undefined,
+                    toAddress: payment.toAddress,
+                    fromAddress: payment.fromAddress || '',
+                    txHash: payment.txHash || '',
+                    status: 'confirmed',
+                    createdAt: new Date(),
+                });
+            } catch (txErr) {
+                console.error('Failed to record receive transaction:', txErr);
+            }
         } catch (error) {
             console.error('Error processing incoming payment:', error);
         }
@@ -244,6 +397,7 @@ export interface IncomingPayment {
     confirmations: number;
     blockHeight?: number;
     timestamp: Date;
+    network?: string;
 }
 
 /**
@@ -268,7 +422,7 @@ async function checkBlockchainForDeposit(
     network: string,
     address: string,
     amount: number
-): Promise<{ txHash: string; confirmations: number } | null> {
+): Promise<{ txHash: string; confirmations: number; amount?: number } | null> {
     // ETHEREUM (ETH)
     if (chain.toLowerCase() === 'ethereum' || chain.toLowerCase() === 'eth') {
         const apiKey = process.env.ETHERSCAN_API_KEY;
@@ -293,9 +447,11 @@ async function checkBlockchainForDeposit(
                     tx.to.toLowerCase() === address.toLowerCase() &&
                     BigInt(tx.value) >= requiredWei
                 ) {
+                    const valueNum = Number(tx.value) / 1e18;
                     return {
                         txHash: tx.hash,
                         confirmations: Number(tx.confirmations),
+                        amount: valueNum,
                     };
                 }
             }
@@ -326,6 +482,7 @@ async function checkBlockchainForDeposit(
                         return {
                             txHash: tx.txid,
                             confirmations: tx.status.confirmed ? 1 : 0,
+                            amount: Number(vout.value) / 1e8,
                         };
                     }
                 }
@@ -386,6 +543,7 @@ async function checkBlockchainForDeposit(
                             txHash: sig.signature,
                             confirmations:
                                 sig.confirmationStatus === 'finalized' ? 1 : 0,
+                            amount: diff / 1e9,
                         };
                     }
                 }
@@ -470,9 +628,11 @@ async function checkBlockchainForDeposit(
                     tx.to.toLowerCase() === address.toLowerCase() &&
                     BigInt(tx.value) >= requiredAmount
                 ) {
+                    const val = Number(tx.value) / 1e6; // USDT 6 decimals
                     return {
                         txHash: tx.hash,
                         confirmations: Number(tx.confirmations),
+                        amount: val,
                     };
                 }
             }
@@ -502,9 +662,11 @@ async function checkBlockchainForDeposit(
                     tx.to.toLowerCase() === address.toLowerCase() &&
                     BigInt(tx.value) >= requiredAmount
                 ) {
+                    const val = Number(tx.value) / 1e6;
                     return {
                         txHash: tx.transaction_id,
                         confirmations: tx.confirmations || 1,
+                        amount: val,
                     };
                 }
             }

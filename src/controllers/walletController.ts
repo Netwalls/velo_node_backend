@@ -21,7 +21,6 @@ import * as ecc from 'tiny-secp256k1';
 const ECPair = ECPairFactory(ecc);
 import axios from 'axios';
 import { Notification } from '../entities/Notification';
-import { User } from '../entities/User';
 import { NotificationType } from '../types/index';
 import { AppDataSource } from '../config/database';
 import { decrypt } from '../utils/keygen';
@@ -480,7 +479,6 @@ export class WalletController {
         try {
             const { chain, network, toAddress, amount, fromAddress } = req.body;
             const forceSend = req.body && req.body.force === true;
-            const pinProvided = req.body && req.body.pin;
 
             // Validate authenticated user
             if (!req.user || !req.user.id) {
@@ -514,42 +512,6 @@ export class WalletController {
                 res.status(404).json({
                     error: 'No wallet found for this chain/network. You can only send from wallets you created in Velo.',
                 });
-                return;
-            }
-
-            // Require transaction PIN to proceed with outgoing transfers
-            try {
-                const userRepo = AppDataSource.getRepository(User);
-                const user = await userRepo.findOne({ where: { id: req.user!.id } });
-                if (!user) {
-                    res.status(401).json({ error: 'Unauthorized' });
-                    return;
-                }
-
-                if (!user.transactionPin) {
-                    res.status(400).json({ error: 'Transaction PIN not set. Please set a 4-digit PIN in your profile before sending funds.' });
-                    return;
-                }
-
-                if (!pinProvided || typeof pinProvided !== 'string') {
-                    res.status(400).json({ error: 'Transaction PIN is required to send funds' });
-                    return;
-                }
-
-                if (!/^\d{4}$/.test(pinProvided)) {
-                    res.status(400).json({ error: 'PIN must be exactly 4 digits' });
-                    return;
-                }
-
-                const bcrypt = (await import('bcryptjs')).default;
-                const pinMatch = await bcrypt.compare(pinProvided, user.transactionPin as string);
-                if (!pinMatch) {
-                    res.status(403).json({ error: 'Invalid transaction PIN' });
-                    return;
-                }
-            } catch (pinErr) {
-                console.error('Transaction PIN verification failed:', pinErr);
-                res.status(500).json({ error: 'Failed to verify transaction PIN' });
                 return;
             }
 
@@ -1566,6 +1528,13 @@ else if (chain === 'stellar') {
                             balance: balanceInSTRK,
                             symbol: 'STRK',
                         });
+                        // persist lastKnownBalance
+                        try {
+                            addr.lastKnownBalance = Number(balanceInSTRK);
+                            await addressRepo.save(addr);
+                        } catch (e: any) {
+                            console.warn('Failed to save lastKnownBalance (starknet)', addr.address, e && (e.message || String(e)));
+                        }
                     } catch (error) {
                         console.error('Starknet testnet balance error:', error);
                         balances.push({
@@ -1591,6 +1560,12 @@ else if (chain === 'stellar') {
                             balance: ethers.formatEther(balance),
                             symbol: 'ETH',
                         });
+                        try {
+                            addr.lastKnownBalance = Number(ethers.formatEther(balance));
+                            await addressRepo.save(addr);
+                        } catch (e: any) {
+                            console.warn('Failed to save lastKnownBalance (ethereum)', addr.address, e && (e.message || String(e)));
+                        }
                     } catch (error) {
                         balances.push({
                             chain: addr.chain,
@@ -1618,6 +1593,12 @@ else if (chain === 'stellar') {
                             balance: balanceInBTC.toString(),
                             symbol: 'BTC',
                         });
+                        try {
+                            addr.lastKnownBalance = balanceInBTC;
+                            await addressRepo.save(addr);
+                        } catch (e: any) {
+                            console.warn('Failed to save lastKnownBalance (bitcoin)', addr.address, e && (e.message || String(e)));
+                        }
                     } catch (error) {
                         balances.push({
                             chain: addr.chain,
@@ -1644,6 +1625,12 @@ else if (chain === 'stellar') {
                             balance: balanceInSOL.toString(),
                             symbol: 'SOL',
                         });
+                            try {
+                                addr.lastKnownBalance = balanceInSOL;
+                                await addressRepo.save(addr);
+                            } catch (e: any) {
+                                console.warn('Failed to save lastKnownBalance (solana)', addr.address, e && (e.message || String(e)));
+                            }
                     } catch (error) {
                         balances.push({
                             chain: addr.chain,
@@ -1670,6 +1657,12 @@ else if (chain === 'stellar') {
                             balance: balanceStr,
                             symbol: 'XLM',
                         });
+                        try {
+                            addr.lastKnownBalance = Number(balanceStr);
+                            await addressRepo.save(addr);
+                        } catch (e: any) {
+                            console.warn('Failed to save lastKnownBalance (stellar)', addr.address, e && (e.message || String(e)));
+                        }
                     } catch (error) {
                         balances.push({
                             chain: addr.chain,
@@ -1702,6 +1695,12 @@ else if (chain === 'stellar') {
                             balance: dot,
                             symbol: 'DOT',
                         });
+                            try {
+                                addr.lastKnownBalance = Number(dot);
+                                await addressRepo.save(addr);
+                            } catch (e: any) {
+                                console.warn('Failed to save lastKnownBalance (polkadot)', addr.address, e && (e.message || String(e)));
+                            }
 
                         try { await api.disconnect(); } catch {}
                     } catch (error) {

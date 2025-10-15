@@ -4,6 +4,11 @@ import { User } from '../entities/User';
 import { Transaction } from '../entities/Transaction';
 import { MerchantPayment } from '../entities/MerchantPayment';
 import { SplitPaymentExecution } from '../entities/SplitPaymentExecution';
+import { Notification } from '../entities/Notification';
+import { NotificationType } from '../types/index';
+import axios from 'axios';
+import { UserAddress } from '../entities/UserAddress';
+import { PriceFeedService } from '../services/priceFeedService';
 
 export class AdminController {
     /**
@@ -15,20 +20,39 @@ export class AdminController {
         try {
             const userRepo = AppDataSource.getRepository(User);
             const txRepo = AppDataSource.getRepository(Transaction);
+            const notificationRepo = AppDataSource.getRepository(Notification);
             const merchantRepo = AppDataSource.getRepository(MerchantPayment);
             const splitExecRepo = AppDataSource.getRepository(SplitPaymentExecution);
 
             // Total users
             const totalUsers = await userRepo.count();
 
-            // Total confirmed transaction amount (sum of confirmed transactions)
-            const totalAmountRaw: any = await txRepo
+            // Total amount that passed through Velo
+            // Include: confirmed transactions, completed merchant payments, and completed/partially failed split executions
+            const txSumRaw: any = await txRepo
                 .createQueryBuilder('t')
                 .select('COALESCE(SUM(t.amount), 0)', 'sum')
                 .where('t.status = :status', { status: 'confirmed' })
                 .getRawOne();
 
-            const totalAmount = totalAmountRaw && totalAmountRaw.sum ? Number(totalAmountRaw.sum) : 0;
+            const merchantSumRaw: any = await merchantRepo
+                .createQueryBuilder('m')
+                .select('COALESCE(SUM(m.amount), 0)', 'sum')
+                .where('m.status = :status', { status: 'completed' })
+                .getRawOne();
+
+            // Sum split executions where some processing completed (completed or partially_failed)
+            const splitExecSumRaw: any = await splitExecRepo
+                .createQueryBuilder('s')
+                .select("COALESCE(SUM(s.totalAmount), 0)", 'sum')
+                .where("s.status IN (:...statuses)", { statuses: ['completed', 'partially_failed'] })
+                .getRawOne();
+
+            const txSum = txSumRaw && txSumRaw.sum ? Number(txSumRaw.sum) : 0;
+            const merchantSum = merchantSumRaw && merchantSumRaw.sum ? Number(merchantSumRaw.sum) : 0;
+            const splitExecSum = splitExecSumRaw && splitExecSumRaw.sum ? Number(splitExecSumRaw.sum) : 0;
+
+            const totalAmount = txSum + merchantSum + splitExecSum;
 
             // Most used chain by transaction count
             const chainRaw: any = await txRepo
@@ -59,18 +83,158 @@ export class AdminController {
                 confirmedAmount: Number(r.confirmed_sum || 0),
             }));
 
+            // Optionally force a live refresh of balances from the chain for all addresses
+            const forceRefresh = req.query && String(req.query.refresh) === 'true';
+
+            // Compute total holdings across all users by summing lastKnownBalance per chain.
+            // If forceRefresh is true or lastKnownBalance is zero/missing, fall back to an on-chain/lightweight query for that address.
+            const addrRepo = AppDataSource.getRepository(UserAddress);
+            const allAddrs = await addrRepo.find();
+            const holdingsByChain: Record<string, number> = {};
+
+            for (const a of allAddrs) {
+                const chainKey = (a.chain || 'unknown').toLowerCase();
+                let bal = Number(a.lastKnownBalance || 0);
+
+                if (forceRefresh || !bal || bal === 0) {
+                    // Try a lightweight on-chain fetch for common chains
+                    try {
+                        if (a.chain === 'ethereum' || a.chain === 'usdt_erc20') {
+                            // dynamic import ethers to avoid breaking when not installed
+                            // @ts-ignore
+                            const ethers = (await import('ethers')) as any;
+                            const provider = new ethers.JsonRpcProvider(
+                                a.network === 'testnet'
+                                    ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                    : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                            );
+                            const b = await provider.getBalance(a.address);
+                            bal = Number(ethers.formatEther(b));
+                        } else if (a.chain === 'bitcoin') {
+                            const url =
+                                (a.network === 'testnet'
+                                    ? 'https://blockstream.info/testnet/api/address/'
+                                    : 'https://blockstream.info/api/address/') +
+                                a.address;
+                            const resp = await axios.get(url, { timeout: 10000 });
+                            const data = resp.data as any;
+                            const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) - (data.chain_stats?.spent_txo_sum || 0);
+                            bal = balanceInSatoshis / 1e8;
+                        } else if (a.chain === 'solana') {
+                            // @ts-ignore
+                            const solWeb = await import('@solana/web3.js');
+                            const conn = new solWeb.Connection(
+                                a.network === 'testnet'
+                                    ? `https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                    : `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                            );
+                            const pk = new solWeb.PublicKey(a.address);
+                            const b = await conn.getBalance(pk);
+                            bal = b / 1e9;
+                        } else if (a.chain === 'stellar') {
+                            const horizon = a.network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
+                            const resp = await axios.get(`${horizon}/accounts/${a.address}`, { timeout: 10000 });
+                            const data = resp.data as any;
+                            const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
+                            bal = native ? Number(native.balance) : 0;
+                        } else if (a.chain === 'polkadot') {
+                            // @ts-ignore
+                            const { ApiPromise, WsProvider } = await import('@polkadot/api');
+                            const wsUrl = a.network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+                            const provider = new WsProvider(wsUrl);
+                            const api = await ApiPromise.create({ provider });
+                            const derived = await api.derive.balances.account(a.address);
+                            const derivedAny = derived as any;
+                            const available = (derivedAny && (derivedAny.availableBalance ?? derivedAny.freeBalance ?? derivedAny.free)) || 0;
+                            const PLANCK = BigInt(10 ** 10);
+                            const availableBig = BigInt(String(available));
+                            bal = Number(availableBig / PLANCK);
+                            try { await api.disconnect(); } catch {}
+                        }
+                    } catch (err: any) {
+                        // if on-chain fetch fails, keep bal as 0 and continue
+                        console.warn(`Failed to fetch balance for ${a.chain} ${a.address}:`, err && (err.message || String(err)));
+                    }
+                }
+
+                // persist updated lastKnownBalance when we forced a refresh or when we fetched a non-zero balance
+                try {
+                    if (forceRefresh || (a.lastKnownBalance === null || a.lastKnownBalance === undefined || Number(a.lastKnownBalance) === 0) ) {
+                        a.lastKnownBalance = bal;
+                        await addrRepo.save(a);
+                    }
+                } catch (saveErr: any) {
+                    console.warn('Failed to persist lastKnownBalance for address', a.address, saveErr && (saveErr.message || String(saveErr)));
+                }
+
+                holdingsByChain[chainKey] = (holdingsByChain[chainKey] || 0) + bal;
+            }
+
+            // Convert holdings to USD where possible and compute totalAmount
+            let totalUSD = 0;
+            const holdingsDetailed: Array<{ chain: string; balance: number; usd?: number }> = [];
+            const priceMap = await PriceFeedService.getAllPrices();
+            for (const [chainKey, balance] of Object.entries(holdingsByChain)) {
+                let usd = 0;
+                try {
+                    // Map chain key to known currency codes
+                    const currencyMap: Record<string, string> = {
+                        ethereum: 'ETH',
+                        usdt_erc20: 'USDT',
+                        usdt_trc20: 'USDT',
+                        bitcoin: 'BTC',
+                        solana: 'SOL',
+                        starknet: 'STRK',
+                        stellar: 'XLM',
+                        polkadot: 'DOT',
+                    };
+                    const cur = currencyMap[chainKey];
+                    if (cur) {
+                        // Use priceMap entry if greater than zero; otherwise attempt a live fetch for this currency
+                        let price = priceMap[cur];
+                        if (!price || price === 0) {
+                            try {
+                                price = await PriceFeedService.getPrice(cur);
+                                // update priceMap so subsequent lookups benefit
+                                priceMap[cur] = price;
+                            } catch (err) {
+                                // leave price as 0 if fetch fails
+                                price = 0;
+                            }
+                        }
+
+                        if (price && price > 0) {
+                            usd = balance * price;
+                            totalUSD += usd;
+                        }
+                    }
+                } catch (e) {
+                    // ignore conversion errors per-chain
+                }
+                holdingsDetailed.push({ chain: chainKey, balance, usd });
+            }
             // Functionality counts
             const sendCount = await txRepo.count({ where: { type: 'send' } });
-            const receiveCount = await txRepo.count({ where: { type: 'receive' } });
+            const txReceiveCount = await txRepo.count({ where: { type: 'receive' } });
+
+            // Also count deposit notifications as receives (in case deposits were recorded only as notifications)
+            const depositNotifCount = await notificationRepo.count({ where: { type: NotificationType.DEPOSIT } });
+
             const qrCount = await merchantRepo.count(); // total QR payments created
             const splitCount = await splitExecRepo.count(); // total split executions
+
+            // Include tx receives + deposit notifications + QR payments as receives
+            const receiveCount = txReceiveCount + depositNotifCount + qrCount;
 
             res.json({
                 stats: {
                     totalUsers,
                     totalConfirmedAmount: totalAmount,
+                    // totalAmount is the USD value of all user-held balances
+                    totalAmount: totalUSD,
                     mostUsedChain,
                     perChain,
+                    holdings: holdingsDetailed,
                     usage: {
                         send: sendCount,
                         receive: receiveCount,

@@ -427,6 +427,31 @@ export class MerchantController {
                 payment.updatedAt = new Date();
                 await paymentRepo.save(payment);
 
+                    // Record receive transaction for the merchant/user
+                    try {
+                        const txRepo = AppDataSource.getRepository('Transaction');
+                        const txHash = blockchainStatus.transactionHash || '';
+                        if (txHash) {
+                            const exists = await txRepo.findOne({ where: { txHash } });
+                            if (!exists) {
+                                await txRepo.save({
+                                    userId: payment.userId,
+                                    type: 'receive',
+                                    amount: payment.amount,
+                                    chain: payment.chain,
+                                    network: payment.network,
+                                    toAddress: payment.address,
+                                    fromAddress: txHash,
+                                    txHash: txHash,
+                                    status: 'confirmed',
+                                    createdAt: new Date(),
+                                });
+                            }
+                        }
+                    } catch (txErr) {
+                        console.error('Failed to save receive transaction for merchant payment:', txErr);
+                    }
+
                 // Create notification
                 await AppDataSource.getRepository(Notification).save({
                     userId,
@@ -504,6 +529,31 @@ export class MerchantController {
                             status: 'completed',
                             transactionHash: blockchainStatus.transactionHash,
                         });
+                        
+                        // Record receive transaction for the merchant/user (dedupe by txHash)
+                        try {
+                            const txRepo = AppDataSource.getRepository('Transaction');
+                            const txHash = blockchainStatus.transactionHash || '';
+                            if (txHash) {
+                                const exists = await txRepo.findOne({ where: { txHash } });
+                                if (!exists) {
+                                    await txRepo.save({
+                                        userId: payment.userId,
+                                        type: 'receive',
+                                        amount: payment.amount,
+                                        chain: payment.chain,
+                                        network: payment.network,
+                                        toAddress: payment.address,
+                                        fromAddress: txHash,
+                                        txHash: txHash,
+                                        status: 'confirmed',
+                                        createdAt: new Date(),
+                                    });
+                                }
+                            }
+                        } catch (txErr) {
+                            console.error('Failed to save receive transaction for merchant payment (batch monitor):', txErr);
+                        }
                     }
                 } catch (error) {
                     console.error(

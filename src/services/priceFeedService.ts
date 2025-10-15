@@ -20,6 +20,8 @@ export class PriceFeedService {
         BTC: 'bitcoin',
         SOL: 'solana',
         STRK: 'starknet',
+        XLM: 'stellar',
+        DOT: 'polkadot',
         USDT: 'tether',
     };
 
@@ -126,24 +128,48 @@ export class PriceFeedService {
      * Get all current prices
      */
     static async getAllPrices(): Promise<Record<string, number>> {
-        const currencies = Object.keys(this.CURRENCY_IDS);
+        const entries = Object.entries(this.CURRENCY_IDS); // [ ['ETH','ethereum'], ... ]
         const prices: Record<string, number> = {};
 
-        await Promise.allSettled(
-            currencies.map(async (currency) => {
-                try {
-                    prices[currency] = await this.getPrice(currency);
-                } catch (error) {
-                    console.error(
-                        `Failed to get price for ${currency}:`,
-                        error
-                    );
-                    prices[currency] = 0;
-                }
-            })
-        );
+        // Build a unique comma-separated coinId list to request in one call (reduces rate-limit and network errors)
+        const uniqueIds = Array.from(new Set(entries.map(([, id]) => id))).join(',');
 
-        return prices;
+        try {
+            const response = await axios.get(
+                `${this.COINGECKO_API}/simple/price?ids=${uniqueIds}&vs_currencies=usd`,
+                { timeout: 15000 }
+            );
+
+            const data = response.data as Record<string, { usd?: number }>;
+
+            for (const [currency, coinId] of entries) {
+                const price = (data[coinId] && Number(data[coinId].usd)) || 0;
+                prices[currency] = price;
+                if (price && price > 0) {
+                    this.priceCache.set(currency, { price, timestamp: Date.now() });
+                }
+            }
+
+            return prices;
+        } catch (err) {
+            console.warn('[PriceFeed] Bulk fetch failed, falling back to per-currency requests', (err as any) && ((err as any).message || String(err)));
+
+            // Fallback to previous behavior (per-currency requests) to be resilient
+            const currencies = Object.keys(this.CURRENCY_IDS);
+            await Promise.allSettled(
+                currencies.map(async (currency) => {
+                    try {
+                        const p = await this.getPrice(currency);
+                        prices[currency] = p;
+                    } catch (error) {
+                        console.error(`Failed to get price for ${currency}:`, error);
+                        prices[currency] = 0;
+                    }
+                })
+            );
+
+            return prices;
+        }
     }
 
     /**
