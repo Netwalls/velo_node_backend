@@ -14,14 +14,14 @@ const router = Router();
 // Register new user (strict rate limit: 5 reqs/min)
 router.post(
     '/register',
-    createRateLimiter({ windowMs: 60 * 1000, max: 5, message: 'Too many registration attempts, please try again in a minute.' }),
+    // createRateLimiter({ windowMs: 60 * 1000, max: 5, message: 'Too many registration attempts, please try again in a minute.' }),
     AuthController.register
 );
 
 // Login user (rate limit: 10 reqs/min)
 router.post(
     '/login',
-    createRateLimiter({ windowMs: 60 * 1000, max: 10, message: 'Too many login attempts, please try again in a minute.' }),
+    // createRateLimiter({ windowMs: 60 * 1000, max: 10, message: 'Too many login attempts, please try again in a minute.' }),
     AuthController.login
 );
 

@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 // Apply global rate limiter
 // Global rate limit: 60 requests per minute per IP
-app.use(createRateLimiter({ windowMs: 60 * 1000, max: 30 }));
+// app.use(createRateLimiter({ windowMs: 60 * 1000, max: 30 }));
 
 app.get('/', (req, res) => {
     res.send('Velo Backend Server is running!');
