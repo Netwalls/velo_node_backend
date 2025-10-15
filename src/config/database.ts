@@ -38,7 +38,7 @@ export const AppDataSource = new DataSource({
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
     // ssl: false,
-    // ssl: { rejectUnauthorized: false },
+    ssl: { rejectUnauthorized: false },
 });
 export const connectDB = async (): Promise<void> => {
     try {
