@@ -213,18 +213,126 @@ export class AdminController {
                 }
                 holdingsDetailed.push({ chain: chainKey, balance, usd });
             }
-            // Functionality counts
-            const sendCount = await txRepo.count({ where: { type: 'send' } });
-            const txReceiveCount = await txRepo.count({ where: { type: 'receive' } });
+            // Functionality counts (per-chain aggregation)
+            // Get transaction counts grouped by chain and type
+            const txTypeRows: any[] = await txRepo
+                .createQueryBuilder('t')
+                .select('t.chain', 'chain')
+                .addSelect('t.type', 'type')
+                .addSelect('COUNT(*)', 'count')
+                .groupBy('t.chain')
+                .addGroupBy('t.type')
+                .getRawMany();
 
-            // Also count deposit notifications as receives (in case deposits were recorded only as notifications)
+            // merchant (QR) counts per chain
+            const merchantRows: any[] = await merchantRepo
+                .createQueryBuilder('m')
+                .select('m.chain', 'chain')
+                .addSelect('COUNT(*)', 'count')
+                .groupBy('m.chain')
+                .getRawMany();
+
+            // split execution counts per chain
+            let splitRows: any[] = [];
+            try {
+                // split executions do not store chain directly; join to split_payments to get chain
+                splitRows = await splitExecRepo
+                    .createQueryBuilder('s')
+                    // join against the split_payments table to access the chain column
+                    .leftJoin('split_payments', 'sp', 's."splitPaymentId" = sp.id')
+                    .select('sp.chain', 'chain')
+                    .addSelect('COUNT(*)', 'count')
+                    .groupBy('sp.chain')
+                    .getRawMany();
+            } catch (err) {
+                // Defensive: if the join or column doesn't exist for some reason, log and continue with empty splitRows
+                console.warn('query failed for split execution per-chain counts, continuing with empty results', (err as any) && ((err as any).message || String(err)));
+                splitRows = [];
+            }
+
+            // Build activity map per chain
+            const activityMap: Record<string, { send: number; receive: number; qr: number; splitting: number; total: number }> = {};
+
+            function ensureChainEntry(k: string) {
+                const kk = (k || 'unknown').toLowerCase();
+                if (!activityMap[kk]) activityMap[kk] = { send: 0, receive: 0, qr: 0, splitting: 0, total: 0 };
+                return kk;
+            }
+
+            for (const r of txTypeRows) {
+                const chain = ensureChainEntry(r.chain);
+                const cnt = Number(r.count || 0);
+                const type = (r.type || '').toLowerCase();
+                if (type === 'send') {
+                    activityMap[chain].send += cnt;
+                } else if (type === 'receive') {
+                    activityMap[chain].receive += cnt;
+                } else {
+                    // treat other tx types as neutral for now
+                }
+                activityMap[chain].total += cnt;
+            }
+
+            for (const r of merchantRows) {
+                const chain = ensureChainEntry(r.chain);
+                const cnt = Number(r.count || 0);
+                activityMap[chain].qr += cnt;
+                activityMap[chain].total += cnt;
+            }
+
+            for (const r of splitRows) {
+                const chain = ensureChainEntry(r.chain);
+                const cnt = Number(r.count || 0);
+                activityMap[chain].splitting += cnt;
+                activityMap[chain].total += cnt;
+            }
+
+            // Deduce totals for usage summary (overall counts)
+            let sendCount = 0;
+            let receiveCount = 0;
+            let qrCount = 0;
+            let splitCount = 0;
+            for (const [k, v] of Object.entries(activityMap)) {
+                sendCount += v.send;
+                receiveCount += v.receive;
+                qrCount += v.qr;
+                splitCount += v.splitting;
+            }
+
+            // Also include deposit notifications as receives (in case deposits were only logged as notifications)
             const depositNotifCount = await notificationRepo.count({ where: { type: NotificationType.DEPOSIT } });
+            receiveCount += depositNotifCount;
 
-            const qrCount = await merchantRepo.count(); // total QR payments created
-            const splitCount = await splitExecRepo.count(); // total split executions
+            // Determine most used chain by activity total, use holdings USD as tie-breaker
+            let computedMostUsed: string | null = null;
+            let maxActivity = -1;
+            for (const [chain, vals] of Object.entries(activityMap)) {
+                if (vals.total > maxActivity) {
+                    maxActivity = vals.total;
+                    computedMostUsed = chain;
+                } else if (vals.total === maxActivity && vals.total > 0) {
+                    // tie-breaker: prefer chain with higher holdings USD
+                    const currentHoldings = holdingsDetailed.find(h => h.chain === computedMostUsed)?.usd || 0;
+                    const challengerHoldings = holdingsDetailed.find(h => h.chain === chain)?.usd || 0;
+                    if ((challengerHoldings || 0) > (currentHoldings || 0)) {
+                        computedMostUsed = chain;
+                    }
+                }
+            }
 
-            // Include tx receives + deposit notifications + QR payments as receives
-            const receiveCount = txReceiveCount + depositNotifCount + qrCount;
+            // Determine most held chain by USD
+            let mostHeldChain: string | null = null;
+            let maxUsd = -1;
+            for (const h of holdingsDetailed) {
+                const usdVal = Number(h.usd || 0);
+                if (usdVal > maxUsd) {
+                    maxUsd = usdVal;
+                    mostHeldChain = h.chain;
+                }
+            }
+
+            // If there was no activity rows at all, fall back to previous single-table mostUsedChain
+            const finalMostUsed = computedMostUsed || mostUsedChain;
 
             res.json({
                 stats: {
@@ -232,7 +340,8 @@ export class AdminController {
                     totalConfirmedAmount: totalAmount,
                     // totalAmount is the USD value of all user-held balances
                     totalAmount: totalUSD,
-                    mostUsedChain,
+                    mostUsedChain: finalMostUsed,
+                    mostHeldChain,
                     perChain,
                     holdings: holdingsDetailed,
                     usage: {
