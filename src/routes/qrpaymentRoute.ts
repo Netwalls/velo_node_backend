@@ -15,12 +15,13 @@ const router = Router();
  * @access  Private (requires authentication)
  * @body    {
  *   amount: number,
- *   chain: 'bitcoin' | 'ethereum' | 'solana' | 'starknet' | 'usdt-erc20' | 'usdt-trc20',
+ *   chain: 'bitcoin' | 'ethereum' | 'solana' | 'starknet' | 'polkadot' | 'usdt-erc20' | 'usdt-trc20',
  *   network: 'mainnet' | 'testnet',
  *   ethAddress?: string,
  *   btcAddress?: string,
  *   solAddress?: string,
  *   strkAddress?: string,
+ *   polkadotAddress?: string,
  *   usdtErc20Address?: string,
  *   usdtTrc20Address?: string,
  *   description?: string

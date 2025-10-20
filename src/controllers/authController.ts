@@ -86,10 +86,7 @@ export class AuthController {
             const sol = generateSolWallet();
             const stellar = generateStellarWallet();
             const polkadot = await generatePolkadotWallet();
-           const strk =  generateStrkWallet();
-
-// const strkMainnet = await generateAndDeployArgentXAccount('mainnet');
-// const strkTestnet = await generateAndDeployArgentXAccount('testnet');            
+            const strk =  generateStrkWallet();
 
             // For USDT, we'll use the same addresses as ETH (since USDT-ERC20 uses Ethereum addresses)
             // and generate separate Tron addresses for USDT-TRC20
@@ -133,21 +130,6 @@ export class AuthController {
                     address: sol.testnet.address,
                     encryptedPrivateKey: encrypt(sol.testnet.privateKey),
                 },
-
-//                 {
-//     chain: 'starknet',
-//     network: 'mainnet',
-//     address: strkMainnet.AXcontractAddress,
-//     encryptedPrivateKey: encrypt(strkMainnet.privateKeyAX),
-// },
-// {
-//     chain: 'starknet',
-//     network: 'testnet',
-//     address: strkTestnet.AXcontractAddress,
-//     encryptedPrivateKey: encrypt(strkTestnet.privateKeyAX),
-//}
-
-
                 {
                     chain: 'starknet',
                     network: 'mainnet',
@@ -364,6 +346,7 @@ export class AuthController {
                     firstName: user.firstName,
                     lastName: user.lastName,
                     isEmailVerified: user.isEmailVerified,
+                    hasTransactionPin: !!user.transactionPin,
                 },
             });
 
@@ -428,13 +411,6 @@ export class AuthController {
                 );
                 // Don't fail login if notification fails
             }
-
-            // Optionally send login notification email (commented out)
-            //      await sendMail(
-            //     email,
-            //     'Login Notification',
-            //     loginNotificationTemplate(email)
-            // );
         } catch (error) {
             console.error('Login error:', error);
             res.status(500).json({ error: 'Internal server error' });

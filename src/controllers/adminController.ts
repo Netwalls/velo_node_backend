@@ -103,10 +103,9 @@ export class AdminController {
                     for (const a of allAddrs) {
                         const chainKey = (a.chain || 'unknown').toLowerCase();
                         let bal = Number(a.lastKnownBalance || 0);
-                        if (!bal || bal === 0) {
-                            try {
-                                // Lightweight on-chain fetch (same logic as synchronous path)
-                                if (a.chain === 'ethereum' || a.chain === 'usdt_erc20') {
+                        try {
+                            // Always attempt a lightweight on-chain fetch (helps capture updated balances for chains like Stellar)
+                            if (a.chain === 'ethereum' || a.chain === 'usdt_erc20') {
                                     // dynamic import ethers to avoid breaking when not installed
                                     // @ts-ignore
                                     const ethers = (await import('ethers')) as any;
@@ -117,7 +116,7 @@ export class AdminController {
                                     );
                                     const b = await provider.getBalance(a.address);
                                     bal = Number(ethers.formatEther(b));
-                                } else if (a.chain === 'bitcoin') {
+                            } else if (a.chain === 'bitcoin') {
                                     const url =
                                         (a.network === 'testnet'
                                             ? 'https://blockstream.info/testnet/api/address/'
@@ -127,7 +126,7 @@ export class AdminController {
                                     const data = resp.data as any;
                                     const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) - (data.chain_stats?.spent_txo_sum || 0);
                                     bal = balanceInSatoshis / 1e8;
-                                } else if (a.chain === 'solana') {
+                            } else if (a.chain === 'solana') {
                                     // @ts-ignore
                                     const solWeb = await import('@solana/web3.js');
                                     const conn = new solWeb.Connection(
@@ -138,13 +137,13 @@ export class AdminController {
                                     const pk = new solWeb.PublicKey(a.address);
                                     const b = await conn.getBalance(pk);
                                     bal = b / 1e9;
-                                } else if (a.chain === 'stellar') {
+                            } else if (a.chain === 'stellar') {
                                     const horizon = a.network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
                                     const resp = await axios.get(`${horizon}/accounts/${a.address}`, { timeout: 10000 });
                                     const data = resp.data as any;
                                     const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
                                     bal = native ? Number(native.balance) : 0;
-                                } else if (a.chain === 'polkadot') {
+                            } else if (a.chain === 'polkadot') {
                                     // @ts-ignore
                                     const { ApiPromise, WsProvider } = await import('@polkadot/api');
                                     const wsUrl = a.network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
@@ -157,10 +156,9 @@ export class AdminController {
                                     const availableBig = BigInt(String(available));
                                     bal = Number(availableBig / PLANCK);
                                     try { await api.disconnect(); } catch {}
-                                }
-                            } catch (err: any) {
-                                console.warn(`Background: Failed to fetch balance for ${a.chain} ${a.address}:`, err && (err.message || String(err)));
                             }
+                        } catch (err: any) {
+                            console.warn(`Background: Failed to fetch balance for ${a.chain} ${a.address}:`, err && (err.message || String(err)));
                         }
 
                         try {

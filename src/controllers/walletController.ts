@@ -25,6 +25,7 @@ import { NotificationType } from '../types/index';
 import { AppDataSource } from '../config/database';
 import { decrypt } from '../utils/keygen';
 import { checkBalance, deployStrkWallet } from '../utils/keygen';
+import bcrypt from 'bcryptjs';
 
 function padStarknetAddress(address: string): string {
     if (!address.startsWith('0x')) return address;
@@ -494,6 +495,43 @@ export class WalletController {
                 });
                 return;
             }
+
+            // Enforce transaction PIN unless explicitly bypassed via env var
+            try {
+                const skipPin = process.env.SKIP_TRANSACTION_PIN === 'true';
+                if (!skipPin) {
+                    // Accept either `transactionPin` or `pin` for backwards compatibility
+                    const providedPinRaw = req.body?.transactionPin ?? req.body?.pin;
+                    if (providedPinRaw === undefined || providedPinRaw === null) {
+                        res.status(400).json({ error: 'Missing transactionPin (or pin) in request body' });
+                        return;
+                    }
+                    const providedPin = String(providedPinRaw);
+
+                    // Load fresh user record to get hashed PIN
+                    const userRepo = AppDataSource.getRepository('users');
+                    const userRecord: any = await userRepo.findOne({ where: { id: userId } });
+                    if (!userRecord) {
+                        res.status(401).json({ error: 'Unauthorized' });
+                        return;
+                    }
+
+                    if (!userRecord.transactionPin) {
+                        res.status(400).json({ error: 'Transaction PIN not set. Please set a transaction PIN before sending funds.' });
+                        return;
+                    }
+
+                    const pinMatches = await bcrypt.compare(providedPin, userRecord.transactionPin);
+                    if (!pinMatches) {
+                        res.status(403).json({ error: 'Invalid transaction PIN' });
+                        return;
+                    }
+                }
+            } catch (pinErr) {
+                console.error('Transaction PIN verification error:', pinErr);
+                res.status(500).json({ error: 'Failed to verify transaction PIN' });
+                return;
+            }
             if (Number(amount) <= 0) {
                 res.status(400).json({ error: 'Amount must be positive.' });
                 return;
@@ -520,6 +558,7 @@ export class WalletController {
             const privateKey = decrypt(userAddress.encryptedPrivateKey);
 
             let txHash = '';
+            let txChainName: string | undefined = undefined;
 
             // ETH & USDT ERC20
             if (chain === 'ethereum' || chain === 'usdt_erc20') {
@@ -770,6 +809,7 @@ export class WalletController {
             // POLKADOT
             // Replace the Polkadot section (around line 440) with this improved version:
 // POLKADOT
+// POLKADOT - Fixed version
 else if (chain === 'polkadot') {
     try {
         // @ts-ignore
@@ -788,26 +828,87 @@ else if (chain === 'polkadot') {
         const provider = new WsProvider(wsUrl);
         const api = await ApiPromise.create({ provider });
 
+        // Query the node for its reported chain name
+        try {
+            const reportedChain = (await api.rpc.system.chain()).toString();
+            txChainName = reportedChain;
+            console.log(`[DEBUG] Polkadot RPC chain reported: ${reportedChain}`);
+            if (network === 'testnet' && !reportedChain.toLowerCase().includes('test') && !reportedChain.toLowerCase().includes('paseo')) {
+                console.warn(`[WARN] Requested network=testnet but RPC reports chain: ${reportedChain}. This may be a network mismatch.`);
+            }
+        } catch (chainErr) {
+            console.warn('Unable to fetch Polkadot RPC chain name:', chainErr);
+        }
+
         const keyring = new Keyring({ type: 'sr25519' });
         let sender: any = null;
         const pkStr = typeof privateKey === 'string' ? privateKey : String(privateKey);
 
-        // Try to load the keypair from various formats
+        console.log('[DEBUG] Raw private key format:', pkStr.substring(0, 100));
+
+        // ✅ FIX: Handle JSON-formatted private key from generatePolkadotWallet()
         try {
-            sender = keyring.addFromUri(pkStr);
-        } catch (e1) {
-            try {
-                const seedHex = pkStr.replace(/^0x/, '');
-                if (seedHex.length === 64) {
-                    const seed = Buffer.from(seedHex, 'hex');
-                    sender = keyring.addFromSeed(seed);
-                } else {
-                    throw new Error('Invalid seed length');
+            // Try to parse as JSON first (new format)
+            const keyData = JSON.parse(pkStr);
+            
+            console.log('[DEBUG] Parsed JSON private key data:', {
+                hasKey: !!keyData,
+                hasMnemonic: !!keyData.mnemonic,
+                hasSeed: !!keyData.seed,
+                type: keyData.type
+            });
+
+            if (keyData.mnemonic) {
+                // Best option: use mnemonic
+                sender = keyring.addFromUri(keyData.mnemonic);
+                console.log('[DEBUG] Loaded keypair from mnemonic (JSON format)');
+            } else if (keyData.seed) {
+                // Fallback: use seed
+                const seedBuffer = Buffer.from(keyData.seed, 'hex');
+                if (seedBuffer.length !== 32) {
+                    throw new Error(`Invalid seed length: ${seedBuffer.length}, expected 32 bytes`);
                 }
-            } catch (e2) {
-                try { await api.disconnect(); } catch {}
-                throw new Error('Failed to load Polkadot keypair. Ensure private key is in mnemonic or 32-byte hex format.');
+                sender = keyring.addFromSeed(seedBuffer);
+                console.log('[DEBUG] Loaded keypair from seed (JSON format)');
+            } else {
+                throw new Error('JSON private key missing both mnemonic and seed');
             }
+        } catch (jsonErr) {
+            // Not JSON format, try legacy formats
+            console.log('[DEBUG] Not JSON format, trying legacy formats...');
+            
+            try {
+                // Try as mnemonic/URI directly
+                sender = keyring.addFromUri(pkStr);
+                console.log('[DEBUG] Loaded keypair from URI/mnemonic (legacy format)');
+            } catch (e1) {
+                try {
+                    // Try as hex seed
+                    const seedHex = pkStr.replace(/^0x/, '');
+                    if (seedHex.length === 64) {
+                        const seed = Buffer.from(seedHex, 'hex');
+                        sender = keyring.addFromSeed(seed);
+                        console.log('[DEBUG] Loaded keypair from hex seed (legacy format)');
+                    } else {
+                        throw new Error(`Invalid seed length: ${seedHex.length}, expected 64 hex chars`);
+                    }
+                } catch (e2) {
+                    try { await api.disconnect(); } catch {}
+                    throw new Error(
+                        'Failed to load Polkadot keypair from any format. ' +
+                        'Ensure private key is either: ' +
+                        '1) JSON format with mnemonic/seed (new format), ' +
+                        '2) Mnemonic phrase, or ' +
+                        '3) 32-byte hex seed (64 chars). ' +
+                        `Error details: ${e2 instanceof Error ? e2.message : String(e2)}`
+                    );
+                }
+            }
+        }
+
+        if (!sender) {
+            try { await api.disconnect(); } catch {}
+            throw new Error('Failed to initialize keypair');
         }
 
         // Get public keys for comparison
@@ -836,37 +937,52 @@ else if (chain === 'polkadot') {
                 `CRITICAL: Private key does not match stored address!\n` +
                 `Derived address: ${sender.address}\n` +
                 `Stored address: ${userAddress.address}\n` +
-                `This private key belongs to a different account. Transaction aborted to prevent loss of funds.\n` +
-                `Please verify that you're using the correct wallet.`
+                `Derived pubkey: ${derivedPubKeyHex}\n` +
+                `Stored pubkey: ${storedPubKeyHex}\n` +
+                `This private key belongs to a different account. Transaction aborted to prevent loss of funds.`
             );
         }
 
-        // Public keys match! Now try to find the correct SS58 format
-        let correctFormat = 0; // Polkadot mainnet default
-        let matchFound = false;
+        console.log('[DEBUG] ✅ Public key verification passed!');
+
+        // Public keys match! Now encode with the correct format
+        let correctFormat = 0; // Default to Polkadot format
         
-        // Try common Polkadot formats
+        // Try to find the format used in the stored address
         const formatsToTry = network === 'testnet' 
-            ? [0, 42] // Polkadot and generic substrate
-            : [0, 2, 42]; // Polkadot, Kusama, generic substrate
+            ? [0, 42, 2] // Polkadot, generic substrate, Kusama
+            : [0, 2, 42];
         
         for (const format of formatsToTry) {
             try {
                 const encoded = encodeAddress(derivedPubKey, format);
                 if (encoded === userAddress.address) {
                     correctFormat = format;
-                    matchFound = true;
-                    console.log(`[DEBUG] Address format matched: ${format}`);
+                    console.log(`[DEBUG] ✅ Address format matched: ${format}`);
                     break;
                 }
             } catch {}
         }
 
-        // Use the stored address for sending (since public keys match)
-        const targetAddress = userAddress.address;
-
         // Convert amount DOT -> Planck (1 DOT = 10^10 Planck)
         const planck = BigInt(Math.round(Number(amount) * 1e10));
+        console.log(`[DEBUG] Sending ${amount} DOT (${planck} Planck) from ${userAddress.address} to ${toAddress}`);
+
+        // Check balance before sending
+        try {
+            const accountInfo = await api.query.system.account(userAddress.address);
+            const balance = accountInfo.data.free.toBigInt();
+            console.log(`[DEBUG] Account balance: ${balance} Planck (${Number(balance) / 1e10} DOT)`);
+            
+            if (balance < planck) {
+                try { await api.disconnect(); } catch {}
+                throw new Error(
+                    `Insufficient balance. Have: ${Number(balance) / 1e10} DOT, Need: ${amount} DOT`
+                );
+            }
+        } catch (balErr) {
+            console.warn('[WARN] Could not check balance:', balErr);
+        }
 
         // Create transaction - use transferKeepAlive to prevent account reaping
         const transfer = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
@@ -876,12 +992,58 @@ else if (chain === 'polkadot') {
         }
 
         const tx = transfer(toAddress, planck.toString());
-        
-        // Sign and send
-        const hash = await tx.signAndSend(sender);
-        txHash = hash.toString();
 
-        console.log(`[SUCCESS] Polkadot transaction sent: ${txHash}`);
+        // Sign and send
+        try {
+            txHash = await new Promise<string>(async (resolve, reject) => {
+                try {
+                    const unsub = await tx.signAndSend(sender, (result: any) => {
+                        const { status, dispatchError, events } = result;
+
+                        // Log transaction progress
+                        if (status.isReady) {
+                            console.log('[DEBUG] Transaction is ready');
+                        }
+
+                        if (dispatchError) {
+                            // Decode module error if possible
+                            try {
+                                if (dispatchError.isModule) {
+                                    const decoded = api.registry.findMetaError(dispatchError.asModule);
+                                    const { section, name, docs } = decoded;
+                                    const errorMsg = `${section}.${name}: ${docs.join(' ')}`;
+                                    reject(new Error(`Transaction failed: ${errorMsg}`));
+                                } else {
+                                    reject(new Error(`Transaction failed: ${dispatchError.toString()}`));
+                                }
+                            } catch (de) {
+                                reject(new Error(`Transaction dispatch error: ${dispatchError.toString()}`));
+                            }
+                            try { unsub(); } catch {}
+                            return;
+                        }
+
+                        if (status.isInBlock) {
+                            console.log(`[DEBUG] Transaction included in block: ${status.asInBlock.toString()}`);
+                            resolve(status.asInBlock.toString());
+                            try { unsub(); } catch {}
+                        } else if (status.isFinalized) {
+                            console.log(`[DEBUG] Transaction finalized in block: ${status.asFinalized.toString()}`);
+                            resolve(status.asFinalized.toString());
+                            try { unsub(); } catch {}
+                        }
+                    });
+                } catch (sendErr) {
+                    reject(sendErr instanceof Error ? sendErr : new Error(String(sendErr)));
+                }
+            });
+
+            console.log(`[SUCCESS] Polkadot transaction successful: ${txHash}`);
+        } catch (sendErr) {
+            try { await api.disconnect(); } catch {}
+            console.error('Polkadot send error (dispatch/sign):', sendErr);
+            throw sendErr;
+        }
 
         try { await api.disconnect(); } catch {}
     } catch (err) {
@@ -1314,6 +1476,7 @@ else if (chain === 'stellar') {
                 toAddress,
                 chain,
                 network,
+                chainRpcName: txChainName,
             });
         } catch (error) {
             console.error('Send transaction error:', error);

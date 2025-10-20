@@ -26,6 +26,17 @@ function isValidStrkAddress(address: string): boolean {
     return /^0x[a-fA-F0-9]{63,64}$/.test(address);
 }
 
+function isValidPolkadotAddress(address: string): boolean {
+    try {
+        // Lazy require to avoid hard import at module load
+        const { decodeAddress } = require('@polkadot/util-crypto');
+        decodeAddress(address);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 const STARKNET_TOKEN_CONTRACTS: Record<
     string,
     { mainnet: string; testnet: string }
@@ -159,6 +170,7 @@ export class MerchantController {
                 btcAddress,
                 solAddress,
                 strkAddress,
+                polkadotAddress,
                 usdtErc20Address,
                 usdtTrc20Address,
                 description,
@@ -176,19 +188,32 @@ export class MerchantController {
                 return res.status(400).json({ error: 'Chain is required' });
             }
 
-            // Determine the address based on chain
-            const address =
-                ethAddress ||
-                btcAddress ||
-                stellarAddress ||
-                solAddress ||
-                strkAddress ||
-                usdtErc20Address ||
-                usdtTrc20Address;
+            // Determine the address strictly based on selected chain
+            let address: string | undefined;
+            switch ((chain || '').toLowerCase()) {
+                case 'bitcoin':
+                    address = btcAddress; break;
+                case 'ethereum':
+                    address = ethAddress; break;
+                case 'stellar':
+                    address = stellarAddress; break;
+                case 'solana':
+                    address = solAddress; break;
+                case 'starknet':
+                    address = strkAddress; break;
+                case 'polkadot':
+                    address = polkadotAddress; break;
+                case 'usdt-erc20':
+                    address = usdtErc20Address; break;
+                case 'usdt-trc20':
+                    address = usdtTrc20Address; break;
+                default:
+                    return res.status(400).json({ error: `Unsupported chain: ${chain}` });
+            }
 
             if (!address) {
                 return res.status(400).json({
-                    error: 'At least one address must be provided for the selected chain',
+                    error: `Missing address for chain ${chain}`,
                 });
             }
 
@@ -199,6 +224,7 @@ export class MerchantController {
                 stellar: () => MerchantController.isValidStellarAddress(address),
                 solana: () => isValidSolAddress(address),
                 starknet: () => isValidStrkAddress(address),
+                polkadot: () => isValidPolkadotAddress(address),
                 'usdt-erc20': () => isValidEthAddress(address),
                 'usdt-trc20': () => isValidBtcAddress(address),
             };
@@ -222,6 +248,7 @@ export class MerchantController {
                 stellarAddress,
                 solAddress,
                 strkAddress,
+                polkadotAddress,
                 usdtErc20Address,
                 usdtTrc20Address,
                 address,
@@ -408,6 +435,18 @@ export class MerchantController {
 
             if (!payment) {
                 return res.status(404).json({ error: 'Payment not found' });
+            }
+
+            // Fast-path: if already completed/cancelled, don't perform slow chain checks
+            if (payment.status !== MerchantPaymentStatus.PENDING) {
+                return res.json({
+                    payment,
+                    blockchainStatus: {
+                        confirmed: payment.status === MerchantPaymentStatus.COMPLETED,
+                        transactionHash: payment.txHash || payment.transactionHash,
+                        confirmations: payment.status === MerchantPaymentStatus.COMPLETED ? 1 : 0,
+                    },
+                });
             }
 
             // Check blockchain for payment
@@ -617,6 +656,8 @@ export class MerchantController {
                     return await MerchantController.checkStarknetPayment(
                         payment
                     );
+                case 'polkadot':
+                    return await MerchantController.checkPolkadotPayment(payment);
                 default:
                     return { confirmed: false, error: 'Unsupported chain' };
             }
@@ -633,6 +674,137 @@ export class MerchantController {
     private static isValidStellarAddress(addr?: string | null): boolean {
         if (!addr || typeof addr !== 'string') return false;
         return /^G[A-Z2-7]{55}$/.test(addr);
+    }
+
+    /**
+     * Check Polkadot payment by scanning recent blocks for balances.Transfer events
+     */
+    private static async checkPolkadotPayment(payment: MerchantPayment): Promise<{
+        confirmed: boolean;
+        transactionHash?: string;
+        confirmations?: number;
+        error?: string;
+    }> {
+        try {
+            const { decodeAddress } = require('@polkadot/util-crypto');
+            const { ApiPromise, WsProvider } = require('@polkadot/api');
+
+            // 0) Fast path via Subscan (optional) if API key provided
+            try {
+                const SUBSCAN_API_KEY = process.env.SUBSCAN_API_KEY;
+                if (SUBSCAN_API_KEY) {
+                    const isTestnet = (payment.network || 'mainnet').toLowerCase() === 'testnet';
+                    const base = isTestnet ? 'https://paseo.api.subscan.io' : 'https://polkadot.api.subscan.io';
+                    const resp = await axios.post(
+                        `${base}/api/scan/transfers`,
+                        { address: payment.address, direction: 'to', row: 50, page: 0 },
+                        { headers: { 'Content-Type': 'application/json', 'X-API-Key': SUBSCAN_API_KEY }, timeout: 6000 }
+                    );
+                    const items =
+                        resp.data &&
+                        typeof resp.data === 'object' &&
+                        'data' in resp.data &&
+                        Array.isArray((resp.data as any).data.transfers)
+                            ? (resp.data as any).data.transfers
+                            : [];
+                    const expectedPlanck = BigInt(Math.round(Number(payment.amount) * 1e10));
+                    const tolerance = expectedPlanck / BigInt(100);
+                    const minPlanck = expectedPlanck > tolerance ? expectedPlanck - tolerance : expectedPlanck;
+                    for (const it of items) {
+                        try {
+                            const to = it.to || it.to_account || '';
+                            if (to !== payment.address) continue;
+                            const amtPlanck = it.amount_planck ? BigInt(String(it.amount_planck)) : BigInt(Math.round(Number(it.amount) * 1e10));
+                            if (amtPlanck >= minPlanck) {
+                                return { confirmed: true, transactionHash: it.hash || it.tx_hash, confirmations: 1 };
+                            }
+                        } catch {}
+                    }
+                }
+            } catch (e) {
+                // ignore Subscan errors and fall back to RPC
+            }
+
+            // 1) RPC path with limited window and concurrency
+            const wsUrl = (payment.network || 'mainnet').toLowerCase() === 'testnet'
+                ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io')
+                : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+
+            const provider = new WsProvider(wsUrl, 2_000);
+            const api = await ApiPromise.create({ provider });
+
+            // Decode recipient to AccountId bytes
+            const recipientId = decodeAddress(payment.address);
+
+            // Amount in Planck (1 DOT = 10^10 Planck)
+            const expectedPlanck = BigInt(Math.round(Number(payment.amount) * 1e10));
+            const tolerance = expectedPlanck / BigInt(100); // 1%
+            const minPlanck = expectedPlanck > tolerance ? expectedPlanck - tolerance : expectedPlanck;
+
+            // Determine current block and scan back a window
+            const header = await api.rpc.chain.getHeader();
+            const current = header.number.toNumber();
+            const window = Number(process.env.POLKADOT_SCAN_WINDOW || 64); // default: last 64 blocks
+            const from = Math.max(1, current - window);
+            const blocks: number[] = [];
+            for (let n = current; n >= from; n--) blocks.push(n);
+
+            const deadline = Date.now() + Number(process.env.POLKADOT_SCAN_DEADLINE_MS || 8000);
+            const maxConcurrency = Math.max(1, Number(process.env.POLKADOT_SCAN_CONCURRENCY || 8));
+
+            const matchBlock = async (n: number) => {
+                try {
+                    const blockHash = await api.rpc.chain.getBlockHash(n);
+                    const events = await api.query.system.events.at(blockHash);
+                    for (let idx = 0; idx < events.length; idx++) {
+                        const { event, phase } = events[idx] as any;
+                        if (event.section !== 'balances') continue;
+                        if (event.method !== 'Transfer' && event.method !== 'TransferKeepAlive') continue;
+                        const dataAny: any[] = event.data as any[];
+                        if (!dataAny || dataAny.length < 3) continue;
+                        const to = dataAny[1];
+                        const amt = dataAny[2];
+                        let toId: Uint8Array;
+                        try { toId = (to.toU8a ? to.toU8a() : new Uint8Array(to)) as Uint8Array; } catch { continue; }
+                        const same = Buffer.from(toId).equals(Buffer.from(recipientId));
+                        if (!same) continue;
+                        let amtBig = BigInt(0);
+                        try { amtBig = BigInt(amt.toString()); } catch { continue; }
+                        if (amtBig >= minPlanck) {
+                            let txHashHex: string | undefined;
+                            try {
+                                if (phase && phase.isApplyExtrinsic) {
+                                    const exIndex = phase.asApplyExtrinsic.toNumber();
+                                    const block = await api.rpc.chain.getBlock(blockHash);
+                                    const ex = block.block.extrinsics[exIndex];
+                                    txHashHex = (ex.hash && ex.hash.toHex) ? ex.hash.toHex() : undefined;
+                                }
+                            } catch {}
+                            return { n, hash: txHashHex || blockHash.toString() };
+                        }
+                    }
+                } catch {}
+                return null;
+            };
+
+            // Process in concurrent batches
+            let found: { n: number; hash: string } | null = null;
+            for (let i = 0; i < blocks.length && !found; i += maxConcurrency) {
+                if (Date.now() > deadline) break;
+                const slice = blocks.slice(i, i + maxConcurrency);
+                const results = await Promise.all(slice.map(matchBlock));
+                found = results.find((r) => r !== null) as any;
+            }
+
+            await api.disconnect().catch(() => {});
+            if (found) {
+                return { confirmed: true, transactionHash: found.hash, confirmations: current - found.n + 1 };
+            }
+            return { confirmed: false };
+        } catch (error) {
+            console.error('Polkadot check error:', error);
+            return { confirmed: false };
+        }
     }
 
     /**

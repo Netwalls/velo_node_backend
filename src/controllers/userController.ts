@@ -39,6 +39,7 @@ export class UserController {
                     username: user.username,
                     displayPicture: user.displayPicture,
                     isEmailVerified: user.isEmailVerified,
+                    hasTransactionPin: !!user.transactionPin,
                     kycStatus: user.kycStatus,
                     kyc: user.kycDocument,
                     addresses: user.addresses,
@@ -84,6 +85,7 @@ export class UserController {
                     username: user.username,
                     displayPicture: user.displayPicture,
                     isEmailVerified: user.isEmailVerified,
+                    hasTransactionPin: !!user.transactionPin,
                     kycStatus: user.kycStatus,
                     kyc: user.kycDocument,
                     addresses: user.addresses,
@@ -421,11 +423,13 @@ export class UserController {
      */
     static async setTransactionPin(req: AuthRequest, res: Response): Promise<void> {
         try {
-            const { pin } = req.body;
-            if (!pin || typeof pin !== 'string') {
+            // Accept either numeric or string PIN (allow { pin: 1234 } or { pin: '1234' })
+            const pinRaw = req.body?.pin ?? req.body?.transactionPin;
+            if (pinRaw === undefined || pinRaw === null) {
                 res.status(400).json({ error: 'PIN is required' });
                 return;
             }
+            const pin = String(pinRaw);
             // Validate 4-digit numeric PIN
             if (!/^\d{4}$/.test(pin)) {
                 res.status(400).json({ error: 'PIN must be exactly 4 digits' });
@@ -456,11 +460,13 @@ export class UserController {
      */
     static async verifyTransactionPin(req: AuthRequest, res: Response): Promise<void> {
         try {
-            const { pin } = req.body;
-            if (!pin || typeof pin !== 'string') {
+            // Accept numeric or string PIN for verification
+            const pinRaw = req.body?.pin ?? req.body?.transactionPin;
+            if (pinRaw === undefined || pinRaw === null) {
                 res.status(400).json({ error: 'PIN is required' });
                 return;
             }
+            const pin = String(pinRaw);
             if (!/^\d{4}$/.test(pin)) {
                 res.status(400).json({ error: 'PIN must be exactly 4 digits' });
                 return;

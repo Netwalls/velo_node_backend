@@ -62,6 +62,9 @@ export class MerchantPayment {
     strkAddress!: string;
 
     @Column({ nullable: true })
+    polkadotAddress!: string;
+
+    @Column({ nullable: true })
     usdtErc20Address!: string;
 
     @Column({ nullable: true })
