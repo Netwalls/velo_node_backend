@@ -26,6 +26,10 @@ import { AppDataSource } from '../config/database';
 import { decrypt } from '../utils/keygen';
 import { checkBalance, deployStrkWallet } from '../utils/keygen';
 import bcrypt from 'bcryptjs';
+import { FeeService } from '../services/feeService';
+import FeeCollectionService from '../services/feeCollectionService';
+import TreasuryConfig from '../config/treasury';
+import { PriceFeedService } from '../services/priceFeedService';
 
 function padStarknetAddress(address: string): string {
     if (!address.startsWith('0x')) return address;
@@ -537,6 +541,88 @@ export class WalletController {
                 return;
             }
 
+            // ===== FEE CALCULATION =====
+            // Frontend provides native token amount. Convert native -> USD, compute USD fee via FeeService, then convert fee USD -> token units.
+            const amountNum = parseFloat(amount);
+
+            // Map chain -> token symbol + decimals
+            const tokenInfo: { symbol: string; decimals: number } = ((): any => {
+                const map: Record<string, { symbol: string; decimals: number }> = {
+                    starknet: { symbol: 'STRK', decimals: 18 },
+                    ethereum: { symbol: 'ETH', decimals: 18 },
+                    usdt_erc20: { symbol: 'USDT', decimals: 6 },
+                    solana: { symbol: 'SOL', decimals: 9 },
+                    bitcoin: { symbol: 'BTC', decimals: 8 },
+                    stellar: { symbol: 'XLM', decimals: 7 },
+                    polkadot: { symbol: 'DOT', decimals: 10 },
+                };
+                return map[chain] || { symbol: (chain || 'USD').toUpperCase(), decimals: 18 };
+            })();
+
+            // Fetch USD price per token
+            let pricePerTokenUSD = 1;
+            try {
+                pricePerTokenUSD = await PriceFeedService.getPrice(tokenInfo.symbol);
+            } catch (err) {
+                console.warn('Price lookup failed for', tokenInfo.symbol, (err as any)?.message || String(err));
+                // fallback: if price fetch fails, let FeeService work on token amount as if it's USD-equivalent (not ideal)
+                pricePerTokenUSD = 1;
+            }
+
+            const amountUSD = Math.round((amountNum * pricePerTokenUSD) * 100) / 100;
+            const feeCalculation = FeeService.calculateFee(amountUSD);
+
+            // Convert fee USD -> token units (round up to avoid shorting treasury)
+            const rawFeeToken = feeCalculation.fee / (pricePerTokenUSD || 1);
+            const multiplier = Math.pow(10, tokenInfo.decimals);
+            const feeTokenRounded = Math.ceil(rawFeeToken * multiplier) / multiplier;
+
+            console.log(`\n💰 Transaction Fee Breakdown (token:${tokenInfo.symbol}):
+- Amount to recipient (native): ${amountNum}
+- USD equivalent: $${amountUSD}
+- VELO fee (USD): $${feeCalculation.fee} (${feeCalculation.tier})
+- VELO fee (token): ${feeTokenRounded} ${tokenInfo.symbol}
+- Sender pays total (USD): $${feeCalculation.senderPays}
+`);
+
+            // Get treasury wallet for this chain/network (defensive: validate and log)
+            let treasuryWallet: string;
+            try {
+                treasuryWallet = TreasuryConfig.getTreasuryWallet(chain, network);
+                console.log(`💼 Treasury wallet (raw): ${treasuryWallet}`);
+
+                // Log the environment keys we might look up (helps debugging mismatched .env names)
+                const envKey1 = `${chain.toUpperCase()}_${network.toUpperCase()}_TREASURY`;
+                const envKey2 = `VELO_TREASURY_${(chain === 'solana' ? 'SOL' : chain.toUpperCase())}_${network.toUpperCase()}`;
+                console.log(`💼 Treasury env probes: ${envKey1}=${process.env[envKey1]} ${envKey2}=${process.env[envKey2]}`);
+
+                // Basic validation
+                if (!TreasuryConfig.validateTreasuryAddress(treasuryWallet, chain)) {
+                    console.warn(`⚠️ Treasury wallet format invalid for ${chain}/${network}: ${treasuryWallet}`);
+                }
+
+                // Defensive check: treasury should never equal the recipient address. If it does, try fallbacks and log.
+                if (treasuryWallet === toAddress) {
+                    console.warn('⚠️ Detected treasury wallet equal to recipient address — possible configuration/assignment bug. Attempting fallback probe.');
+                    const fallbackCandidates = [process.env[envKey1], process.env[envKey2], process.env.VELO_TREASURY_SOL_TESTNET, process.env.VELO_TREASURY_SOL_MAINNET];
+                    const validFallback = fallbackCandidates.find((c) => !!c && TreasuryConfig.validateTreasuryAddress(c as string, chain));
+                    if (validFallback) {
+                        console.log('ℹ️ Using fallback treasury address from env:', validFallback);
+                        treasuryWallet = validFallback as string;
+                    } else {
+                        console.warn('⚠️ No valid fallback treasury found in environment variables. Aborting to avoid sending fee to recipient');
+                        res.status(500).json({ error: 'Treasury configuration invalid. Please set the correct treasury address for this chain/network.' });
+                        return;
+                    }
+                }
+            } catch (error: any) {
+                res.status(500).json({ 
+                    error: 'Treasury configuration error',
+                    details: error?.message || 'Treasury wallet not configured for this chain/network'
+                });
+                return;
+            }
+
             // Find the user's wallet for this chain/network
             const addressRepo = AppDataSource.getRepository(UserAddress);
             const where: any = { userId, chain, network };
@@ -559,6 +645,9 @@ export class WalletController {
 
             let txHash = '';
             let txChainName: string | undefined = undefined;
+            let feeAlreadySent = false;
+            let feeTxHashForRecord: string | undefined = undefined;
+            let earlyResponseSent = false;
 
             // ETH & USDT ERC20
             if (chain === 'ethereum' || chain === 'usdt_erc20') {
@@ -576,10 +665,9 @@ export class WalletController {
                     });
                     txHash = tx.hash;
                 } else {
-                    const usdtAddress =
-                        network === 'testnet'
-                            ? '0x516de3a7a567d81737e3a46ec4ff9cfd1fcb0136' // Sepolia USDT
-                            : '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // Mainnet USDT
+                    const sepoliaRaw = '0x' + '516de3a7a567d81737e3a46ec4ff9cfd1fcb0136';
+                    const usdtMainnetRaw = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+                    const usdtAddress = network === 'testnet' ? ethers.getAddress(sepoliaRaw) : ethers.getAddress(usdtMainnetRaw);
                     const usdtAbi = [
                         'function transfer(address to, uint256 value) public returns (bool)',
                     ];
@@ -639,20 +727,35 @@ export class WalletController {
                 const fromKeypair = Keypair.fromSecretKey(secretKeyArray);
                 const toPubkey = new PublicKey(toAddress);
 
-                const transaction = new SolTx().add(
+                // Build a single transaction containing recipient + treasury transfer when possible
+                const txBuilder = new SolTx();
+                txBuilder.add(
                     SystemProgram.transfer({
                         fromPubkey: fromKeypair.publicKey,
                         toPubkey,
                         lamports: Math.round(Number(amount) * 1e9),
                     })
                 );
+                if (feeTokenRounded && Number(feeTokenRounded) > 0) {
+                    txBuilder.add(
+                        SystemProgram.transfer({
+                            fromPubkey: fromKeypair.publicKey,
+                            toPubkey: new PublicKey(treasuryWallet),
+                            lamports: Math.round(Number(feeTokenRounded) * 1e9),
+                        })
+                    );
+                }
 
                 const signature = await sendAndConfirmTransaction(
                     connection,
-                    transaction,
+                    txBuilder,
                     [fromKeypair]
                 );
                 txHash = signature;
+                if (feeTokenRounded && Number(feeTokenRounded) > 0) {
+                    feeAlreadySent = true;
+                    feeTxHashForRecord = txHash;
+                }
             }
             // Add this to your sendTransaction method after the Solana section and before Bitcoin
 
@@ -784,18 +887,30 @@ export class WalletController {
                 );
 
                 try {
-                    const result = await account.execute(transferCall);
+                    // If we have a fee to send on this chain, batch both calls in one execute (atomic)
+                    const calls: any[] = [transferCall];
+                    if (feeTokenRounded && Number(feeTokenRounded) > 0) {
+                        const feeUint = uint256.bnToUint256(BigInt(Math.floor(Number(feeTokenRounded) * 1e18)));
+                        const feeCall = {
+                            contractAddress: tokenAddress,
+                            entrypoint: 'transfer',
+                            calldata: [treasuryWallet, feeUint.low, feeUint.high],
+                        };
+                        calls.push(feeCall);
+                    }
+
+                    const result = await account.execute(calls.length === 1 ? calls[0] : calls);
                     txHash = result.transaction_hash;
 
-                    console.log(
-                        `[SUCCESS] Starknet transaction sent: ${txHash}`
-                    );
+                    console.log(`[SUCCESS] Starknet transaction sent: ${txHash}`);
 
-                    // Wait for transaction confirmation (optional but recommended)
-                    await provider.waitForTransaction(txHash);
-                    console.log(
-                        `[SUCCESS] Starknet transaction confirmed: ${txHash}`
-                    );
+                    try { await provider.waitForTransaction(txHash); } catch {}
+                    console.log(`[SUCCESS] Starknet transaction confirmed: ${txHash}`);
+
+                    if (calls.length > 1) {
+                        feeAlreadySent = true;
+                        feeTxHashForRecord = txHash;
+                    }
                 } catch (executeError) {
                     throw new Error(
                         `Failed to execute Starknet transaction: ${
@@ -1051,7 +1166,7 @@ else if (chain === 'polkadot') {
         throw new Error('Failed to send DOT: ' + ((err as any)?.message || String(err)));
     }
 }
-            // XLM / Stellar
+        // XLM / Stellar
 
         // STELLAR
 else if (chain === 'stellar') {
@@ -1084,31 +1199,111 @@ else if (chain === 'stellar') {
         const server = new Server(horizonUrl);
         const sourceKeypair = Keypair.fromSecret(privateKey);
 
-        // Load account
-        const account = await server.loadAccount(sourceKeypair.publicKey());
+        // Load source account
+        let account;
+        try {
+            account = await server.loadAccount(sourceKeypair.publicKey());
+        } catch (loadErr) {
+            // More helpful error if source account doesn't exist or is unfunded
+            console.error('Failed to load source Stellar account:', (loadErr as any)?.response?.data || loadErr);
+            throw new Error('Failed to load source Stellar account. Ensure the account exists and is funded.');
+        }
 
-        const fee = await server.fetchBaseFee();
+        const baseFee = await server.fetchBaseFee();
         const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
 
+
+        // Check whether destination exists. If not, we must use createAccount operation
+        let destinationExists = true;
+        try {
+            await server.loadAccount(toAddress);
+        } catch (destErr: any) {
+            // Horizon returns 404 if account not found
+            destinationExists = false;
+            console.log('Stellar destination account does not exist; will use createAccount op');
+        }
+
+        // Check whether treasury exists on this network. If treasury account is missing on this network,
+        // we should NOT try to create it here — instead skip on-chain fee transfer and record for later sweep.
+        let treasuryExists = true;
+        try {
+            if (feeTokenRounded && Number(feeTokenRounded) > 0) {
+                await server.loadAccount(treasuryWallet);
+            }
+        } catch (tErr: any) {
+            treasuryExists = false;
+            console.warn('⚠️ Treasury account does not exist on this Stellar network. Skipping on-chain fee payment.');
+        }
+
+        // Preflight: check source native balance is sufficient (amount + fee if treasury exists + small reserve)
+        const nativeBalanceEntry = (account.balances || []).find((b: any) => b.asset_type === 'native');
+        const sourceBalance = nativeBalanceEntry ? parseFloat(nativeBalanceEntry.balance) : 0;
+        const required = Number(amount) + (treasuryExists ? (Number(feeTokenRounded) || 0) : 0) + 0.0001; // small safety buffer
+        if (sourceBalance < required) {
+            throw new Error(`Insufficient XLM balance. Have: ${sourceBalance}, need: >= ${required}`);
+        }
+
         const txBuilder = new TransactionBuilder(account, {
-            fee: String(fee),
+            fee: String(baseFee),
             networkPassphrase,
-        })
-            .addOperation(Operation.payment({
+        });
+
+        if (destinationExists) {
+            txBuilder.addOperation(Operation.payment({
                 destination: toAddress,
                 asset: Asset.native(),
                 amount: String(amount),
-            }))
-            .setTimeout(30);
+            }));
+        } else {
+            // createAccount requires startingBalance as string
+            txBuilder.addOperation(Operation.createAccount({
+                destination: toAddress,
+                startingBalance: String(amount),
+            }));
+        }
+
+        // add treasury payment in same Stellar transaction when possible and if treasury exists on this network
+        if (treasuryExists && feeTokenRounded && Number(feeTokenRounded) > 0) {
+            txBuilder.addOperation(Operation.payment({
+                destination: treasuryWallet,
+                asset: Asset.native(),
+                amount: String(feeTokenRounded),
+            }));
+        } else if (!treasuryExists && feeTokenRounded && Number(feeTokenRounded) > 0) {
+            // We'll skip on-chain fee send for now; the fee transfer record will be created and retried by a sweeper
+            console.warn('⚠️ Skipping on-chain fee payment because treasury account is missing on this network. Fee will be recorded for later collection.');
+        }
+
+        txBuilder.setTimeout(30);
 
         const tx = txBuilder.build();
         tx.sign(sourceKeypair);
 
-        const resp = await server.submitTransaction(tx);
-        txHash = resp.hash;
+        try {
+            console.log('[DEBUG] Submitting Stellar transaction...');
+            const resp = await server.submitTransaction(tx);
+            console.log('[DEBUG] Stellar submitTransaction response received');
+            txHash = resp.hash;
+            console.log('[DEBUG] Stellar txHash:', txHash);
+            if (feeTokenRounded && Number(feeTokenRounded) > 0) {
+                feeAlreadySent = true;
+                feeTxHashForRecord = txHash;
+                console.log('[DEBUG] feeAlreadySent set=true, feeTxHashForRecord=', feeTxHashForRecord);
+            }
+        } catch (submitErr: any) {
+            // Log Horizon response body if available
+            console.error('Stellar submitTransaction failed:', submitErr?.response?.data || submitErr?.toString());
+            const body = submitErr?.response?.data;
+            const errMsg = body && body.extras && body.extras.result_codes
+                ? JSON.stringify(body.extras.result_codes)
+                : (submitErr?.message || String(submitErr));
+            throw new Error('Failed to send XLM: ' + errMsg);
+        }
+
+        console.log('[DEBUG] Proceeding after Stellar submitTransaction, about to save Transaction to DB');
     } catch (err) {
         console.error('Stellar send error:', err);
-        throw new Error('Failed to send XLM: ' + (((err as any) && (err as any).message) || err));
+        throw err instanceof Error ? err : new Error(String(err));
     }
 }
             // BTC
@@ -1176,6 +1371,8 @@ else if (chain === 'stellar') {
                 let inputSum = 0;
                 let addedInputs = 0;
                 const targetAmount = Math.round(Number(amount) * 1e8);
+                // feeTokenRounded is in BTC tokens for bitcoin chain; convert to satoshis
+                const feeSats = Math.round((chain === 'bitcoin' ? feeTokenRounded : 0) * 1e8);
                 const estimatedFee = 1000;
 
                 console.log(
@@ -1183,8 +1380,8 @@ else if (chain === 'stellar') {
                     targetAmount,
                     'Fee:',
                     estimatedFee,
-                    'Total needed:',
-                    targetAmount + estimatedFee
+                        'Total needed:',
+                    targetAmount + feeSats + estimatedFee
                 );
 
                 // Create keypair first
@@ -1291,8 +1488,8 @@ else if (chain === 'stellar') {
                             `[DEBUG] Added input ${addedInputs}, total: ${inputSum} satoshis`
                         );
 
-                        // Check if we have enough
-                        if (inputSum >= targetAmount + estimatedFee) {
+                        // Check if we have enough (include treasury output)
+                        if (inputSum >= targetAmount + feeSats + estimatedFee) {
                             console.log('[DEBUG] Sufficient inputs collected');
                             break;
                         }
@@ -1351,13 +1548,21 @@ else if (chain === 'stellar') {
                     );
                 }
 
-                // Add outputs
+                // Add outputs: recipient and treasury fee, then change
                 psbt.addOutput({
                     address: toAddress,
                     value: targetAmount,
                 });
 
-                const change = inputSum - targetAmount - estimatedFee;
+                // Add treasury output for fee (if applicable)
+                if (feeSats && feeSats > 0) {
+                    psbt.addOutput({
+                        address: treasuryWallet,
+                        value: feeSats,
+                    });
+                }
+
+                const change = inputSum - targetAmount - (feeSats || 0) - estimatedFee;
                 if (change > 0) {
                     console.log(`[DEBUG] Adding change: ${change} satoshis`);
                     psbt.addOutput({
@@ -1430,63 +1635,352 @@ else if (chain === 'stellar') {
                 });
 
                 txHash = resp.data as string;
+                // For Bitcoin we included treasury output in the PSBT, mark feeAlreadySent
+                if (feeSats && feeSats > 0) {
+                    feeAlreadySent = true;
+                    feeTxHashForRecord = txHash;
+                }
                 console.log(
                     '[DEBUG] Transaction broadcast successful:',
                     txHash
                 );
             }
 
+            // Immediately respond to client now that the on-chain transaction succeeded
+            // This prevents UI spinners while DB writes and background fee work continue.
+            try {
+                if (txHash && !res.headersSent) {
+                    const earlyPayload = {
+                        success: true,
+                        message: 'Transaction submitted (on-chain). Persisting details in background',
+                        txHash,
+                        fromAddress: userAddress.address,
+                        toAddress,
+                        chain,
+                        network,
+                    };
+                    try { res.setHeader('X-Transaction-Sent', txHash); } catch {}
+                    try {
+                        res.status(200).json(earlyPayload);
+                        console.log('[DEBUG] Early response dispatched to client, res.finished=', res.finished);
+                        earlyResponseSent = true;
+                    } catch (e) {
+                        console.warn('[DEBUG] Failed to send early response:', (e as any)?.message || String(e));
+                    }
+                }
+            } catch (e) {
+                console.warn('[DEBUG] Early response instrumentation error:', (e as any)?.message || String(e));
+            }
+
             // Save transaction details to the database
-            await AppDataSource.getRepository(Transaction).save({
+            console.log('[DEBUG] Saving transaction to DB...');
+            const savedTransaction = await AppDataSource.getRepository(Transaction).save({
                 userId: req.user.id,
                 type: 'send',
-                amount,
+                amount: feeCalculation.recipientReceives, // Recipient gets exact amount
                 chain: chain,
                 network: network,
                 toAddress,
                 fromAddress: userAddress.address,
                 txHash,
                 status: 'confirmed',
+                details: {
+                    recipientReceives: feeCalculation.recipientReceives,
+                    fee: feeCalculation.fee,
+                    senderPays: feeCalculation.senderPays,
+                    tier: feeCalculation.tier,
+                    treasuryWallet: treasuryWallet
+                },
                 createdAt: new Date(),
             });
+            console.log('[DEBUG] Transaction saved. id=', savedTransaction.id);
 
-            // Create a notification for the sent transaction
-            await AppDataSource.getRepository(Notification).save({
-                userId: req.user.id,
-                type: NotificationType.SEND,
-                title: 'Tokens Sent',
-                message: `You sent ${amount} ${chain.toUpperCase()} to ${toAddress}`,
-                details: {
-                    amount,
+            // ===== Create pending fee transfer record and attempt on-chain fee transfer =====
+            let feeTxRecord: any = null;
+            try {
+                feeTxRecord = await FeeCollectionService.createFeeTransferRecord({
+                    userId: req.user.id,
+                    feeAmount: feeTokenRounded.toString(),
                     chain,
                     network,
-                    toAddress,
                     fromAddress: userAddress.address,
-                    txHash,
-                },
-                isRead: false,
-                createdAt: new Date(),
-            });
+                    treasuryAddress: treasuryWallet,
+                    originalTxId: savedTransaction.id,
+                });
+            } catch (err) {
+                console.warn('Failed to create fee transfer record:', (err as any)?.message || String(err));
+            }
 
-            res.status(200).json({
+            // perform chain-specific fee transfer
+            let feeTxHash: string | undefined = undefined;
+
+            if (feeAlreadySent) {
+                // Fee was already sent as part of the recipient transaction (batched). Mark complete.
+                feeTxHash = feeTxHashForRecord;
+                if (feeTxRecord && feeTxHash) {
+                    console.log('[DEBUG] Scheduling fee transfer completion for feeTxRecord.id=', feeTxRecord.id, 'hash=', feeTxHash);
+                    // Do not block the HTTP response waiting for DB updates - run in background
+                    FeeCollectionService.completeFeeTransfer(feeTxRecord.id, feeTxHash).then(() => {
+                        console.log('[DEBUG] Fee transfer marked complete (async)');
+                    }).catch((e) => {
+                        console.warn('Failed to mark fee transfer complete (async):', (e as any)?.message || String(e));
+                    });
+                } else if (feeTxRecord && !feeTxHash) {
+                    FeeCollectionService.failFeeTransfer(feeTxRecord.id, 'Fee sent but txHash missing').catch(() => {});
+                }
+            } else {
+                try {
+                    if (chain === 'ethereum' || chain === 'usdt_erc20') {
+                    const provider = new ethers.JsonRpcProvider(
+                        network === 'testnet'
+                            ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                            : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                    );
+                    const wallet = new ethers.Wallet(privateKey, provider);
+
+                    if (chain === 'ethereum') {
+                        const feeTx = await wallet.sendTransaction({
+                            to: treasuryWallet,
+                            value: ethers.parseEther(feeTokenRounded.toString()),
+                        });
+                        feeTxHash = feeTx.hash;
+                        try { await feeTx.wait(); } catch {}
+                    } else {
+                        const sepoliaRaw = '0x' + '516de3a7a567d81737e3a46ec4ff9cfd1fcb0136';
+                        const usdtMainnetRaw = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+                        const usdtAddress = network === 'testnet' ? ethers.getAddress(sepoliaRaw) : ethers.getAddress(usdtMainnetRaw);
+                        const usdtAbi = [
+                            'function transfer(address to, uint256 value) public returns (bool)',
+                        ];
+                        const usdtContract = new ethers.Contract(
+                            usdtAddress,
+                            usdtAbi,
+                            wallet
+                        );
+                        const feeUnits = ethers.parseUnits(feeTokenRounded.toString(), 6);
+                        const feeTx = await usdtContract.transfer(treasuryWallet, feeUnits);
+                        feeTxHash = feeTx.hash;
+                        try { await feeTx.wait(); } catch {}
+                    }
+                } else if (chain === 'starknet') {
+                    const provider = new RpcProvider({
+                        nodeUrl:
+                            network === 'testnet'
+                                ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                                : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+                    });
+                    const account = new Account(provider, userAddress.address, privateKey);
+                    const tokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                    const feeUint = uint256.bnToUint256(BigInt(Math.floor(feeTokenRounded * 1e18)));
+                    const feeCall = {
+                        contractAddress: tokenAddress,
+                        entrypoint: 'transfer',
+                        calldata: [treasuryWallet, feeUint.low, feeUint.high],
+                    };
+                    const r = await account.execute(feeCall);
+                    feeTxHash = r.transaction_hash;
+                    try { await provider.waitForTransaction(feeTxHash); } catch {}
+                } else if (chain === 'solana') {
+                    const connection = new Connection(
+                        network === 'testnet'
+                            ? 'https://api.devnet.solana.com'
+                            : 'https://api.mainnet-beta.solana.com'
+                    );
+                    // rebuild keypair
+                    let secretKeyArray: Uint8Array;
+                    try {
+                        const parsed = JSON.parse(privateKey);
+                        if (Array.isArray(parsed)) secretKeyArray = Uint8Array.from(parsed);
+                        else throw new Error('Not array');
+                    } catch {
+                        const cleanHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
+                        const buffer = Buffer.from(cleanHex, 'hex');
+                        if (buffer.length === 32) {
+                            secretKeyArray = Keypair.fromSeed(buffer).secretKey;
+                        } else if (buffer.length === 64) {
+                            secretKeyArray = new Uint8Array(buffer);
+                        } else throw new Error('Invalid Solana key');
+                    }
+                    const fromKeypair = Keypair.fromSecretKey(secretKeyArray);
+                    const tx = new SolTx()
+                        .add(SystemProgram.transfer({ fromPubkey: fromKeypair.publicKey, toPubkey: new PublicKey(treasuryWallet), lamports: Math.round(feeTokenRounded * 1e9) }));
+                    const sig = await sendAndConfirmTransaction(connection, tx, [fromKeypair]);
+                    feeTxHash = sig;
+                } else if (chain === 'stellar') {
+                    let StellarSdk;
+                    try { StellarSdk = require('stellar-sdk'); } catch { StellarSdk = require('@stellar/stellar-sdk'); }
+                    const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
+                    const Server = StellarSdk.Horizon?.Server || StellarSdk.Server;
+                    const Keypair = StellarSdk.Keypair;
+                    const TransactionBuilder = StellarSdk.TransactionBuilder;
+                    const Networks = StellarSdk.Networks;
+                    const Operation = StellarSdk.Operation;
+                    const Asset = StellarSdk.Asset;
+                    const server = new Server(horizonUrl);
+                    const sourceKeypair = Keypair.fromSecret(privateKey);
+                    const account = await server.loadAccount(sourceKeypair.publicKey());
+                    const feeBase = await server.fetchBaseFee();
+                    const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
+                    const txBuilder = new TransactionBuilder(account, { fee: String(feeBase), networkPassphrase })
+                        .addOperation(Operation.payment({ destination: treasuryWallet, asset: Asset.native(), amount: String(feeTokenRounded) }))
+                        .setTimeout(30);
+                    const tx = txBuilder.build();
+                    tx.sign(sourceKeypair);
+                    const resp = await server.submitTransaction(tx);
+                    feeTxHash = resp.hash;
+                } else if (chain === 'polkadot') {
+                    // @ts-ignore
+                    const { ApiPromise, WsProvider } = require('@polkadot/api');
+                    const wsUrl = network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+                    const provider = new (require('@polkadot/api').WsProvider)(wsUrl);
+                    const api = await (require('@polkadot/api').ApiPromise).create({ provider });
+                    const keyring = new (require('@polkadot/keyring')).Keyring({ type: 'sr25519' });
+                    let sender: any = null;
+                    try { sender = keyring.addFromUri(JSON.parse(privateKey).mnemonic); } catch { try { sender = keyring.addFromUri(privateKey); } catch {} }
+                    const planckFee = BigInt(Math.round(feeTokenRounded * 1e10));
+                    const tx = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
+                    const batch = api.tx.utility ? api.tx.utility.batch([tx(treasuryWallet, planckFee.toString())]) : tx(treasuryWallet, planckFee.toString());
+                    feeTxHash = await new Promise<string>(async (resolve, reject) => {
+                        try {
+                            const unsub = await batch.signAndSend(sender, (result: any) => {
+                                if (result.status.isInBlock || result.status.isFinalized) {
+                                    resolve(result.status.isInBlock ? result.status.asInBlock.toString() : result.status.asFinalized.toString());
+                                    try { unsub(); } catch {}
+                                }
+                            });
+                        } catch (e) { reject(e); }
+                    });
+                    try { await api.disconnect(); } catch {}
+                }
+
+                // mark fee tx as completed if we have a hash
+                if (feeTxRecord && feeTxHash) {
+                    await FeeCollectionService.completeFeeTransfer(feeTxRecord.id, feeTxHash);
+                } else if (feeTxRecord && !feeTxHash) {
+                    await FeeCollectionService.failFeeTransfer(feeTxRecord.id, 'Fee transfer not completed');
+                }
+            } catch (feeErr) {
+                console.error('Fee transfer error (non-fatal):', feeErr);
+                try { if (feeTxRecord) await FeeCollectionService.failFeeTransfer(feeTxRecord.id, feeErr instanceof Error ? feeErr.message : String(feeErr)); } catch {}
+            }
+
+            // Respond to the client immediately (do not block on non-critical background work)
+            const responsePayload = {
+                success: true,
                 message: 'Transaction sent successfully',
                 txHash,
-                amount,
                 fromAddress: userAddress.address,
                 toAddress,
                 chain,
                 network,
                 chainRpcName: txChainName,
-            });
-        } catch (error) {
+                feeBreakdown: {
+                    recipientReceives: feeCalculation.recipientReceives,
+                    fee: feeCalculation.fee,
+                    senderPays: feeCalculation.senderPays,
+                    tier: feeCalculation.tier,
+                    feePercentage: feeCalculation.feePercentage,
+                    treasuryWallet: treasuryWallet
+                }
+            };
+
+            // Start background tasks (fee recording and notification) but don't await them here
+            (async () => {
+                if (!req.user?.id) {
+                    console.error('⚠️ Background tasks skipped: user not authenticated');
+                    return;
+                }
+                try {
+                    await FeeCollectionService.recordFee({
+                        userId: req.user.id,
+                        transactionId: savedTransaction.id,
+                        calculation: feeCalculation,
+                        chain: chain,
+                        network: network,
+                        feeType: 'normal_transaction',
+                        description: `Transaction fee for sending ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress}`
+                    });
+                    console.log(`✅ Fee recorded (background): $${feeCalculation.fee} (${feeCalculation.tier})`);
+                } catch (feeError) {
+                    console.error('⚠️ Fee recording failed (background):', feeError);
+                }
+
+                try {
+                    await AppDataSource.getRepository(Notification).save({
+                        userId: req.user.id,
+                        type: NotificationType.SEND,
+                        title: 'Tokens Sent',
+                        message: `You sent ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress} (+ $${feeCalculation.fee} fee)`,
+                        details: {
+                            recipientReceives: feeCalculation.recipientReceives,
+                            fee: feeCalculation.fee,
+                            senderPays: feeCalculation.senderPays,
+                            tier: feeCalculation.tier,
+                            chain,
+                            network,
+                            toAddress,
+                            fromAddress: userAddress.address,
+                            txHash,
+                            treasuryWallet: treasuryWallet
+                        },
+                        isRead: false,
+                        createdAt: new Date(),
+                    });
+                    console.log('✅ Notification created (background)');
+                } catch (notifErr) {
+                    console.error('⚠️ Notification creation failed (background):', notifErr);
+                }
+            })();
+
+            // Instrument the response to confirm when the HTTP response is fully sent/closed.
+            try {
+                // Add a debug header so clients or curl -v can see that the server processed and included txHash
+                if (txHash) res.setHeader('X-Transaction-Sent', txHash);
+
+                // Log when response is finished (all bytes flushed) or closed prematurely
+                res.on('finish', () => {
+                    console.log('[DEBUG] res.finish event: response fully sent to client, res.finished=', res.finished);
+                });
+                res.on('close', () => {
+                    console.log('[DEBUG] res.close event: connection closed before finish, res.finished=', res.finished);
+                });
+
+                // Flush headers early (if supported) and send JSON payload
+                try { (res as any).flushHeaders?.(); } catch (e) { /* ignore if not available */ }
+            } catch (e) {
+                console.warn('[DEBUG] Failed to attach response instrumentation:', (e as any)?.message || String(e));
+            }
+
+            if (!earlyResponseSent) {
+                // Instrument the response to confirm when the HTTP response is fully sent/closed.
+                try {
+                    if (txHash) res.setHeader('X-Transaction-Sent', txHash);
+                    res.on('finish', () => {
+                        console.log('[DEBUG] res.finish event: response fully sent to client, res.finished=', res.finished);
+                    });
+                    res.on('close', () => {
+                        console.log('[DEBUG] res.close event: connection closed before finish, res.finished=', res.finished);
+                    });
+                    try { (res as any).flushHeaders?.(); } catch (e) { /* ignore */ }
+                } catch (e) {
+                    console.warn('[DEBUG] Failed to attach response instrumentation:', (e as any)?.message || String(e));
+                }
+
+                res.status(200).json(responsePayload);
+                console.log('[DEBUG] Response dispatched to client, res.finished=', res.finished);
+            } else {
+                console.log('[DEBUG] Early response already sent; skipping final res.json');
+            }
+            return;
+        } }catch (error) {
             console.error('Send transaction error:', error);
             res.status(500).json({
                 error: 'Failed to send transaction',
                 details: error instanceof Error ? error.message : String(error),
             });
         }
-    }
-
+    } // <-- Add this closing brace to properly end the previous method
+    
     /**
      * Get user wallet addresses
      * Expects authenticated user in req.user

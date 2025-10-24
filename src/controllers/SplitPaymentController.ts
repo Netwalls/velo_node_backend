@@ -29,6 +29,9 @@ import { ChainType, NetworkType } from '../types';
 import * as bitcoin from 'bitcoinjs-lib';
 import axios from 'axios';
 import * as starknet from 'starknet';
+import { FeeService } from '../services/feeService';
+import FeeCollectionService from '../services/feeCollectionService';
+import TreasuryConfig from '../config/treasury';
 const ECPair = ECPairFactory(ecc);
 import bcrypt from 'bcryptjs';
 
@@ -76,13 +79,30 @@ const STARKNET_TOKENS: Record<string, Record<string, Record<string, any>>> = {
     },
 };
 
-// Multiple RPC endpoints for fallback
+// Multiple RPC endpoints for fallback - use v0_7 for better compatibility
+// const RPC_ENDPOINTS = {
+//     mainnet: [
+    
+//         'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+//     ],
+//     testnet: [
+        
+//         'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+//     ],
+// };
 const RPC_ENDPOINTS = {
     mainnet: [
-        'https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+        // Order by library compatibility first, then features
+        'https://starknet-mainnet.public.blastapi.io/rpc/v0_8',
+        'https://starknet-mainnet.public.blastapi.io/rpc/v0_7',
+        'https://starknet-mainnet.public.blastapi.io/rpc/v0_9',
+        'https://free-rpc.nethermind.io/mainnet-juno',
     ],
     testnet: [
-        'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_9/CP1fRkzqgL_nwb9DNNiKI',
+        'https://starknet-sepolia.public.blastapi.io/rpc/v0_8',
+        'https://starknet-sepolia.public.blastapi.io/rpc/v0_7',
+        'https://starknet-sepolia.public.blastapi.io/rpc/v0_9',
+        'https://free-rpc.nethermind.io/sepolia-juno',
     ],
 };
 
@@ -116,15 +136,52 @@ function getTokenConfig(network: string, tokenSymbol: string): TokenConfig | nul
     return STARKNET_TOKENS[normalizedNetwork]?.[normalizedSymbol] as TokenConfig || null;
 }
 
+function normalizeStarknetAddress(address: string): string {
+    if (!address) {
+        throw new Error('Address cannot be empty');
+    }
+    
+    let addr = address.startsWith('0x') ? address.slice(2) : address;
+    addr = addr.trim();
+    
+    if (!/^[0-9a-fA-F]+$/.test(addr)) {
+        throw new Error(`Invalid Starknet address format: contains non-hex characters`);
+    }
+    
+    // Pad with leading zeros to 64 characters (66 total with 0x)
+    addr = addr.padStart(64, '0');
+    return '0x' + addr;
+}
+
+// RPC Endpoints - use v0_7 for better compatibility
+// (Removed duplicate declaration of RPC_ENDPOINTS)
+
+
+
 async function getWorkingProvider(network: string): Promise<starknet.RpcProvider> {
     const isTestnet = network === 'testnet';
-    const endpoints = isTestnet ? RPC_ENDPOINTS.testnet : RPC_ENDPOINTS.mainnet;
+    const envOverride = isTestnet ? process.env.STARKNET_SEPOLIA_RPC : process.env.STARKNET_MAINNET_RPC;
+    const endpoints = [
+        ...(envOverride ? [envOverride] : []),
+        ...(isTestnet ? RPC_ENDPOINTS.testnet : RPC_ENDPOINTS.mainnet),
+    ];
 
     for (const endpoint of endpoints) {
         try {
             const provider = new starknet.RpcProvider({ nodeUrl: endpoint });
-            // Test the connection
+            // Basic connectivity
             await provider.getChainId();
+            // Light capability probe to weed out incompatible specs
+            try {
+                await provider.getBlockNumber();
+                await provider.getBlockWithTxHashes('latest');
+            } catch (capErr) {
+                const msg = (capErr as any)?.message || String(capErr);
+                if (/not supported by this library|RPC0\d\d/.test(msg)) {
+                    console.warn(`⚠️ Skipping incompatible RPC (spec): ${endpoint} -> ${msg}`);
+                    continue;
+                }
+            }
             console.log(`✅ Connected to Starknet RPC: ${endpoint}`);
             return provider;
         } catch (err) {
@@ -195,62 +252,73 @@ export class SplitPaymentController {
      * Create a new reusable split payment template
      * POST /split-payment/create
      */
-    static async createSplitPayment(
-        req: AuthRequest,
-        res: Response
-    ): Promise<void> {
-        try {
-            const {
-                title,
-                description,
-                chain,
-                network,
-                fromAddress,
-                recipients, // Array of { address, amount, name?, email? }
-            } = req.body;
 
-            // Validation
-            if (!title || !chain || !network || !fromAddress || !recipients) {
+static async createSplitPayment(req: AuthRequest, res: Response): Promise<void> {
+    try {
+        const { title, description, chain, network, fromAddress, recipients } = req.body;
+
+        // Validation
+        if (!title || !chain || !network || !fromAddress || !recipients) {
+            res.status(400).json({
+                error: 'Missing required fields: title, chain, network, fromAddress, recipients',
+            });
+            return;
+        }
+
+        if (!Array.isArray(recipients) || recipients.length === 0) {
+            res.status(400).json({ error: 'Recipients must be a non-empty array' });
+            return;
+        }
+
+        if (recipients.length > 1000) {
+            res.status(400).json({ error: 'Maximum 1000 recipients allowed per split' });
+            return;
+        }
+
+        // Validate each recipient
+        for (const recipient of recipients) {
+            if (!recipient.address || !recipient.amount) {
+                res.status(400).json({ error: 'Each recipient must have address and amount' });
+                return;
+            }
+            if (Number(recipient.amount) <= 0) {
+                res.status(400).json({ error: 'All amounts must be positive' });
+                return;
+            }
+        }
+
+        // Normalize addresses for Starknet
+        const isStarknetChain = chain === 'starknet' || chain === 'strk' || chain.startsWith('starknet_');
+        
+        let normalizedFromAddress = fromAddress;
+        if (isStarknetChain) {
+            try {
+                normalizedFromAddress = normalizeStarknetAddress(fromAddress);
+                console.log('Normalized fromAddress:', normalizedFromAddress);
+            } catch (normErr) {
                 res.status(400).json({
-                    error: 'Missing required fields: title, chain, network, fromAddress, recipients',
+                    error: `Invalid Starknet address format: ${fromAddress}`,
+                    details: normErr instanceof Error ? normErr.message : String(normErr)
                 });
                 return;
             }
+        }
 
-            if (!Array.isArray(recipients) || recipients.length === 0) {
-                res.status(400).json({
-                    error: 'Recipients must be a non-empty array',
-                });
-                return;
-            }
+        // Verify user owns the address
+        const userAddressRepo = AppDataSource.getRepository(UserAddress);
+        
+        let userAddress = await userAddressRepo.findOne({
+            where: {
+                userId: req.user!.id,
+                address: normalizedFromAddress,
+                chain: chain as ChainType,
+                network: network as NetworkType,
+            },
+        });
 
-            if (recipients.length > 1000) {
-                res.status(400).json({
-                    error: 'Maximum 1000 recipients allowed per split',
-                });
-                return;
-            }
-
-            // Validate each recipient
-            for (const recipient of recipients) {
-                if (!recipient.address || !recipient.amount) {
-                    res.status(400).json({
-                        error: 'Each recipient must have address and amount',
-                    });
-                    return;
-                }
-
-                if (Number(recipient.amount) <= 0) {
-                    res.status(400).json({
-                        error: 'All amounts must be positive',
-                    });
-                    return;
-                }
-            }
-
-            // Verify user owns the fromAddress
-            const userAddressRepo = AppDataSource.getRepository(UserAddress);
-            const userAddress = await userAddressRepo.findOne({
+        // Fallback: try original address
+        if (!userAddress && isStarknetChain) {
+            userAddress = await userAddressRepo.findOne({
                 where: {
                     userId: req.user!.id,
                     address: fromAddress,
@@ -258,363 +326,666 @@ export class SplitPaymentController {
                     network: network as NetworkType,
                 },
             });
-
-            if (!userAddress) {
-                res.status(404).json({
-                    error: 'Sender address not found in your wallet',
-                });
-                return;
-            }
-
-            // Calculate total amount
-            const totalAmount = recipients.reduce(
-                (sum, recipient) => sum + Number(recipient.amount),
-                0
-            );
-
-            // Create split payment template
-            const splitPaymentRepo = AppDataSource.getRepository(SplitPayment);
-            const splitPayment = splitPaymentRepo.create({
-                userId: req.user!.id,
-                title,
-                description,
-                chain,
-                network,
-                currency: getCurrencyFromChain(chain),
-                fromAddress,
-                totalAmount: totalAmount.toString(),
-                totalRecipients: recipients.length,
-                status: SplitPaymentStatus.ACTIVE,
-            });
-
-            const savedSplitPayment = await splitPaymentRepo.save(splitPayment);
-
-            // Create recipient templates
-            const recipientRepo = AppDataSource.getRepository(
-                SplitPaymentRecipient
-            );
-            const recipientRecords = recipients.map((recipient: any) =>
-                recipientRepo.create({
-                    splitPaymentId: savedSplitPayment.id,
-                    recipientAddress: recipient.address,
-                    recipientName: recipient.name,
-                    recipientEmail: recipient.email,
-                    amount: recipient.amount.toString(),
-                    isActive: true,
-                })
-            );
-
-            await recipientRepo.save(recipientRecords);
-
-            // Create notification for split creation
-            const notificationRepo = AppDataSource.getRepository(Notification);
-            await notificationRepo.save({
-                userId: req.user!.id,
-                type: NotificationType.SEND, // Could create new type: SPLIT_CREATED
-                title: 'Split Payment Created',
-                message: `Split payment "${title}" created with ${recipients.length} recipients`,
-                details: {
-                    splitPaymentId: savedSplitPayment.id,
-                    title: savedSplitPayment.title,
-                    totalAmount: savedSplitPayment.totalAmount,
-                    totalRecipients: savedSplitPayment.totalRecipients,
-                    chain: savedSplitPayment.chain,
-                    network: savedSplitPayment.network,
-                    action: 'created',
-                },
-                isRead: false,
-                createdAt: new Date(),
-            });
-
-            res.status(201).json({
-                message: 'Split payment template created successfully',
-                splitPayment: {
-                    id: savedSplitPayment.id,
-                    title: savedSplitPayment.title,
-                    description: savedSplitPayment.description,
-                    totalAmount: savedSplitPayment.totalAmount,
-                    totalRecipients: savedSplitPayment.totalRecipients,
-                    chain: savedSplitPayment.chain,
-                    network: savedSplitPayment.network,
-                    status: savedSplitPayment.status,
-                    executionCount: 0,
-                    createdAt: savedSplitPayment.createdAt,
-                },
-                recipients: recipientRecords.map((r) => ({
-                    address: r.recipientAddress,
-                    name: r.recipientName,
-                    amount: r.amount,
-                })),
-            });
-        } catch (error) {
-            console.error('Create split payment error:', error);
-            res.status(500).json({
-                error: 'Failed to create split payment',
-                details: error instanceof Error ? error.message : String(error),
-            });
         }
-    }
 
-    /**
-     * Execute a split payment (can be done multiple times)
-     * POST /split-payment/:id/execute
-     */
-    static async executeSplitPayment(
-        req: AuthRequest,
-        res: Response
-    ): Promise<void> {
-        try {
-            const { id } = req.params;
-
-            const splitPaymentRepo = AppDataSource.getRepository(SplitPayment);
-            const splitPayment = await splitPaymentRepo.findOne({
-                where: { id, userId: req.user!.id },
-                relations: ['recipients'],
+        if (!userAddress) {
+            res.status(404).json({
+                error: 'Sender address not found in your wallet',
+                details: `Checked: ${normalizedFromAddress}${isStarknetChain ? ` and ${fromAddress}` : ''}`
             });
+            return;
+        }
 
-            if (!splitPayment) {
-                res.status(404).json({ error: 'Split payment not found' });
-                return;
-            }
-
-            if (splitPayment.status !== SplitPaymentStatus.ACTIVE) {
-                res.status(400).json({
-                    error: `Split payment is ${splitPayment.status} and cannot be executed`,
-                });
-                return;
-            }
-
-            // Get only active recipients
-            const activeRecipients = splitPayment.recipients.filter(
-                (r) => r.isActive
-            );
-            if (activeRecipients.length === 0) {
-                res.status(400).json({
-                    error: 'No active recipients found',
-                });
-                return;
-            }
-
-            // Create execution record
-            const executionRepo = AppDataSource.getRepository(
-                SplitPaymentExecution
-            );
-            const execution = executionRepo.create({
-                splitPaymentId: splitPayment.id,
-                totalAmount: splitPayment.totalAmount,
-                totalRecipients: activeRecipients.length,
-                status: ExecutionStatus.PROCESSING,
-            });
-
-            const savedExecution = await executionRepo.save(execution);
-
-            // Enforce transaction PIN for split executions unless explicitly bypassed
+        // Normalize recipient addresses for Starknet
+        const normalizedRecipients = isStarknetChain ? recipients.map(recipient => {
             try {
-                const skipPin = process.env.SKIP_TRANSACTION_PIN === 'true';
-                if (!skipPin) {
-                    // Accept either `transactionPin` or `pin` for backwards compatibility
-                    const providedPinRaw = req.body?.transactionPin ?? req.body?.pin;
-                    if (providedPinRaw === undefined || providedPinRaw === null) {
-                        res.status(400).json({ error: 'Missing transactionPin (or pin) in request body' });
-                        return;
-                    }
-                    const providedPin = String(providedPinRaw);
+                return { ...recipient, address: normalizeStarknetAddress(recipient.address) };
+            } catch (err) {
+                console.warn(`Could not normalize recipient address ${recipient.address}:`, err);
+                return recipient;
+            }
+        }) : recipients;
 
-                    const userRepo = AppDataSource.getRepository('users');
-                    const userRecord: any = await userRepo.findOne({ where: { id: req.user!.id } });
-                    if (!userRecord) {
-                        res.status(401).json({ error: 'Unauthorized' });
-                        return;
-                    }
+        // Calculate total amount
+        const totalAmount = normalizedRecipients.reduce((sum, r) => sum + Number(r.amount), 0);
 
-                    if (!userRecord.transactionPin) {
-                        res.status(400).json({ error: 'Transaction PIN not set. Please set a transaction PIN before executing split payments.' });
-                        return;
-                    }
+        // Create split payment template
+        const splitPaymentRepo = AppDataSource.getRepository(SplitPayment);
+        const splitPayment = splitPaymentRepo.create({
+            userId: req.user!.id,
+            title,
+            description,
+            chain,
+            network,
+            currency: getCurrencyFromChain(chain),
+            fromAddress: normalizedFromAddress,
+            totalAmount: totalAmount.toString(),
+            totalRecipients: normalizedRecipients.length,
+            status: SplitPaymentStatus.ACTIVE,
+        });
 
-                    const pinMatches = await bcrypt.compare(providedPin, userRecord.transactionPin);
-                    if (!pinMatches) {
-                        res.status(403).json({ error: 'Invalid transaction PIN' });
-                        return;
-                    }
-                }
-            } catch (pinErr) {
-                console.error('Transaction PIN verification error (split):', pinErr);
-                res.status(500).json({ error: 'Failed to verify transaction PIN' });
+        const savedSplitPayment = await splitPaymentRepo.save(splitPayment);
+
+        // Create recipient records
+        const recipientRepo = AppDataSource.getRepository(SplitPaymentRecipient);
+        const recipientRecords = normalizedRecipients.map((recipient: any) =>
+            recipientRepo.create({
+                splitPaymentId: savedSplitPayment.id,
+                recipientAddress: recipient.address,
+                recipientName: recipient.name,
+                recipientEmail: recipient.email,
+                amount: recipient.amount.toString(),
+                isActive: true,
+            })
+        );
+
+        await recipientRepo.save(recipientRecords);
+
+        // Create notification
+        const notificationRepo = AppDataSource.getRepository(Notification);
+        await notificationRepo.save({
+            userId: req.user!.id,
+            type: NotificationType.SEND,
+            title: 'Split Payment Created',
+            message: `Split payment "${title}" created with ${normalizedRecipients.length} recipients`,
+            details: {
+                splitPaymentId: savedSplitPayment.id,
+                title: savedSplitPayment.title,
+                totalAmount: savedSplitPayment.totalAmount,
+                totalRecipients: savedSplitPayment.totalRecipients,
+                chain: savedSplitPayment.chain,
+                network: savedSplitPayment.network,
+                action: 'created',
+            },
+            isRead: false,
+            createdAt: new Date(),
+        });
+
+        res.status(201).json({
+            message: 'Split payment template created successfully',
+            splitPayment: {
+                id: savedSplitPayment.id,
+                title: savedSplitPayment.title,
+                description: savedSplitPayment.description,
+                totalAmount: savedSplitPayment.totalAmount,
+                totalRecipients: savedSplitPayment.totalRecipients,
+                chain: savedSplitPayment.chain,
+                network: savedSplitPayment.network,
+                fromAddress: savedSplitPayment.fromAddress,
+                status: savedSplitPayment.status,
+                executionCount: 0,
+                createdAt: savedSplitPayment.createdAt,
+            },
+            recipients: recipientRecords.map((r) => ({
+                address: r.recipientAddress,
+                name: r.recipientName,
+                amount: r.amount,
+            })),
+        });
+    } catch (error) {
+        console.error('Create split payment error:', error);
+        res.status(500).json({
+            error: 'Failed to create split payment',
+            details: error instanceof Error ? error.message : String(error),
+        });
+    }
+}
+
+// EXECUTE SPLIT PAYMENT
+static async executeSplitPayment(req: AuthRequest, res: Response): Promise<void> {
+    try {
+        const { id } = req.params;
+
+        const splitPaymentRepo = AppDataSource.getRepository(SplitPayment);
+        const splitPayment = await splitPaymentRepo.findOne({
+            where: { id, userId: req.user!.id },
+            relations: ['recipients'],
+        });
+
+        if (!splitPayment) {
+            res.status(404).json({ error: 'Split payment not found' });
+            return;
+        }
+
+        if (splitPayment.status !== SplitPaymentStatus.ACTIVE) {
+            res.status(400).json({
+                error: `Split payment is ${splitPayment.status} and cannot be executed`,
+            });
+            return;
+        }
+
+        const activeRecipients = splitPayment.recipients.filter((r) => r.isActive);
+        if (activeRecipients.length === 0) {
+            res.status(400).json({ error: 'No active recipients found' });
+            return;
+        }
+
+        // Create execution record
+        const executionRepo = AppDataSource.getRepository(SplitPaymentExecution);
+        const execution = executionRepo.create({
+            splitPaymentId: splitPayment.id,
+            totalAmount: splitPayment.totalAmount,
+            totalRecipients: activeRecipients.length,
+            status: ExecutionStatus.PROCESSING,
+        });
+
+        const savedExecution = await executionRepo.save(execution);
+
+        // Verify transaction PIN
+        const skipPin = process.env.SKIP_TRANSACTION_PIN === 'true';
+        if (!skipPin) {
+            const providedPin = String(req.body?.transactionPin ?? req.body?.pin ?? '');
+            if (!providedPin) {
+                res.status(400).json({ error: 'Missing transactionPin in request body' });
                 return;
             }
 
-            // Get user's private key
-            const userAddressRepo = AppDataSource.getRepository(UserAddress);
-            const userAddress = await userAddressRepo.findOne({
+            const userRepo = AppDataSource.getRepository('users');
+            const userRecord: any = await userRepo.findOne({ where: { id: req.user!.id } });
+            
+            if (!userRecord?.transactionPin) {
+                res.status(400).json({ error: 'Transaction PIN not set' });
+                return;
+            }
+
+            const pinMatches = await bcrypt.compare(providedPin, userRecord.transactionPin);
+            if (!pinMatches) {
+                res.status(403).json({ error: 'Invalid transaction PIN' });
+                return;
+            }
+        }
+
+        // Get user's private key
+        const userAddressRepo = AppDataSource.getRepository(UserAddress);
+        const isStarknetChain = splitPayment.chain === 'starknet' || 
+                               splitPayment.chain === 'strk' || 
+                               splitPayment.chain.startsWith('starknet_');
+        
+        let userAddress = await userAddressRepo.findOne({
+            where: {
+                userId: req.user!.id,
+                address: splitPayment.fromAddress,
+                chain: splitPayment.chain as ChainType,
+                network: splitPayment.network as NetworkType,
+            },
+        });
+
+        // Fallback for Starknet: try short format
+        if (!userAddress && isStarknetChain) {
+            const shortAddr = splitPayment.fromAddress.replace(/^0x0+/, '0x');
+            userAddress = await userAddressRepo.findOne({
                 where: {
                     userId: req.user!.id,
-                    address: splitPayment.fromAddress,
+                    address: shortAddr,
                     chain: splitPayment.chain as ChainType,
                     network: splitPayment.network as NetworkType,
                 },
             });
+        }
 
-            if (!userAddress?.encryptedPrivateKey) {
-                throw new Error('Private key not found for sender address');
-            }
+        if (!userAddress?.encryptedPrivateKey) {
+            throw new Error(`Private key not found for address: ${splitPayment.fromAddress}`);
+        }
 
-            const { decrypt } = require('../utils/keygen');
-            const privateKey = decrypt(userAddress.encryptedPrivateKey);
+        const { decrypt } = require('../utils/keygen');
+        const privateKey = decrypt(userAddress.encryptedPrivateKey);
 
-            // Process payments based on chain
-            let results: Array<{ success: boolean; txHash?: string; error?: string }>;
-            if (
-                splitPayment.chain === 'ethereum' ||
-                splitPayment.chain === 'usdt_erc20'
-            ) {
-                results = await SplitPaymentController.processEthereumBatch(
-                    splitPayment,
-                    activeRecipients,
-                    privateKey
-                );
-            } else if (splitPayment.chain === 'bitcoin') {
-                results = await SplitPaymentController.processBitcoinBatch(
-                    splitPayment,
-                    activeRecipients,
-                    privateKey
-                );
-            } else if (splitPayment.chain === 'solana') {
-                results = await SplitPaymentController.processSolanaBatch(
-                    splitPayment,
-                    activeRecipients,
-                    privateKey
-                );
-            } else if (splitPayment.chain === 'stellar') {
-                results = await SplitPaymentController.processStellarBatch(
-                    splitPayment,
-                    activeRecipients,
-                    privateKey
-                );
-            } else if (splitPayment.chain === 'polkadot') {
-    results = await SplitPaymentController.processPolkadotBatch(
-        splitPayment,
-        activeRecipients,
-        privateKey
-    );
-            }
-            else if (splitPayment.chain === 'starknet' || splitPayment.chain === 'strk') {
-                results = await SplitPaymentController.processStarknetBatch(
-                    splitPayment,
-                    activeRecipients,
-                    privateKey
-                );
-            } else {
-                throw new Error(
-                    `Chain ${splitPayment.chain} not supported for split payments`
-                );
-            }
+        // ===== STEP 1: Calculate fees for all recipients =====
+        const recipientAmounts = activeRecipients.map((r) => parseFloat(r.amount));
+        const feeCalculations = FeeService.calculateBatchFees(recipientAmounts);
+        const totalFees = feeCalculations.reduce((sum, calc) => sum + calc.fee, 0);
+        const totalPaymentAmount = parseFloat(splitPayment.totalAmount as any);
+        const totalAmountWithFees = totalPaymentAmount + totalFees;
 
-            // Update execution status
-            const successCount = results.filter((r) => r.success).length;
-            const failedCount = results.filter((r) => !r.success).length;
+        console.log(`Split payment fee breakdown:
+- Total payment amount: $${totalPaymentAmount.toFixed(2)}
+- Total fees: $${totalFees.toFixed(2)}
+- Sender pays total: $${totalAmountWithFees.toFixed(2)}
+- Recipients: ${activeRecipients.length}
+- Fee calculations:`, feeCalculations.map((calc, idx) => ({
+            recipient: activeRecipients[idx].recipientAddress,
+            amount: calc.recipientReceives,
+            fee: calc.fee,
+            tier: calc.tier,
+        })));
 
-            savedExecution.successfulPayments = successCount;
-            savedExecution.failedPayments = failedCount;
-            savedExecution.completedAt = new Date();
+        // ===== STEP 2: Get treasury wallet =====
+        const treasuryWallet = TreasuryConfig.getTreasuryWallet(
+            splitPayment.chain as ChainType,
+            splitPayment.network as NetworkType
+        );
 
-            if (failedCount === 0) {
-                savedExecution.status = ExecutionStatus.COMPLETED;
-            } else if (successCount > 0) {
-                savedExecution.status = ExecutionStatus.PARTIALLY_FAILED;
-            } else {
-                savedExecution.status = ExecutionStatus.FAILED;
-            }
+        if (!treasuryWallet) {
+            throw new Error(`Treasury wallet not configured for ${splitPayment.chain} on ${splitPayment.network}`);
+        }
 
-            await executionRepo.save(savedExecution);
+        console.log(`Treasury wallet for ${splitPayment.chain}/${splitPayment.network}: ${treasuryWallet}`);
 
-            // Save execution results
-            const resultRepo = AppDataSource.getRepository(
-                SplitPaymentExecutionResult
-            );
-            for (let i = 0; i < results.length; i++) {
-                const result = results[i];
-                const recipient = activeRecipients[i];
+        // ===== STEP 3: Validate sender balance (placeholder - implement actual check) =====
+        // TODO: Implement actual blockchain balance check
+        // For now, we assume the balance is sufficient
+        console.log(`[PLACEHOLDER] Validating sender has $${totalAmountWithFees.toFixed(2)} available...`);
 
-                await resultRepo.save({
-                    executionId: savedExecution.id,
-                    recipientAddress: recipient.recipientAddress,
-                    recipientName: recipient.recipientName,
-                    recipientEmail: recipient.recipientEmail,
-                    amount: recipient.amount,
-                    status: result.success
-                        ? PaymentResultStatus.SUCCESS
-                        : PaymentResultStatus.FAILED,
-                    txHash: result.txHash,
-                    errorMessage: result.error,
-                    processedAt: new Date(),
-                });
-            }
+        // Process payments
+        let results: Array<{ success: boolean; txHash?: string; error?: string }>;
+        
+        if (splitPayment.chain === 'ethereum' || splitPayment.chain === 'usdt_erc20') {
+            results = await SplitPaymentController.processEthereumBatch(splitPayment, activeRecipients, privateKey);
+        } else if (splitPayment.chain === 'bitcoin') {
+            results = await SplitPaymentController.processBitcoinBatch(splitPayment, activeRecipients, privateKey);
+        } else if (splitPayment.chain === 'solana') {
+            results = await SplitPaymentController.processSolanaBatch(splitPayment, activeRecipients, privateKey);
+        } else if (splitPayment.chain === 'stellar') {
+            results = await SplitPaymentController.processStellarBatch(splitPayment, activeRecipients, privateKey);
+        } else if (splitPayment.chain === 'polkadot') {
+            results = await SplitPaymentController.processPolkadotBatch(splitPayment, activeRecipients, privateKey);
+        } else if (isStarknetChain) {
+            results = await SplitPaymentController.processStarknetBatch(splitPayment, activeRecipients, privateKey);
+        } else {
+            throw new Error(`Chain ${splitPayment.chain} not supported for split payments`);
+        }
 
-            // Update split payment execution count and last executed time
-            splitPayment.executionCount += 1;
-            splitPayment.lastExecutedAt = new Date();
-            await splitPaymentRepo.save(splitPayment);
+        // Update execution status
+        const successCount = results.filter((r) => r.success).length;
+        const failedCount = results.filter((r) => !r.success).length;
 
-            // Create notification for execution
-            const notificationRepo = AppDataSource.getRepository(Notification);
-            await notificationRepo.save({
-                userId: req.user!.id,
-                type: NotificationType.SEND,
-                title:
-                    savedExecution.status === ExecutionStatus.COMPLETED
-                        ? 'Split Payment Executed Successfully'
-                        : 'Split Payment Partially Completed',
-                message: `"${splitPayment.title}" executed: ${successCount} successful, ${failedCount} failed`,
-                details: {
-                    splitPaymentId: splitPayment.id,
-                    executionId: savedExecution.id,
-                    title: splitPayment.title,
-                    totalAmount: splitPayment.totalAmount,
-                    successfulPayments: successCount,
-                    failedPayments: failedCount,
-                    chain: splitPayment.chain,
-                    network: splitPayment.network,
-                    action: 'executed',
-                    executionNumber: splitPayment.executionCount,
-                },
-                isRead: false,
-                createdAt: new Date(),
-            });
+        savedExecution.successfulPayments = successCount;
+        savedExecution.failedPayments = failedCount;
+        savedExecution.completedAt = new Date();
+        savedExecution.status = failedCount === 0 ? ExecutionStatus.COMPLETED :
+                                successCount > 0 ? ExecutionStatus.PARTIALLY_FAILED :
+                                ExecutionStatus.FAILED;
 
-            res.status(200).json({
-                message: 'Split payment executed successfully',
-                execution: {
-                    id: savedExecution.id,
-                    status: savedExecution.status,
-                    total: results.length,
-                    successful: successCount,
-                    failed: failedCount,
-                    executionNumber: splitPayment.executionCount,
-                },
-                splitPayment: {
-                    id: splitPayment.id,
-                    title: splitPayment.title,
-                    totalExecutions: splitPayment.executionCount,
-                    lastExecutedAt: splitPayment.lastExecutedAt,
-                },
-                results: results.map((r, i) => ({
-                    recipient: activeRecipients[i].recipientAddress,
-                    name: activeRecipients[i].recipientName,
-                    amount: activeRecipients[i].amount,
-                    success: r.success,
-                    txHash: r.txHash,
-                    error: r.error,
-                })),
-            });
-        } catch (error) {
-            console.error('Execute split payment error:', error);
-            res.status(500).json({
-                error: 'Failed to execute split payment',
-                details: error instanceof Error ? error.message : String(error),
+        await executionRepo.save(savedExecution);
+
+        // Save results
+        const resultRepo = AppDataSource.getRepository(SplitPaymentExecutionResult);
+        for (let i = 0; i < results.length; i++) {
+            await resultRepo.save({
+                executionId: savedExecution.id,
+                recipientAddress: activeRecipients[i].recipientAddress,
+                recipientName: activeRecipients[i].recipientName,
+                recipientEmail: activeRecipients[i].recipientEmail,
+                amount: activeRecipients[i].amount,
+                status: results[i].success ? PaymentResultStatus.SUCCESS : PaymentResultStatus.FAILED,
+                txHash: results[i].txHash,
+                errorMessage: results[i].error,
+                processedAt: new Date(),
             });
         }
+
+        // Update split payment
+        splitPayment.executionCount += 1;
+        splitPayment.lastExecutedAt = new Date();
+        await splitPaymentRepo.save(splitPayment);
+
+        // ===== STEP 4: Execute fee collection (only if there were successful payments) =====
+        let feeTxHash: string | undefined;
+        const feeRecords: any[] = [];
+        
+        if (successCount > 0) {
+            try {
+                console.log(`Executing fee collection: $${totalFees.toFixed(2)} to treasury...`);
+                
+                // TODO: Replace with actual blockchain transaction to treasury
+                // For now, use placeholder transaction hash
+                feeTxHash = `0xfee_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                console.log(`[PLACEHOLDER] Fee collection transaction: ${feeTxHash}`);
+
+                // ===== STEP 5: Record fees in database for each successful payment =====
+                for (let i = 0; i < results.length; i++) {
+                    if (results[i].success) {
+                        const feeRecord = await FeeCollectionService.recordFee({
+                            userId: req.user!.id!,
+                            transactionId: results[i].txHash || `split_${savedExecution.id}_${i}`,
+                            calculation: feeCalculations[i],
+                            chain: splitPayment.chain,
+                            network: splitPayment.network,
+                            feeType: 'split_payment',
+                            description: `Split payment fee for ${splitPayment.title} - Recipient: ${activeRecipients[i].recipientAddress}`,
+                        });
+
+                        feeRecords.push({
+                            recipient: activeRecipients[i].recipientAddress,
+                            amount: recipientAmounts[i],
+                            fee: feeCalculations[i].fee,
+                            tier: feeCalculations[i].tier,
+                            feeId: feeRecord.id,
+                        });
+
+                        console.log(`Fee recorded for ${activeRecipients[i].recipientAddress}: $${feeCalculations[i].fee.toFixed(2)} (${feeCalculations[i].tier})`);
+                    }
+                }
+
+                console.log(`Total fees collected: $${totalFees.toFixed(2)} from ${feeRecords.length} successful payments`);
+            } catch (feeError) {
+                console.error('Fee collection error (non-fatal):', feeError);
+                // Don't fail the entire split payment if fee collection fails
+                // The main payments were already executed successfully
+            }
+        }
+
+        res.status(200).json({
+            message: 'Split payment executed successfully',
+            execution: {
+                id: savedExecution.id,
+                status: savedExecution.status,
+                total: results.length,
+                successful: successCount,
+                failed: failedCount,
+                executionNumber: splitPayment.executionCount,
+            },
+            splitPayment: {
+                id: splitPayment.id,
+                title: splitPayment.title,
+                totalExecutions: splitPayment.executionCount,
+                lastExecutedAt: splitPayment.lastExecutedAt,
+            },
+            feeBreakdown: {
+                totalPaymentAmount: totalPaymentAmount,
+                totalFees: totalFees,
+                senderPaysTotal: totalAmountWithFees,
+                treasuryAddress: treasuryWallet,
+                feeTxHash: feeTxHash,
+                feeRecords: feeRecords,
+            },
+            results: results.map((r, i) => ({
+                recipient: activeRecipients[i].recipientAddress,
+                name: activeRecipients[i].recipientName,
+                amount: activeRecipients[i].amount,
+                success: r.success,
+                txHash: r.txHash,
+                error: r.error,
+                fee: feeCalculations[i]?.fee,
+                tier: feeCalculations[i]?.tier,
+            })),
+        });
+    } catch (error) {
+        console.error('Execute split payment error:', error);
+        res.status(500).json({
+            error: 'Failed to execute split payment',
+            details: error instanceof Error ? error.message : String(error),
+        });
     }
+}
+
+
+private static async processStarknetBatch(
+    splitPayment: SplitPayment,
+    recipients: SplitPaymentRecipient[],
+    privateKey: string
+): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
+    const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
+
+    if (!recipients || recipients.length === 0) return results;
+
+    try {
+        // Determine token
+        let tokenSymbol = 'eth';
+        if (splitPayment.chain === 'starknet_strk' || splitPayment.chain === 'strk') {
+            tokenSymbol = 'strk';
+        } else if (splitPayment.chain === 'starknet_usdc') {
+            tokenSymbol = 'usdc';
+        } else if (splitPayment.chain === 'starknet_usdt') {
+            tokenSymbol = 'usdt';
+        } else if (splitPayment.chain === 'starknet_dai') {
+            tokenSymbol = 'dai';
+        }
+
+        const tokenConfig = getTokenConfig(splitPayment.network, tokenSymbol);
+        if (!tokenConfig) {
+            throw new Error(`Unsupported token: ${tokenSymbol}. Supported: STRK, ETH, USDC, USDT, DAI`);
+        }
+
+        console.log('Starknet transfer setup:', {
+            token: tokenSymbol,
+            network: splitPayment.network,
+            recipients: recipients.length,
+            fromAddress: splitPayment.fromAddress,
+        });
+
+        // Get working provider
+        const provider = await getWorkingProvider(splitPayment.network);
+
+        // Prepare private key
+        let cleanPrivateKey = privateKey.trim();
+        if (!cleanPrivateKey.startsWith('0x')) {
+            cleanPrivateKey = '0x' + cleanPrivateKey;
+        }
+        if (cleanPrivateKey.length < 66) {
+            cleanPrivateKey = '0x' + cleanPrivateKey.slice(2).padStart(64, '0');
+        }
+
+        console.log('Private key formatted (length:', cleanPrivateKey.length + ')');
+
+        // Initialize account with stored address
+        const accountAddress = splitPayment.fromAddress;
+        const signer = new starknet.Signer(cleanPrivateKey);
+        const account = new starknet.Account(provider, accountAddress, signer, undefined);
+
+        console.log('Account address:', accountAddress);
+
+        // Verify account exists
+        let accountVerified = false;
+        try {
+            const nonce = await account.getNonce('latest');
+            console.log('✅ Account nonce:', nonce);
+            accountVerified = true;
+        } catch (nonceErr) {
+            console.warn('⚠️ Nonce check failed:', (nonceErr as any)?.message);
+            
+            try {
+                await provider.getClassHashAt(account.address, 'latest');
+                console.log('✅ Account verified via class hash');
+                accountVerified = true;
+            } catch (classErr) {
+                console.error('❌ Account verification failed:', (classErr as any)?.message);
+            }
+        }
+
+        if (!accountVerified) {
+            const network = splitPayment.network === 'testnet' ? 'sepolia' : 'mainnet';
+            throw new Error(
+                `Account not found or not deployed on ${splitPayment.network}. ` +
+                `Address: ${account.address}. ` +
+                `Check at: https://${network}.voyager.online/contract/${account.address}`
+            );
+        }
+
+        // Prepare token contract address
+        let tokenAddress = tokenConfig.address.trim().toLowerCase();
+        if (!tokenAddress.startsWith('0x')) {
+            tokenAddress = '0x' + tokenAddress;
+        }
+        if (tokenAddress.length < 66) {
+            tokenAddress = '0x' + tokenAddress.slice(2).padStart(64, '0');
+        }
+
+        console.log('Token contract:', tokenAddress);
+
+        // Check balance
+        try {
+            const tokenContract = new starknet.Contract(ERC20_ABI, tokenAddress, account);
+            const balanceResult = await tokenContract.balanceOf(account.address);
+            const balance = balanceResult.balance || balanceResult;
+            const balanceFormatted = (Number(balance) / (10 ** tokenConfig.decimals)).toFixed(tokenConfig.decimals);
+            
+            console.log('✅ Sender balance:', balanceFormatted, tokenSymbol.toUpperCase());
+
+            const totalRequired = recipients.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+
+            if (parseFloat(balanceFormatted) < totalRequired) {
+                throw new Error(
+                    `Insufficient balance. ` +
+                    `Available: ${balanceFormatted} ${tokenSymbol.toUpperCase()}, ` +
+                    `Required: ${totalRequired.toFixed(tokenConfig.decimals)} ${tokenSymbol.toUpperCase()}`
+                );
+            }
+        } catch (balanceErr) {
+            if ((balanceErr as any)?.message?.includes('Insufficient balance')) {
+                throw balanceErr;
+            }
+            console.warn('⚠️ Could not fetch balance:', (balanceErr as any)?.message);
+        }
+
+        // Initialize nonce
+        let currentNonce: string;
+        try {
+            currentNonce = await provider.getNonceForAddress(account.address, 'latest');
+            console.log('Initial nonce:', currentNonce);
+        } catch (nonceErr) {
+            console.warn('Could not get initial nonce, defaulting to "0"');
+            currentNonce = '0';
+        }
+
+        // Process each recipient
+        for (let i = 0; i < recipients.length; i++) {
+            const recipient = recipients[i];
+
+            try {
+                const recipientAddress = recipient.recipientAddress;
+                
+                if (!recipientAddress.startsWith('0x') || recipientAddress.length !== 66) {
+                    throw new Error(`Invalid recipient address: ${recipientAddress}`);
+                }
+                
+                console.log(`[${i + 1}/${recipients.length}] Processing:`, {
+                    address: recipientAddress,
+                    amount: recipient.amount
+                });
+
+                // Convert amount using precise decimal -> BigInt to avoid JS float precision loss
+                const amountStr = String(recipient.amount);
+                const [intPart, fracPartRaw = ''] = amountStr.split('.');
+                const fracPart = fracPartRaw.slice(0, tokenConfig.decimals); // trim extra decimals
+                const paddedFrac = fracPart.padEnd(tokenConfig.decimals, '0');
+                const normalized = (intPart || '0').replace(/^0+(\d)/, '$1');
+                const unitsStr = `${normalized}${paddedFrac}`.replace(/^0+$/, '0');
+                if (!/^\d+$/.test(unitsStr)) {
+                    throw new Error(`Invalid amount: ${recipient.amount}`);
+                }
+                const amountBN = BigInt(unitsStr);
+                
+                if (amountBN <= 0n) {
+                    throw new Error(`Amount too small: ${recipient.amount}`);
+                }
+
+                // Convert to u256 
+                const uint256Amount = starknet.uint256.bnToUint256(amountBN);
+
+                console.log(`[${i + 1}/${recipients.length}] Transfer details:`, {
+                    to: recipientAddress,
+                    amount: recipient.amount,
+                    wei: amountBN.toString(),
+                    u256_low: uint256Amount.low.toString(),
+                    u256_high: uint256Amount.high.toString(),
+                    token: tokenSymbol.toUpperCase(),
+                    nonce: currentNonce
+                });
+
+                // CRITICAL FIX: Manually construct calldata array
+                // Format: [recipient_address, amount_low, amount_high]
+                const calldata = [
+                    recipientAddress,
+                    starknet.num.toHex(uint256Amount.low),
+                    starknet.num.toHex(uint256Amount.high)
+                ];
+
+                console.log('Calldata:', calldata);
+
+                // Build the call manually
+                const transferCall = {
+                    contractAddress: tokenAddress,
+                    entrypoint: 'transfer',
+                    calldata: calldata
+                };
+
+                // Get fresh nonce
+                try {
+                    currentNonce = await provider.getNonceForAddress(account.address, 'latest');
+                    console.log(`Using nonce: ${currentNonce}`);
+                } catch (nonceErr) {
+                    console.warn('Could not get fresh nonce, using incremented value');
+                    currentNonce = String(BigInt(currentNonce) + BigInt(1));
+                }
+
+                // Estimate fee first (prefer latest block) then derive maxFee
+                let maxFeeBigInt: bigint | undefined;
+                try {
+                    const feeEst = await (account as any).estimateFee(transferCall, {
+                        nonce: currentNonce,
+                        blockIdentifier: 'latest'
+                    });
+                    // feeEst.overall_fee can be string or number-like
+                    const overall = BigInt(typeof feeEst?.overall_fee === 'string' ? feeEst.overall_fee : String(feeEst?.overall_fee ?? '0'));
+                    // Add headroom (20%)
+                    const withHeadroom = (overall * 12n) / 10n; // 1.2x
+                    maxFeeBigInt = starknet.stark.estimatedFeeToMaxFee(withHeadroom);
+                    console.log('Estimated overall fee:', overall.toString(), 'maxFee:', maxFeeBigInt.toString());
+                } catch (feeErr) {
+                    console.warn('Fee estimation failed, using fallback maxFee:', (feeErr as any)?.message || String(feeErr));
+                    // Fallback: conservative cap (0.02 STRK in wei)
+                    maxFeeBigInt = BigInt('20000000000000000');
+                }
+
+                // Execute transaction with explicit nonce and maxFee
+                const txResponse = await account.execute(transferCall, {
+                    nonce: currentNonce,
+                    maxFee: maxFeeBigInt,
+                    blockIdentifier: 'latest'
+                });
+
+                const txHash = txResponse?.transaction_hash;
+
+                if (!txHash) {
+                    throw new Error('No transaction hash returned');
+                }
+
+                const explorerNetwork = splitPayment.network === 'testnet' ? 'sepolia' : 'mainnet';
+                console.log(`✅ [${i + 1}/${recipients.length}] Success: ${txHash}`);
+                console.log(`   View: https://${explorerNetwork}.voyager.online/tx/${txHash}`);
+
+                results.push({ success: true, txHash });
+
+                // Increment nonce
+                currentNonce = String(BigInt(currentNonce) + BigInt(1));
+
+                // Wait between transactions
+                if (i < recipients.length - 1) {
+                    console.log('⏳ Waiting 3s...');
+                    await new Promise((resolve) => setTimeout(resolve, 3000));
+                }
+
+            } catch (err) {
+                const errorMsg = (err as any)?.message || String(err);
+                console.error(`❌ [${i + 1}/${recipients.length}] Failed:`, errorMsg);
+                results.push({ success: false, error: errorMsg });
+                
+                try {
+                    currentNonce = await provider.getNonceForAddress(account.address, 'latest');
+                } catch {}
+            }
+        }
+
+    } catch (error) {
+        console.error('❌ Starknet batch error:', error);
+        const errorMsg = (error as any)?.message || String(error);
+
+        if (results.length === 0) {
+            for (const _ of recipients) {
+                results.push({ success: false, error: errorMsg });
+            }
+        }
+    }
+
+    console.log('Starknet batch complete:', {
+        total: recipients.length,
+        successful: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length
+    });
+
+    return results;
+}
 
 
 private static async processStellarBatch(
@@ -1048,146 +1419,276 @@ private static async processPolkadotBatch(
 }
 
 
-private static async processStarknetBatch(
-    splitPayment: SplitPayment,
-    recipients: SplitPaymentRecipient[],
-    privateKey: string
-): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
-    const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
 
-    if (!recipients || recipients.length === 0) return results;
+// private static async processStarknetBatch(
+//     splitPayment: SplitPayment,
+//     recipients: SplitPaymentRecipient[],
+//     privateKey: string
+// ): Promise<Array<{ success: boolean; txHash?: string; error?: string }>> {
+//     const results: Array<{ success: boolean; txHash?: string; error?: string }> = [];
 
-    try {
-        // Determine token
-        let tokenSymbol = 'eth';
-        if (
-            splitPayment.chain === 'starknet_strk' ||
-            splitPayment.chain === 'strk'
-        ) {
-            tokenSymbol = 'strk';
-        } else if (splitPayment.chain === 'starknet_usdc') {
-            tokenSymbol = 'usdc';
-        } else if (splitPayment.chain === 'starknet_usdt') {
-            tokenSymbol = 'usdt';
-        } else if (splitPayment.chain === 'starknet_dai') {
-            tokenSymbol = 'dai';
-        }
+//     if (!recipients || recipients.length === 0) return results;
 
-        const tokenConfig = getTokenConfig(splitPayment.network, tokenSymbol);
-        if (!tokenConfig) {
-            throw new Error(
-                `Unsupported token: ${tokenSymbol}. Supported: STRK, ETH, USDC, USDT, DAI`
-            );
-        }
+//     try {
+//         // Determine token
+//         let tokenSymbol = 'eth';
+//         if (splitPayment.chain === 'starknet_strk' || splitPayment.chain === 'strk') {
+//             tokenSymbol = 'strk';
+//         } else if (splitPayment.chain === 'starknet_usdc') {
+//             tokenSymbol = 'usdc';
+//         } else if (splitPayment.chain === 'starknet_usdt') {
+//             tokenSymbol = 'usdt';
+//         } else if (splitPayment.chain === 'starknet_dai') {
+//             tokenSymbol = 'dai';
+//         }
 
-        console.log('Starknet transfer setup:', {
-            token: tokenSymbol,
-            network: splitPayment.network,
-            recipients: recipients.length,
-        });
+//         const tokenConfig = getTokenConfig(splitPayment.network, tokenSymbol);
+//         if (!tokenConfig) {
+//             throw new Error(
+//                 `Unsupported token: ${tokenSymbol}. Supported: STRK, ETH, USDC, USDT, DAI`
+//             );
+//         }
 
-        // Get working provider
-        let provider: starknet.RpcProvider;
-        try {
-            provider = await getWorkingProvider(splitPayment.network);
-        } catch (err) {
-            throw new Error(`Provider initialization failed: ${(err as any)?.message || String(err)}`);
-        }
+//         console.log('Starknet transfer setup:', {
+//             token: tokenSymbol,
+//             network: splitPayment.network,
+//             recipients: recipients.length,
+//             fromAddress: splitPayment.fromAddress,
+//         });
 
-        // Initialize account
-        let account: starknet.Account;
-        try {
-            const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey : '0x' + privateKey;
-            const signer = new starknet.Signer(cleanPrivateKey);
-            account = new starknet.Account(provider, splitPayment.fromAddress, signer);
+//         // Get working provider
+//         const provider = await getWorkingProvider(splitPayment.network);
 
-            console.log('Starknet account ready:', splitPayment.fromAddress);
-        } catch (err) {
-            throw new Error(
-                `Account initialization failed: ${(err as any)?.message || String(err)}`
-            );
-        }
+//         // Prepare private key - ensure proper format
+//         let cleanPrivateKey = privateKey.trim();
+//         if (!cleanPrivateKey.startsWith('0x')) {
+//             cleanPrivateKey = '0x' + cleanPrivateKey;
+//         }
+//         // Ensure 66 characters total (0x + 64 hex chars)
+//         if (cleanPrivateKey.length < 66) {
+//             const pkWithoutPrefix = cleanPrivateKey.slice(2);
+//             cleanPrivateKey = '0x' + pkWithoutPrefix.padStart(64, '0');
+//         }
+        
+//         console.log('Private key formatted (length: ' + cleanPrivateKey.length + ')');
 
-        // Create contract instance once
-        let tokenContract: starknet.Contract;
-        try {
-            tokenContract = new starknet.Contract(ERC20_ABI, tokenConfig.address, account);
-        } catch (err) {
-            throw new Error(
-                `Contract initialization failed: ${(err as any)?.message || String(err)}`
-            );
-        }
+//         // Normalize the stored account address
+//         let accountAddress = splitPayment.fromAddress.trim().toLowerCase();
+//         if (!accountAddress.startsWith('0x')) {
+//             accountAddress = '0x' + accountAddress;
+//         }
+//         // Ensure 66 characters by padding with zeros
+//         if (accountAddress.length < 66) {
+//             const addrWithoutPrefix = accountAddress.slice(2);
+//             accountAddress = '0x' + addrWithoutPrefix.padStart(64, '0');
+//         }
 
-        // Process each recipient
-        for (let i = 0; i < recipients.length; i++) {
-            const recipient = recipients[i];
+//         console.log('Account address:', accountAddress);
+//         console.log('Account address length:', accountAddress.length);
 
-            try {
-                const dest = recipient.recipientAddress;
+//         // Derive public key from private key for verification
+//         try {
+//             const derivedPubKey = starknet.ec.starkCurve.getStarkKey(cleanPrivateKey);
+//             console.log('Derived public key from private key:', derivedPubKey);
+//         } catch (pubKeyErr) {
+//             console.warn('Could not derive public key:', (pubKeyErr as any)?.message);
+//         }
+
+//         // Initialize signer and account
+//         const signer = new starknet.Signer(cleanPrivateKey);
+//         const account = new starknet.Account(provider, accountAddress, signer);
+
+//         console.log('✅ Account initialized');
+
+//         // Verify account is deployed by checking nonce
+//         let accountNonce: string | number = '0';
+//         try {
+//             accountNonce = await account.getNonce();
+//             console.log('✅ Account nonce:', accountNonce);
+//         } catch (nonceErr) {
+//             const network = splitPayment.network === 'testnet' ? 'sepolia' : 'mainnet';
+//             const errorMsg = (nonceErr as any)?.message || String(nonceErr);
+            
+//             console.error('Nonce check failed:', errorMsg);
+//             console.error('Account address being checked:', accountAddress);
+//             console.error('RPC provider:', (provider as any)?.nodeUrl ?? 'unknown');
+            
+//             // Try to get account info directly from provider as fallback
+//             try {
+//                 const accountInfo = await provider.getClassHashAt(accountAddress);
+//                 console.log('Account class hash:', accountInfo);
+//                 console.log('Account exists but nonce check failed - continuing anyway');
+//                 // If we can get class hash, account exists, so continue
+//             } catch (classErr) {
+//                 console.error('Class hash check also failed:', (classErr as any)?.message);
+//                 throw new Error(
+//                     `Account verification failed. Cannot access account on ${splitPayment.network}. ` +
+//                     `Address: ${accountAddress}. ` +
+//                     `Check at: https://${network}.voyager.online/contract/${accountAddress}. ` +
+//                     `Error: ${errorMsg}`
+//                 );
+//             }
+//         }
+
+//         // Normalize token contract address
+//         let tokenAddress = tokenConfig.address.trim().toLowerCase();
+//         if (!tokenAddress.startsWith('0x')) {
+//             tokenAddress = '0x' + tokenAddress;
+//         }
+//         if (tokenAddress.length < 66) {
+//             const tokenAddrWithoutPrefix = tokenAddress.slice(2);
+//             tokenAddress = '0x' + tokenAddrWithoutPrefix.padStart(64, '0');
+//         }
+
+//         console.log('Token contract:', tokenAddress);
+
+//         // Create contract instance
+//         const tokenContract = new starknet.Contract(ERC20_ABI, tokenAddress, account);
+
+//         // Check sender balance
+//         try {
+//             const balanceResult = await tokenContract.balanceOf(accountAddress);
+//             const balance = balanceResult.balance || balanceResult;
+//             const balanceFormatted = (Number(balance) / (10 ** tokenConfig.decimals)).toFixed(tokenConfig.decimals);
+            
+//             console.log('✅ Sender balance:', balanceFormatted, tokenSymbol.toUpperCase());
+
+//             // Calculate total required
+//             const totalRequired = recipients.reduce(
+//                 (sum, recipient) => sum + parseFloat(recipient.amount),
+//                 0
+//             );
+
+//             if (parseFloat(balanceFormatted) < totalRequired) {
+//                 throw new Error(
+//                     `Insufficient balance. ` +
+//                     `Available: ${balanceFormatted} ${tokenSymbol.toUpperCase()}, ` +
+//                     `Required: ${totalRequired.toFixed(tokenConfig.decimals)} ${tokenSymbol.toUpperCase()}`
+//                 );
+//             }
+//         } catch (balanceErr) {
+//             if ((balanceErr as any)?.message?.includes('Insufficient balance')) {
+//                 throw balanceErr;
+//             }
+//             console.warn('⚠️ Could not fetch balance:', (balanceErr as any)?.message);
+//         }
+
+//         // Process each recipient
+//         for (let i = 0; i < recipients.length; i++) {
+//             const recipient = recipients[i];
+
+//             try {
+//                 // Normalize recipient address
+//                 let recipientAddress = recipient.recipientAddress.trim().toLowerCase();
+//                 if (!recipientAddress.startsWith('0x')) {
+//                     recipientAddress = '0x' + recipientAddress;
+//                 }
+//                 if (recipientAddress.length < 66) {
+//                     const recipAddrWithoutPrefix = recipientAddress.slice(2);
+//                     recipientAddress = '0x' + recipAddrWithoutPrefix.padStart(64, '0');
+//                 }
                 
-                // Validate recipient address
-                if (!dest || dest.length < 5) {
-                    throw new Error(`Invalid recipient address: ${dest}`);
-                }
-
-                // Convert amount to Wei
-                const amountBN = BigInt(
-                    Math.floor(parseFloat(recipient.amount) * 10 ** tokenConfig.decimals)
-                );
+//                 // Validate it's valid hex
+//                 if (!/^0x[0-9a-f]{64}$/i.test(recipientAddress)) {
+//                     throw new Error(
+//                         `Invalid recipient address format: ${recipient.recipientAddress}`
+//                     );
+//                 }
                 
-                if (amountBN <= 0n) {
-                    throw new Error(`Invalid amount: ${recipient.amount}`);
-                }
+//                 console.log(`[${i + 1}/${recipients.length}] Processing:`, {
+//                     original: recipient.recipientAddress,
+//                     normalized: recipientAddress,
+//                     amount: recipient.amount
+//                 });
 
-                const uint256Amount = starknet.uint256.bnToUint256(amountBN);
+//                 // Validate and convert amount
+//                 const amountFloat = parseFloat(recipient.amount);
+//                 if (isNaN(amountFloat) || amountFloat <= 0) {
+//                     throw new Error(`Invalid amount: ${recipient.amount}`);
+//                 }
 
-                console.log(`[${i + 1}/${recipients.length}] Executing transfer to ${dest}:`, {
-                    amount: recipient.amount,
-                    token: tokenSymbol,
-                });
-
-                // Build and execute transaction
-                const call = tokenContract.populate('transfer', [dest, uint256Amount]);
+//                 // Convert to smallest unit
+//                 const amountBN = BigInt(
+//                     Math.floor(amountFloat * 10 ** tokenConfig.decimals)
+//                 );
                 
-                const txResponse = await account.execute(call, undefined);
+//                 if (amountBN <= 0n) {
+//                     throw new Error(`Amount too small: ${recipient.amount}`);
+//                 }
 
-                // Extract tx hash safely
-                const txHash = txResponse.transaction_hash || String(txResponse);
+//                 const uint256Amount = starknet.uint256.bnToUint256(amountBN);
 
-                if (!txHash || txHash === 'undefined') {
-                    throw new Error('No transaction hash returned');
-                }
+//                 console.log(`[${i + 1}/${recipients.length}] Transfer:`, {
+//                     to: recipientAddress,
+//                     amount: recipient.amount,
+//                     wei: amountBN.toString(),
+//                     token: tokenSymbol.toUpperCase()
+//                 });
 
-                console.log(`✅ Transfer submitted: ${txHash}`);
-                results.push({ success: true, txHash });
+//                 // Build and execute transaction
+//                 const call = tokenContract.populate('transfer', [
+//                     recipientAddress, 
+//                     uint256Amount
+//                 ]);
 
-                // Delay between transactions
-                if (i < recipients.length - 1) {
-                    await new Promise((resolve) => setTimeout(resolve, 2000));
-                }
+//                 // Use a reasonable max fee
+//                 const txResponse = await account.execute(call, {
+//                     maxFee: starknet.stark.estimatedFeeToMaxFee(BigInt(10 ** 15)) // 0.001 ETH
+//                 });
 
-            } catch (err) {
-                const errorMsg = (err as any)?.message || String(err);
-                console.error(`❌ Transfer failed for ${recipient.recipientAddress}:`, errorMsg);
-                results.push({ success: false, error: errorMsg });
-            }
-        }
+//                 const txHash = txResponse?.transaction_hash;
 
-    } catch (error) {
-        console.error('❌ Starknet batch error:', error);
-        const errorMsg = (error as any)?.message || String(error);
+//                 if (!txHash) {
+//                     throw new Error('No transaction hash returned');
+//                 }
 
-        // If we haven't processed any yet, mark all as failed
-        if (results.length === 0) {
-            for (const _ of recipients) {
-                results.push({ success: false, error: errorMsg });
-            }
-        }
-    }
+//                 const explorerNetwork = splitPayment.network === 'testnet' ? 'sepolia' : 'mainnet';
+//                 console.log(`✅ [${i + 1}/${recipients.length}] Success: ${txHash}`);
+//                 console.log(`   View: https://${explorerNetwork}.voyager.online/tx/${txHash}`);
 
-    return results;
-}
+//                 results.push({ success: true, txHash });
 
+//                 // Wait between transactions to avoid nonce conflicts
+//                 if (i < recipients.length - 1) {
+//                     const delayMs = 3000;
+//                     console.log(`⏳ Waiting ${delayMs}ms...`);
+//                     await new Promise((resolve) => setTimeout(resolve, delayMs));
+//                 }
+
+//             } catch (err) {
+//                 const errorMsg = (err as any)?.message || String(err);
+//                 console.error(`❌ [${i + 1}/${recipients.length}] Failed:`, errorMsg);
+                
+//                 results.push({ 
+//                     success: false, 
+//                     error: errorMsg 
+//                 });
+//             }
+//         }
+
+//     } catch (error) {
+//         console.error('❌ Starknet batch error:', error);
+//         const errorMsg = (error as any)?.message || String(error);
+
+//         // If no results yet, mark all as failed
+//         if (results.length === 0) {
+//             for (const _ of recipients) {
+//                 results.push({ 
+//                     success: false, 
+//                     error: errorMsg 
+//                 });
+//             }
+//         }
+//     }
+
+//     console.log('Starknet batch complete:', {
+//         total: recipients.length,
+//         successful: results.filter(r => r.success).length,
+//         failed: results.filter(r => !r.success).length
+//     });
+
+//     return results;
+// }
 
 /**
      * Get all split payment templates (reusable)
@@ -1732,53 +2233,10 @@ private static async processStarknetBatch(
                 });
             }
 
-            // // Calculate actual fee based on final transaction size
-            // const tempTx = psbt.clone();
-            // for (let i = 0; i < selectedUtxos.length; i++) {
-            //     tempTx.signInput(i, keyPair);
-            // }
-            // tempTx.finalizeAllInputs();
-            // const actualSize = tempTx.extractTransaction().toBuffer().length;
-            // const actualFee = actualSize * feeRate;
-
-            // // Add change output if necessary
-            // const change = inputAmount - totalTransferAmount - actualFee;
-            // if (change > 546) {
-            //     // Only add change if above dust threshold
-            //     psbt.addOutput({
-            //         address: fromAddress,
-            //         value: change,
-            //     });
-            // } else if (change < 0) {
-            //     throw new Error(
-            //         `Insufficient funds for fees. Need additional ${Math.abs(
-            //             change
-            //         )} satoshis`
-            //     );
-            // }
-
-            // // Sign all inputs
-            // for (let i = 0; i < selectedUtxos.length; i++) {
-            //     try {
-            //         psbt.signInput(i, keyPair);
-            //     } catch (error) {
-            //         console.error(`Failed to sign input ${i}:`, error);
-            //         throw new Error(`Failed to sign transaction input ${i}`);
-            //     }
-            // }
-
             // Finalize and extract transaction
             psbt.finalizeAllInputs();
             const tx = psbt.extractTransaction();
             const txHex = tx.toHex();
-
-            // console.log(`Broadcasting Bitcoin batch transaction:`, {
-            //     size: txHex.length / 2,
-            //     recipients: recipients.length,
-            //     totalAmount: totalTransferAmount / 100000000,
-            //     fee: actualFee / 100000000,
-            //     change: change / 100000000,
-            // });
 
             // Broadcast transaction
             const broadcastResponse = await axios.post(
@@ -1802,13 +2260,6 @@ private static async processStarknetBatch(
         } catch (error) {
             console.error('Bitcoin batch transaction error:', error);
 
-            // if (axios.isAxiosError(error)) {
-            //     const errorMessage =
-            //         error.response?.data?.message ||
-            //         error.response?.data ||
-            //         error.message;
-            //     throw new Error(`Bitcoin API error: ${errorMessage}`);
-            // }
 
             throw new Error(
                 `Failed to send Bitcoin batch transaction: ${

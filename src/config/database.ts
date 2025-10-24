@@ -14,6 +14,7 @@ import { SplitPayment } from '../entities/SplitPayment';
 import { SplitPaymentRecipient } from '../entities/SplitPaymentRecipient';
 import { SplitPaymentExecution } from '../entities/SplitPaymentExecution'; // Missing import!
 import { SplitPaymentExecutionResult } from '../entities/SplitPaymentExecutionResult';
+import { Fee } from '../entities/Fee';
 
 
 export const AppDataSource = new DataSource({
@@ -33,12 +34,13 @@ export const AppDataSource = new DataSource({
         SplitPayment,
         SplitPaymentExecution,
         SplitPaymentRecipient,
-        SplitPaymentExecutionResult
+        SplitPaymentExecutionResult,
+        Fee
     ],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
     // ssl: false,
-    ssl: { rejectUnauthorized: false },
+    // ssl: { rejectUnauthorized: false },
 });
 export const connectDB = async (): Promise<void> => {
     try {
