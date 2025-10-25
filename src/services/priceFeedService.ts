@@ -14,6 +14,12 @@ export class PriceFeedService {
         { price: number; timestamp: number }
     > = new Map();
 
+    // Simple rate-limit / concurrency control to avoid CoinGecko 429s
+    private static inflight: Map<string, Promise<number>> = new Map();
+    private static MAX_CONCURRENT_REQUESTS = Number(process.env.COINGECKO_MAX_CONC || 2);
+    private static currentRequests = 0;
+    private static rateLimitedUntil = 0; // epoch ms until which we back off because of 429
+
     // CoinGecko ID mappings
     private static readonly CURRENCY_IDS = {
         ETH: 'ethereum',
@@ -38,45 +44,97 @@ export class PriceFeedService {
             return cached.price;
         }
 
+        // If there's already an inflight request for this currency, reuse it
+        if (this.inflight.has(cacheKey)) {
+            return this.inflight.get(cacheKey)!;
+        }
+
+        const p = (async () => {
+            try {
+                // If we're currently rate-limited globally, return stale cache if possible
+                if (Date.now() < this.rateLimitedUntil) {
+                    const cachedWhenLimited = this.priceCache.get(cacheKey);
+                    if (cachedWhenLimited) {
+                        console.warn(`[PriceFeed] Global rate-limited until ${new Date(this.rateLimitedUntil).toISOString()}, returning cached ${cacheKey}`);
+                        return cachedWhenLimited.price;
+                    }
+                    throw new Error('Rate limited by CoinGecko');
+                }
+
+                // Concurrency limiter: wait until a slot is available
+                while (this.currentRequests >= this.MAX_CONCURRENT_REQUESTS) {
+                    await new Promise((r) => setTimeout(r, 50));
+                }
+                this.currentRequests++;
+
+                try {
+                    const coinId =
+                        this.CURRENCY_IDS[cacheKey as keyof typeof this.CURRENCY_IDS];
+                    if (!coinId) {
+                        throw new Error(`Unsupported currency: ${currency}`);
+                    }
+
+                    const response = await axios.get(
+                        `${this.COINGECKO_API}/simple/price?ids=${coinId}&vs_currencies=usd`,
+                        { timeout: 10000 }
+                    );
+
+                    const data = response.data as Record<
+                        string,
+                        Record<string, number>
+                    >;
+                    const price = data[coinId]?.usd;
+                    if (!price) {
+                        throw new Error(`Price not found for ${currency}`);
+                    }
+
+                    // Cache the price
+                    this.priceCache.set(cacheKey, { price, timestamp: Date.now() });
+
+                    console.log(`[PriceFeed] ${currency}: $${price}`);
+                    return price;
+                } finally {
+                    this.currentRequests = Math.max(0, this.currentRequests - 1);
+                }
+            } catch (error: any) {
+                // If CoinGecko returns 429, honor Retry-After header and back off
+                const status = error?.response?.status;
+                if (status === 429) {
+                    const ra = parseInt(error?.response?.headers?.['retry-after'] || '0', 10);
+                    const waitMs = isNaN(ra) || ra <= 0 ? 5000 : ra * 1000;
+                    this.rateLimitedUntil = Date.now() + waitMs;
+                    console.warn(`[PriceFeed] Received 429 from CoinGecko, backing off for ${waitMs}ms`);
+
+                    const cached = this.priceCache.get(cacheKey);
+                    if (cached) {
+                        console.log(
+                            `[PriceFeed] Using stale cache for ${currency}: $${cached.price}`
+                        );
+                        return cached.price;
+                    }
+                    throw new Error(`Unable to fetch price for ${currency} (rate limited)`);
+                }
+
+                console.error(`Failed to fetch price for ${currency}:`, error);
+
+                // Return cached price if available, even if expired
+                const cached = this.priceCache.get(cacheKey);
+                if (cached) {
+                    console.log(
+                        `[PriceFeed] Using stale cache for ${currency}: $${cached.price}`
+                    );
+                    return cached.price;
+                }
+
+                throw new Error(`Unable to fetch price for ${currency}`);
+            }
+        })();
+
+        this.inflight.set(cacheKey, p);
         try {
-            const coinId =
-                this.CURRENCY_IDS[cacheKey as keyof typeof this.CURRENCY_IDS];
-            if (!coinId) {
-                throw new Error(`Unsupported currency: ${currency}`);
-            }
-
-            const response = await axios.get(
-                `${this.COINGECKO_API}/simple/price?ids=${coinId}&vs_currencies=usd`,
-                { timeout: 10000 }
-            );
-
-            const data = response.data as Record<
-                string,
-                Record<string, number>
-            >;
-            const price = data[coinId]?.usd;
-            if (!price) {
-                throw new Error(`Price not found for ${currency}`);
-            }
-
-            // Cache the price
-            this.priceCache.set(cacheKey, { price, timestamp: now });
-
-            console.log(`[PriceFeed] ${currency}: $${price}`);
-            return price;
-        } catch (error) {
-            console.error(`Failed to fetch price for ${currency}:`, error);
-
-            // Return cached price if available, even if expired
-            const cached = this.priceCache.get(cacheKey);
-            if (cached) {
-                console.log(
-                    `[PriceFeed] Using stale cache for ${currency}: $${cached.price}`
-                );
-                return cached.price;
-            }
-
-            throw new Error(`Unable to fetch price for ${currency}`);
+            return await p;
+        } finally {
+            this.inflight.delete(cacheKey);
         }
     }
 

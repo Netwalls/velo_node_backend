@@ -635,10 +635,20 @@ static async executeSplitPayment(req: AuthRequest, res: Response): Promise<void>
                 // ===== STEP 5: Record fees in database for each successful payment =====
                 for (let i = 0; i < results.length; i++) {
                     if (results[i].success) {
+                        // Ensure we store a UUID as the internal transactionId (DB expects UUID).
+                        // The on-chain transaction hash (results[i].txHash) is recorded inside the
+                        // calculation metadata so we don't attempt to insert a hex string into a UUID column.
+                        const transactionUuid = require('crypto').randomUUID();
+                        const calculationWithOnchain = {
+                            ...(feeCalculations[i] || {}),
+                            onchainTxHash: results[i].txHash,
+                        };
+
                         const feeRecord = await FeeCollectionService.recordFee({
-                            userId: req.user!.id!,
-                            transactionId: results[i].txHash || `split_${savedExecution.id}_${i}`,
-                            calculation: feeCalculations[i],
+                            userId: req.user!.id as string,
+                            // internal UUID for DB relations
+                            transactionId: transactionUuid,
+                            calculation: calculationWithOnchain,
                             chain: splitPayment.chain,
                             network: splitPayment.network,
                             feeType: 'split_payment',
@@ -709,7 +719,6 @@ static async executeSplitPayment(req: AuthRequest, res: Response): Promise<void>
     }
 }
 
-
 private static async processStarknetBatch(
     splitPayment: SplitPayment,
     recipients: SplitPaymentRecipient[],
@@ -720,10 +729,10 @@ private static async processStarknetBatch(
     if (!recipients || recipients.length === 0) return results;
 
     try {
-        // Determine token
-        let tokenSymbol = 'eth';
-        if (splitPayment.chain === 'starknet_strk' || splitPayment.chain === 'strk') {
-            tokenSymbol = 'strk';
+        // Determine token - DEFAULT TO STRK for Starknet
+        let tokenSymbol = 'strk'; // ✅ Changed default from 'eth' to 'strk'
+        if (splitPayment.chain === 'starknet_eth') {
+            tokenSymbol = 'eth';
         } else if (splitPayment.chain === 'starknet_usdc') {
             tokenSymbol = 'usdc';
         } else if (splitPayment.chain === 'starknet_usdt') {
@@ -731,262 +740,227 @@ private static async processStarknetBatch(
         } else if (splitPayment.chain === 'starknet_dai') {
             tokenSymbol = 'dai';
         }
+        // If chain is just 'starknet' or 'starknet_strk' or 'strk', use STRK (already set)
 
-        const tokenConfig = getTokenConfig(splitPayment.network, tokenSymbol);
-        if (!tokenConfig) {
-            throw new Error(`Unsupported token: ${tokenSymbol}. Supported: STRK, ETH, USDC, USDT, DAI`);
-        }
-
-        console.log('Starknet transfer setup:', {
-            token: tokenSymbol,
+        console.log('Starknet batch transfer setup:', {
+            token: tokenSymbol.toUpperCase(),
             network: splitPayment.network,
             recipients: recipients.length,
             fromAddress: splitPayment.fromAddress,
+            chain: splitPayment.chain,
         });
 
-        // Get working provider
-        const provider = await getWorkingProvider(splitPayment.network);
+        // Use the exact same provider setup as sendTransaction
+        const { RpcProvider, Account, uint256, Contract } = require('starknet');
+        const provider = new RpcProvider({
+            nodeUrl:
+                splitPayment.network === 'testnet'
+                    ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                    : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+        });
 
-        // Prepare private key
-        let cleanPrivateKey = privateKey.trim();
-        if (!cleanPrivateKey.startsWith('0x')) {
-            cleanPrivateKey = '0x' + cleanPrivateKey;
-        }
-        if (cleanPrivateKey.length < 66) {
-            cleanPrivateKey = '0x' + cleanPrivateKey.slice(2).padStart(64, '0');
-        }
+        console.log('✅ Connected to Starknet RPC');
 
-        console.log('Private key formatted (length:', cleanPrivateKey.length + ')');
+        // Initialize account
+        const account = new Account(provider, splitPayment.fromAddress, privateKey);
+        console.log('Account initialized:', splitPayment.fromAddress);
 
-        // Initialize account with stored address
-        const accountAddress = splitPayment.fromAddress;
-        const signer = new starknet.Signer(cleanPrivateKey);
-        const account = new starknet.Account(provider, accountAddress, signer, undefined);
-
-        console.log('Account address:', accountAddress);
-
-        // Verify account exists
-        let accountVerified = false;
+        // Verify account is deployed
         try {
-            const nonce = await account.getNonce('latest');
-            console.log('✅ Account nonce:', nonce);
-            accountVerified = true;
-        } catch (nonceErr) {
-            console.warn('⚠️ Nonce check failed:', (nonceErr as any)?.message);
-            
-            try {
-                await provider.getClassHashAt(account.address, 'latest');
-                console.log('✅ Account verified via class hash');
-                accountVerified = true;
-            } catch (classErr) {
-                console.error('❌ Account verification failed:', (classErr as any)?.message);
-            }
-        }
-
-        if (!accountVerified) {
+            await provider.getClassHashAt(splitPayment.fromAddress);
+            console.log('✅ Account is deployed');
+        } catch (error) {
             const network = splitPayment.network === 'testnet' ? 'sepolia' : 'mainnet';
             throw new Error(
-                `Account not found or not deployed on ${splitPayment.network}. ` +
-                `Address: ${account.address}. ` +
-                `Check at: https://${network}.voyager.online/contract/${account.address}`
+                `Account not deployed on ${splitPayment.network}. ` +
+                `Address: ${splitPayment.fromAddress}. ` +
+                `Deploy at: https://${network}.voyager.online/contract/${splitPayment.fromAddress}`
             );
         }
 
-        // Prepare token contract address
-        let tokenAddress = tokenConfig.address.trim().toLowerCase();
-        if (!tokenAddress.startsWith('0x')) {
-            tokenAddress = '0x' + tokenAddress;
-        }
-        if (tokenAddress.length < 66) {
-            tokenAddress = '0x' + tokenAddress.slice(2).padStart(64, '0');
-        }
+        // Token addresses - EXACTLY like sendTransaction
+        const ethTokenAddress = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
+        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+        
+        const tokenAddress = tokenSymbol === 'strk' ? strkTokenAddress : ethTokenAddress;
 
-        console.log('Token contract:', tokenAddress);
+        console.log(`Using token contract: ${tokenAddress} (${tokenSymbol.toUpperCase()})`);
 
-        // Check balance
+        // ✅ CHECK BALANCE FIRST
         try {
-            const tokenContract = new starknet.Contract(ERC20_ABI, tokenAddress, account);
-            const balanceResult = await tokenContract.balanceOf(account.address);
-            const balance = balanceResult.balance || balanceResult;
-            const balanceFormatted = (Number(balance) / (10 ** tokenConfig.decimals)).toFixed(tokenConfig.decimals);
+            const erc20Abi = [
+                {
+                    name: 'balanceOf',
+                    type: 'function',
+                    inputs: [{ name: 'account', type: 'felt' }],
+                    outputs: [{ name: 'balance', type: 'Uint256' }],
+                    stateMutability: 'view',
+                },
+            ];
+
+            const tokenContract = new Contract(erc20Abi, tokenAddress, provider);
+            const balanceResult = await tokenContract.balanceOf(splitPayment.fromAddress);
             
-            console.log('✅ Sender balance:', balanceFormatted, tokenSymbol.toUpperCase());
+            // Extract balance
+            let balanceBigInt: bigint;
+            if (typeof balanceResult === 'object' && 'balance' in balanceResult) {
+                const bal = balanceResult.balance;
+                if (typeof bal === 'object' && 'low' in bal && 'high' in bal) {
+                    balanceBigInt = uint256.uint256ToBN(bal);
+                } else {
+                    balanceBigInt = BigInt(bal);
+                }
+            } else if (Array.isArray(balanceResult) && balanceResult.length > 0) {
+                const bal = balanceResult[0];
+                if (typeof bal === 'object' && 'low' in bal && 'high' in bal) {
+                    balanceBigInt = uint256.uint256ToBN(bal);
+                } else {
+                    balanceBigInt = BigInt(bal);
+                }
+            } else {
+                balanceBigInt = BigInt(balanceResult);
+            }
 
-            const totalRequired = recipients.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+            const balanceInToken = Number(balanceBigInt) / 1e18;
+            console.log(`\n💰 Current ${tokenSymbol.toUpperCase()} balance: ${balanceInToken.toFixed(6)}`);
 
-            if (parseFloat(balanceFormatted) < totalRequired) {
+            // Calculate total needed
+            const totalTransferAmount = recipients.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+            const estimatedFeesInToken = 0.001 * recipients.length; // Conservative estimate
+            const totalNeeded = totalTransferAmount + estimatedFeesInToken;
+
+            console.log(`📊 Balance check:`, {
+                available: `${balanceInToken.toFixed(6)} ${tokenSymbol.toUpperCase()}`,
+                needed: `${totalNeeded.toFixed(6)} ${tokenSymbol.toUpperCase()}`,
+                transfers: `${totalTransferAmount.toFixed(6)} ${tokenSymbol.toUpperCase()}`,
+                estimatedFees: `${estimatedFeesInToken.toFixed(6)} ${tokenSymbol.toUpperCase()}`,
+            });
+
+            if (balanceInToken < totalNeeded) {
                 throw new Error(
-                    `Insufficient balance. ` +
-                    `Available: ${balanceFormatted} ${tokenSymbol.toUpperCase()}, ` +
-                    `Required: ${totalRequired.toFixed(tokenConfig.decimals)} ${tokenSymbol.toUpperCase()}`
+                    `❌ Insufficient ${tokenSymbol.toUpperCase()} balance!\n` +
+                    `Available: ${balanceInToken.toFixed(6)} ${tokenSymbol.toUpperCase()}\n` +
+                    `Required: ${totalNeeded.toFixed(6)} ${tokenSymbol.toUpperCase()}\n` +
+                    `(${totalTransferAmount.toFixed(6)} transfers + ~${estimatedFeesInToken.toFixed(6)} fees)\n\n` +
+                    `💡 TIP: You're trying to send ${tokenSymbol.toUpperCase()}. Make sure:\n` +
+                    `   1. You have enough ${tokenSymbol.toUpperCase()} in the account\n` +
+                    `   2. The 'chain' field matches the token (use 'starknet' or 'starknet_strk' for STRK, 'starknet_eth' for ETH)`
                 );
             }
+
+            console.log('✅ Balance check passed\n');
         } catch (balanceErr) {
-            if ((balanceErr as any)?.message?.includes('Insufficient balance')) {
+            if ((balanceErr as any)?.message?.includes('Insufficient')) {
                 throw balanceErr;
             }
-            console.warn('⚠️ Could not fetch balance:', (balanceErr as any)?.message);
+            console.warn('⚠️ Could not check balance:', (balanceErr as any)?.message);
+            console.warn('Proceeding anyway - transaction will fail if insufficient balance\n');
         }
 
-        // Initialize nonce
-        let currentNonce: string;
-        try {
-            currentNonce = await provider.getNonceForAddress(account.address, 'latest');
-            console.log('Initial nonce:', currentNonce);
-        } catch (nonceErr) {
-            console.warn('Could not get initial nonce, defaulting to "0"');
-            currentNonce = '0';
-        }
-
-        // Process each recipient
+        // Process each recipient individually
         for (let i = 0; i < recipients.length; i++) {
             const recipient = recipients[i];
 
             try {
-                const recipientAddress = recipient.recipientAddress;
-                
-                if (!recipientAddress.startsWith('0x') || recipientAddress.length !== 66) {
-                    throw new Error(`Invalid recipient address: ${recipientAddress}`);
-                }
-                
-                console.log(`[${i + 1}/${recipients.length}] Processing:`, {
-                    address: recipientAddress,
-                    amount: recipient.amount
+                const recipientAddr = recipient.recipientAddress;
+                const amountNum = parseFloat(recipient.amount);
+
+                console.log(`[${i + 1}/${recipients.length}] Processing payment:`, {
+                    to: recipientAddr,
+                    amount: amountNum,
+                    token: tokenSymbol.toUpperCase()
                 });
 
-                // Convert amount using precise decimal -> BigInt to avoid JS float precision loss
-                const amountStr = String(recipient.amount);
-                const [intPart, fracPartRaw = ''] = amountStr.split('.');
-                const fracPart = fracPartRaw.slice(0, tokenConfig.decimals); // trim extra decimals
-                const paddedFrac = fracPart.padEnd(tokenConfig.decimals, '0');
-                const normalized = (intPart || '0').replace(/^0+(\d)/, '$1');
-                const unitsStr = `${normalized}${paddedFrac}`.replace(/^0+$/, '0');
-                if (!/^\d+$/.test(unitsStr)) {
-                    throw new Error(`Invalid amount: ${recipient.amount}`);
-                }
-                const amountBN = BigInt(unitsStr);
-                
-                if (amountBN <= 0n) {
-                    throw new Error(`Amount too small: ${recipient.amount}`);
-                }
+                // Convert amount to uint256
+                const amountInWei = uint256.bnToUint256(
+                    BigInt(Math.floor(amountNum * 1e18))
+                );
 
-                // Convert to u256 
-                const uint256Amount = starknet.uint256.bnToUint256(amountBN);
-
-                console.log(`[${i + 1}/${recipients.length}] Transfer details:`, {
-                    to: recipientAddress,
-                    amount: recipient.amount,
-                    wei: amountBN.toString(),
-                    u256_low: uint256Amount.low.toString(),
-                    u256_high: uint256Amount.high.toString(),
-                    token: tokenSymbol.toUpperCase(),
-                    nonce: currentNonce
-                });
-
-                // CRITICAL FIX: Manually construct calldata array
-                // Format: [recipient_address, amount_low, amount_high]
-                const calldata = [
-                    recipientAddress,
-                    starknet.num.toHex(uint256Amount.low),
-                    starknet.num.toHex(uint256Amount.high)
-                ];
-
-                console.log('Calldata:', calldata);
-
-                // Build the call manually
+                // Build the transfer call
                 const transferCall = {
                     contractAddress: tokenAddress,
                     entrypoint: 'transfer',
-                    calldata: calldata
+                    calldata: [recipientAddr, amountInWei.low, amountInWei.high],
                 };
 
-                // Get fresh nonce
-                try {
-                    currentNonce = await provider.getNonceForAddress(account.address, 'latest');
-                    console.log(`Using nonce: ${currentNonce}`);
-                } catch (nonceErr) {
-                    console.warn('Could not get fresh nonce, using incremented value');
-                    currentNonce = String(BigInt(currentNonce) + BigInt(1));
-                }
-
-                // Estimate fee first (prefer latest block) then derive maxFee
-                let maxFeeBigInt: bigint | undefined;
-                try {
-                    const feeEst = await (account as any).estimateFee(transferCall, {
-                        nonce: currentNonce,
-                        blockIdentifier: 'latest'
-                    });
-                    // feeEst.overall_fee can be string or number-like
-                    const overall = BigInt(typeof feeEst?.overall_fee === 'string' ? feeEst.overall_fee : String(feeEst?.overall_fee ?? '0'));
-                    // Add headroom (20%)
-                    const withHeadroom = (overall * 12n) / 10n; // 1.2x
-                    maxFeeBigInt = starknet.stark.estimatedFeeToMaxFee(withHeadroom);
-                    console.log('Estimated overall fee:', overall.toString(), 'maxFee:', maxFeeBigInt.toString());
-                } catch (feeErr) {
-                    console.warn('Fee estimation failed, using fallback maxFee:', (feeErr as any)?.message || String(feeErr));
-                    // Fallback: conservative cap (0.02 STRK in wei)
-                    maxFeeBigInt = BigInt('20000000000000000');
-                }
-
-                // Execute transaction with explicit nonce and maxFee
-                const txResponse = await account.execute(transferCall, {
-                    nonce: currentNonce,
-                    maxFee: maxFeeBigInt,
-                    blockIdentifier: 'latest'
-                });
-
-                const txHash = txResponse?.transaction_hash;
+                console.log(`Executing transaction ${i + 1}...`);
+                
+                // Execute transaction
+                const result = await account.execute(transferCall);
+                const txHash = result.transaction_hash;
 
                 if (!txHash) {
                     throw new Error('No transaction hash returned');
                 }
 
+                console.log(`✅ Transaction ${i + 1} sent: ${txHash}`);
+
+                // Wait for transaction confirmation
+                try {
+                    console.log(`⏳ Waiting for confirmation...`);
+                    await provider.waitForTransaction(txHash, {
+                        retryInterval: 2000,
+                        successStates: ['ACCEPTED_ON_L2', 'ACCEPTED_ON_L1']
+                    });
+                    console.log(`✅ Transaction ${i + 1} confirmed!`);
+                } catch (waitErr) {
+                    console.warn(`⚠️ Could not confirm transaction ${i + 1}, but it was sent:`, (waitErr as any)?.message);
+                }
+
                 const explorerNetwork = splitPayment.network === 'testnet' ? 'sepolia' : 'mainnet';
-                console.log(`✅ [${i + 1}/${recipients.length}] Success: ${txHash}`);
-                console.log(`   View: https://${explorerNetwork}.voyager.online/tx/${txHash}`);
+                console.log(`🔍 View: https://${explorerNetwork}.voyager.online/tx/${txHash}\n`);
 
                 results.push({ success: true, txHash });
 
-                // Increment nonce
-                currentNonce = String(BigInt(currentNonce) + BigInt(1));
-
-                // Wait between transactions
+                // Wait between transactions to avoid nonce conflicts
                 if (i < recipients.length - 1) {
-                    console.log('⏳ Waiting 3s...');
-                    await new Promise((resolve) => setTimeout(resolve, 3000));
+                    const delayMs = 5000;
+                    console.log(`⏳ Waiting ${delayMs}ms before next transaction...\n`);
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
                 }
 
             } catch (err) {
                 const errorMsg = (err as any)?.message || String(err);
-                console.error(`❌ [${i + 1}/${recipients.length}] Failed:`, errorMsg);
-                results.push({ success: false, error: errorMsg });
+                console.error(`❌ [${i + 1}/${recipients.length}] Failed to send to ${recipient.recipientAddress}:`);
+                console.error(`   ${errorMsg}\n`);
                 
-                try {
-                    currentNonce = await provider.getNonceForAddress(account.address, 'latest');
-                } catch {}
+                results.push({
+                    success: false,
+                    error: errorMsg,
+                });
+
+                // Continue with remaining recipients
+                console.log(`Continuing with remaining recipients...\n`);
             }
         }
 
     } catch (error) {
-        console.error('❌ Starknet batch error:', error);
+        console.error('❌ Starknet batch processing error:', error);
         const errorMsg = (error as any)?.message || String(error);
 
+        // If initialization failed, mark all as failed
         if (results.length === 0) {
             for (const _ of recipients) {
-                results.push({ success: false, error: errorMsg });
+                results.push({
+                    success: false,
+                    error: errorMsg,
+                });
             }
         }
     }
 
-    console.log('Starknet batch complete:', {
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+    
+    console.log('\n📊 Starknet batch complete:', {
         total: recipients.length,
-        successful: results.filter(r => r.success).length,
-        failed: results.filter(r => !r.success).length
+        successful: successCount,
+        failed: failCount,
+        successRate: `${((successCount / recipients.length) * 100).toFixed(1)}%`
     });
 
     return results;
 }
-
 
 private static async processStellarBatch(
     splitPayment: SplitPayment,
