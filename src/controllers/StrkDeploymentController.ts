@@ -188,163 +188,139 @@ export class StrkController {
      * Returns balances for all mainnet addresses only
      * Also checks and deploys Starknet accounts if they have sufficient funds
      */
-    static async getMainnetBalancesDeploy(
-        req: AuthRequest,
-        res: Response
-    ): Promise<void> {
-        try {
-            const addressRepo = AppDataSource.getRepository(UserAddress);
-            const addresses = await addressRepo.find({
-                where: {
-                    userId: req.user!.id,
-                    network: NetworkType.MAINNET,
-                },
-            });
+static async getMainnetBalancesDeploy(
+    req: AuthRequest,
+    res: Response
+): Promise<void> {
+    try {
+        const addressRepo = AppDataSource.getRepository(UserAddress);
+        const addresses = await addressRepo.find({
+            where: {
+                userId: req.user!.id,
+                network: NetworkType.MAINNET,
+            },
+        });
 
-            const balances: any[] = [];
+        const balances: any[] = [];
 
-            // Loop through each mainnet address and fetch balance
-            for (const addr of addresses) {
-                if (addr.chain === 'starknet') {
-                    try {
-                        const provider = new RpcProvider({
-                            nodeUrl:
-                                `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
-                        });
+        for (const addr of addresses) {
+            if (addr.chain === 'starknet') {
+                try {
+                    const provider = new RpcProvider({
+                        nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+                    });
 
-                        const contract = {
-                            abi: [
-                                {
-                                    name: 'balanceOf',
-                                    type: 'function',
-                                    inputs: [{ name: 'account', type: 'felt' }],
-                                    outputs: [
-                                        { name: 'balance', type: 'felt' },
-                                    ],
-                                },
-                            ],
-                        };
+                    const strkTokenAddress =
+                        '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
-                        const contractInstance = new (provider as any).Contract(
-                            contract.abi,
-                            '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7' // ETH contract
-                        );
+                    // ✅ FIXED - Use provider.callContract like testnet
+                    const result = await provider.callContract({
+                        contractAddress: strkTokenAddress,
+                        entrypoint: 'balanceOf',
+                        calldata: [addr.address],
+                    }, 'latest'); // ✅ Add 'latest' block identifier
 
-                        const balanceResult = await contractInstance.balanceOf(
-                            addr.address
-                        );
+                    const balanceHex = result && result[0] ? result[0] : '0x0';
+                    const balanceDecimal = parseInt(balanceHex, 16);
+                    const balanceInSTRK = (balanceDecimal / 1e18).toString();
 
-                        const balanceStr = balanceResult.balance.toString();
-                        const balanceInSTRK = (parseFloat(balanceStr) / 1e18).toString();
+                    balances.push({
+                        chain: addr.chain,
+                        network: 'mainnet',
+                        address: addr.address,
+                        balance: balanceInSTRK,
+                        symbol: 'STRK',
+                    });
 
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: balanceInSTRK,
-                            symbol: 'STRK',
-                        });
+                    // Check if account needs deployment (mainnet)
+                    if (balanceDecimal > 0 && addr.encryptedPrivateKey) {
+                        try {
+                            await provider.getClassHashAt(addr.address);
+                            console.log(`[DEBUG] Starknet mainnet account ${addr.address} already deployed`);
+                        } catch (error) {
+                            console.log(`[DEBUG] Checking if mainnet ${addr.address} can be deployed...`);
+                            
+                            const { hasSufficientFunds, balance } = await checkBalance(
+                                provider,
+                                addr.address
+                            );
 
-                        // Check if account needs deployment (mainnet)
-                        if (parseFloat(balanceStr) > 0 && addr.encryptedPrivateKey) {
-                            try {
-                                // Check if already deployed
-                                await provider.getClassHashAt(addr.address);
-                                console.log(`[DEBUG] Starknet mainnet account ${addr.address} already deployed`);
-                            } catch (error) {
-                                // Account not deployed, check balance and deploy
-                                console.log(`[DEBUG] Checking if mainnet ${addr.address} can be deployed...`);
+                            if (hasSufficientFunds) {
+                                console.log(`[DEBUG] Deploying Starknet mainnet account ${addr.address}...`);
                                 
-                                const { hasSufficientFunds, balance } = await checkBalance(
+                                const privateKey = decrypt(addr.encryptedPrivateKey);
+                                const publicKey = ec.starkCurve.getStarkKey(privateKey);
+                                
+                                await deployStrkWallet(
                                     provider,
-                                    addr.address
+                                    privateKey,
+                                    publicKey,
+                                    addr.address,
+                                    false
                                 );
 
-                                if (hasSufficientFunds) {
-                                    console.log(`[DEBUG] Deploying Starknet mainnet account ${addr.address}...`);
-                                    
-                                    // Decrypt private key
-                                    const privateKey = decrypt(addr.encryptedPrivateKey);
-                                    
-                                    // Get public key from private key
-                                    const publicKey = ec.starkCurve.getStarkKey(privateKey);
-                                    
-                                    // Deploy the account
-                                    await deployStrkWallet(
-                                        provider,
-                                        privateKey,
-                                        publicKey,
-                                        addr.address,
-                                        false // Skip balance check since we already did it
-                                    );
+                                console.log(`[SUCCESS] Starknet mainnet account ${addr.address} deployed successfully`);
+                                
+                                balances[balances.length - 1].deployed = true;
+                                balances[balances.length - 1].deploymentStatus = 'success';
 
-                                    console.log(`[SUCCESS] Starknet mainnet account ${addr.address} deployed successfully`);
-                                    
-                                    // Update last balance entry to indicate deployment
-                                    balances[balances.length - 1].deployed = true;
-                                    balances[balances.length - 1].deploymentStatus = 'success';
-
-                                    // Create notification for deployment
-                                    await AppDataSource.getRepository(Notification).save({
-                                        userId: req.user!.id,
-                                        type: NotificationType.DEPOSIT,
-                                        title: 'Starknet Account Deployed',
-                                        message: `Your Starknet mainnet account has been successfully deployed at ${addr.address}`,
-                                        details: {
-                                            address: addr.address,
-                                            chain: 'starknet',
-                                            network: 'mainnet',
-                                            balance: balanceInSTRK,
-                                        },
-                                        isRead: false,
-                                        createdAt: new Date(),
-                                    });
-                                } else {
-                                    console.log(`[DEBUG] Insufficient funds for mainnet deployment. Balance: ${balance}`);
-                                }
+                                await AppDataSource.getRepository(Notification).save({
+                                    userId: req.user!.id,
+                                    type: NotificationType.DEPOSIT,
+                                    title: 'Starknet Account Deployed',
+                                    message: `Your Starknet mainnet account has been successfully deployed at ${addr.address}`,
+                                    details: {
+                                        address: addr.address,
+                                        chain: 'starknet',
+                                        network: 'mainnet',
+                                        balance: balanceInSTRK,
+                                    },
+                                    isRead: false,
+                                    createdAt: new Date(),
+                                });
+                            } else {
+                                console.log(`[DEBUG] Insufficient funds for mainnet deployment. Balance: ${balance}`);
                             }
                         }
-                    } catch (error) {
-                        console.error('Starknet mainnet balance/deployment error:', error);
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'STRK',
-                            error: 'Failed to fetch balance',
-                        });
                     }
-                } else if (addr.chain === 'ethereum') {
-                    // ... [rest of your ethereum code]
-                } else if (addr.chain === 'bitcoin') {
-                    // ... [rest of your bitcoin code]
-                } else if (addr.chain === 'solana') {
-                    // ... [rest of your solana code]
-                } else if (
-                    addr.chain === 'usdt_erc20' ||
-                    addr.chain === 'usdt_trc20'
-                ) {
+                } catch (error: any) {
+                    console.error('Starknet mainnet balance/deployment error:', error?.message || error);
                     balances.push({
                         chain: addr.chain,
                         network: 'mainnet',
                         address: addr.address,
                         balance: '0',
-                        symbol: 'USDT',
+                        symbol: 'STRK',
+                        error: 'Failed to fetch balance',
                     });
                 }
+            } else if (addr.chain === 'ethereum') {
+                // ... [your ethereum code]
+            } else if (addr.chain === 'bitcoin') {
+                // ... [your bitcoin code]
+            } else if (addr.chain === 'solana') {
+                // ... [your solana code]
+            } else if (addr.chain === 'usdt_erc20' || addr.chain === 'usdt_trc20') {
+                balances.push({
+                    chain: addr.chain,
+                    network: 'mainnet',
+                    address: addr.address,
+                    balance: '0',
+                    symbol: 'USDT',
+                });
             }
-
-            res.status(200).json({
-                message: 'Mainnet balances retrieved successfully',
-                balances,
-                totalAddresses: addresses.length,
-            });
-        } catch (error) {
-            console.error('Get mainnet balances error:', error);
-            res.status(500).json({ error: 'Internal server error' });
         }
+
+        res.status(200).json({
+            message: 'Mainnet balances retrieved successfully',
+            balances,
+            totalAddresses: addresses.length,
+        });
+    } catch (error) {
+        console.error('Get mainnet balances error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
+}
 
     // ... [rest of your existing methods]
 }
