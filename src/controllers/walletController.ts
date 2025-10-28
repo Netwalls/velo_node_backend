@@ -2427,12 +2427,12 @@ else if (chain === 'stellar') {
         const strkTokenAddress =
             '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
-        // Use provider.callContract like in testnet - this is the working approach
+        // Use provider.callContract with explicit block identifier
         const result = await provider.callContract({
             contractAddress: strkTokenAddress,
             entrypoint: 'balanceOf',
             calldata: [padStarknetAddress(addr.address)],
-        });
+        }, 'latest'); // <-- Add 'latest' as the second parameter
 
         const balanceHex = result && result[0] ? result[0] : '0x0';
         const balanceDecimal = parseInt(balanceHex, 16);
@@ -2462,8 +2462,7 @@ else if (chain === 'stellar') {
             balance: '0',
             symbol: 'STRK',
             error: 'Failed to fetch balance',
-        });
-    }
+        }); }
 } else if (addr.chain === 'ethereum') {
                     try {
                         const provider = new ethers.JsonRpcProvider(
