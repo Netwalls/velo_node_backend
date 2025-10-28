@@ -2488,33 +2488,68 @@ else if (chain === 'stellar') {
                         });
                     }
                 } else if (addr.chain === 'bitcoin') {
-                    try {
-                        const response = await axios.get(
-                            `https://blockstream.info/api/address/${addr.address}`
-                        );
-                        const balanceInSatoshis =
-                            (response.data as any).chain_stats
-                                ?.funded_txo_sum || 0;
-                        const balanceInBTC = balanceInSatoshis / 100000000;
+    try {
+        let balanceInBTC = 0;
+        let apiUsed = '';
+        
+        // Try Blockstream first
+        try {
+            const url = `https://blockstream.info/api/address/${addr.address}`;
+            const response = await axios.get(url, { timeout: 8000 });
+            const data = response.data as {
+                chain_stats: {
+                    funded_txo_sum: number;
+                    spent_txo_sum: number;
+                };
+            };
+            const balanceInSatoshis = 
+                (data.chain_stats?.funded_txo_sum || 0) - 
+                (data.chain_stats?.spent_txo_sum || 0);
+            balanceInBTC = balanceInSatoshis / 100000000;
+            apiUsed = 'blockstream';
+        } catch (blockstreamError: any) {
+            console.warn('Blockstream API failed, trying fallback:', blockstreamError?.message);
+            
+            // Fallback to blockchain.info API
+            try {
+                const fallbackUrl = `https://blockchain.info/q/addressbalance/${addr.address}`;
+                const fallbackResponse = await axios.get(fallbackUrl, { timeout: 8000 });
+                const balanceInSatoshis = parseInt(String(fallbackResponse.data), 10);
+                balanceInBTC = balanceInSatoshis / 100000000;
+                apiUsed = 'blockchain.info';
+            } catch (fallbackError: any) {
+                throw new Error(`Both APIs failed: ${blockstreamError?.message}, ${fallbackError?.message}`);
+            }
+        }
 
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: balanceInBTC.toString(),
-                            symbol: 'BTC',
-                        });
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'BTC',
-                            error: 'Failed to fetch balance',
-                        });
-                    }
-                } else if (addr.chain === 'solana') {
+        console.log(`[DEBUG] Bitcoin balance fetched via ${apiUsed}:`, balanceInBTC);
+
+        balances.push({
+            chain: addr.chain,
+            network: 'mainnet',
+            address: addr.address,
+            balance: balanceInBTC.toString(),
+            symbol: 'BTC',
+        });
+        
+        try {
+            addr.lastKnownBalance = balanceInBTC;
+            await addressRepo.save(addr);
+        } catch (e: any) {
+            console.warn('Failed to save lastKnownBalance (bitcoin)', addr.address, e?.message || String(e));
+        }
+    } catch (error: any) {
+        console.error('Bitcoin mainnet balance error:', error?.message || error);
+        balances.push({
+            chain: addr.chain,
+            network: 'mainnet',
+            address: addr.address,
+            balance: '0',
+            symbol: 'BTC',
+            error: 'Failed to fetch balance',
+        });
+    }
+} else if (addr.chain === 'solana') {
                     try {
                         const connection = new Connection(
                             `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
