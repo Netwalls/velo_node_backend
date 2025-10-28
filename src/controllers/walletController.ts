@@ -2159,11 +2159,13 @@ else if (chain === 'stellar') {
             for (const addr of addresses) {
                 if (addr.chain === 'starknet') {
     try {
+        console.log('[DEBUG] Fetching Starknet mainnet balance for:', addr.address);
+        
         const provider = new RpcProvider({
             nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
         });
 
-        // STRK token contract address (not ETH)
+        // STRK token contract address
         const strkTokenAddress =
             '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
@@ -2176,9 +2178,13 @@ else if (chain === 'stellar') {
             },
         ];
 
-        // Import Contract class from starknet.js (same as in getBalances method)
+        // Import Contract class from starknet.js
         // @ts-ignore
         const { Contract } = require('starknet');
+
+        // Pad the address to ensure it's in the correct format (64 hex chars after 0x)
+        const paddedAddress = padStarknetAddress(addr.address);
+        console.log('[DEBUG] Padded address:', paddedAddress);
 
         // Create contract instance for STRK token
         const contract = new Contract(
@@ -2187,14 +2193,14 @@ else if (chain === 'stellar') {
             provider
         );
 
-        // Pad the address to ensure it's in the correct format
-        const paddedAddress = padStarknetAddress(addr.address);
-
+        console.log('[DEBUG] Calling balanceOf...');
         // Call balanceOf to get the user's STRK balance
         const balanceResult = await contract.balanceOf(paddedAddress);
+        console.log('[DEBUG] Balance result:', balanceResult);
         
         // Convert balance from wei to STRK (18 decimals)
         const balanceInSTRK = (Number(balanceResult.balance.toString()) / 1e18).toString();
+        console.log('[DEBUG] Balance in STRK:', balanceInSTRK);
 
         balances.push({
             chain: addr.chain,
@@ -2211,18 +2217,22 @@ else if (chain === 'stellar') {
         } catch (e: any) {
             console.warn('Failed to save lastKnownBalance (starknet mainnet)', addr.address, e?.message || String(e));
         }
-    } catch (error) {
-        console.error('Starknet mainnet balance error:', error);
+    } catch (error: any) {
+        console.error('[ERROR] Starknet mainnet balance error for', addr.address);
+        console.error('[ERROR] Error details:', error);
+        console.error('[ERROR] Error message:', error?.message);
+        console.error('[ERROR] Error stack:', error?.stack);
+        
         balances.push({
             chain: addr.chain,
             network: 'mainnet',
             address: addr.address,
             balance: '0',
             symbol: 'STRK',
-            error: 'Failed to fetch balance',
+            error: `Failed to fetch balance: ${error?.message || 'Unknown error'}`,
         });
     }
-}else if (addr.chain === 'ethereum') {
+} else if (addr.chain === 'ethereum') {
                     try {
                         const provider = new ethers.JsonRpcProvider(
                             `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
