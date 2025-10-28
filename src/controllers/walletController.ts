@@ -2158,52 +2158,54 @@ else if (chain === 'stellar') {
             // Loop through each testnet address and fetch balance
             for (const addr of addresses) {
                 if (addr.chain === 'starknet') {
-    try {
-        const provider = new RpcProvider({
-            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
-        });
+                    try {
+                        // Fixed Starknet testnet balance
+                        const provider = new RpcProvider({
+                            nodeUrl: `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
+                        });
 
-        const strkTokenAddress =
-            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        const strkTokenAddress =
+                            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
-        // Use provider.callContract like in testnet - this is the working approach
-        const result = await provider.callContract({
-            contractAddress: strkTokenAddress,
-            entrypoint: 'balanceOf',
-            calldata: [padStarknetAddress(addr.address)],
-        });
+                        const result = await provider.callContract({
+                            contractAddress: strkTokenAddress,
+                            entrypoint: 'balanceOf',
+                            calldata: [addr.address],
+                        });
 
-        const balanceHex = result && result[0] ? result[0] : '0x0';
-        const balanceDecimal = parseInt(balanceHex, 16);
-        const balanceInSTRK = (balanceDecimal / 1e18).toString();
+                        const balanceHex =
+                            result && result[0] ? result[0] : '0x0';
+                        const balanceDecimal = parseInt(balanceHex, 16);
+                        const balanceInSTRK = (
+                            balanceDecimal / 1e18
+                        ).toString();
 
-        balances.push({
-            chain: addr.chain,
-            network: 'mainnet',
-            address: addr.address,
-            balance: balanceInSTRK,
-            symbol: 'STRK',
-        });
-        
-        // Update last known balance
-        try {
-            addr.lastKnownBalance = Number(balanceInSTRK);
-            await addressRepo.save(addr);
-        } catch (e: any) {
-            console.warn('Failed to save lastKnownBalance (starknet mainnet)', addr.address, e?.message || String(e));
-        }
-    } catch (error: any) {
-        console.error('Starknet mainnet balance error:', error?.message || error);
-        balances.push({
-            chain: addr.chain,
-            network: 'mainnet',
-            address: addr.address,
-            balance: '0',
-            symbol: 'STRK',
-            error: 'Failed to fetch balance',
-        });
-    }
-} else if (addr.chain === 'ethereum') {
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: balanceInSTRK,
+                            symbol: 'STRK',
+                        });
+                        // persist lastKnownBalance
+                        try {
+                            addr.lastKnownBalance = Number(balanceInSTRK);
+                            await addressRepo.save(addr);
+                        } catch (e: any) {
+                            console.warn('Failed to save lastKnownBalance (starknet)', addr.address, e && (e.message || String(e)));
+                        }
+                    } catch (error) {
+                        console.error('Starknet testnet balance error:', error);
+                        balances.push({
+                            chain: addr.chain,
+                            network: 'testnet',
+                            address: addr.address,
+                            balance: '0',
+                            symbol: 'STRK',
+                            error: 'Failed to fetch balance',
+                        });
+                    }
+                } else if (addr.chain === 'ethereum') {
                     try {
                         const provider = new ethers.JsonRpcProvider(
                             `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
@@ -2417,52 +2419,52 @@ else if (chain === 'stellar') {
             // Loop through each mainnet address and fetch balance
             for (const addr of addresses) {
                 if (addr.chain === 'starknet') {
-                    try {
-                        const provider = new RpcProvider({
-                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
-                        });
+    try {
+        const provider = new RpcProvider({
+            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+        });
 
-                        const contract = {
-                            abi: [
-                                {
-                                    name: 'balanceOf',
-                                    type: 'function',
-                                    inputs: [{ name: 'account', type: 'felt' }],
-                                    outputs: [
-                                        { name: 'balance', type: 'felt' },
-                                    ],
-                                },
-                            ],
-                        };
+        const strkTokenAddress =
+            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
-                        const contractInstance = new (provider as any).Contract(
-                            // contract.abi,
-                            // '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7'  // ETH contract
-                            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d'  // STRK contract
-                        );
+        // Use provider.callContract like in testnet - this is the working approach
+        const result = await provider.callContract({
+            contractAddress: strkTokenAddress,
+            entrypoint: 'balanceOf',
+            calldata: [padStarknetAddress(addr.address)],
+        });
 
-                        const balanceResult = await contractInstance.balanceOf(
-                            addr.address
-                        );
+        const balanceHex = result && result[0] ? result[0] : '0x0';
+        const balanceDecimal = parseInt(balanceHex, 16);
+        const balanceInSTRK = (balanceDecimal / 1e18).toString();
 
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: balanceResult.balance.toString(),
-                            symbol: 'STRK',
-                        });
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'STRK',
-                            error: 'Failed to fetch balance',
-                        });
-                    }
-                } else if (addr.chain === 'ethereum') {
+        balances.push({
+            chain: addr.chain,
+            network: 'mainnet',
+            address: addr.address,
+            balance: balanceInSTRK,
+            symbol: 'STRK',
+        });
+        
+        // Update last known balance
+        try {
+            addr.lastKnownBalance = Number(balanceInSTRK);
+            await addressRepo.save(addr);
+        } catch (e: any) {
+            console.warn('Failed to save lastKnownBalance (starknet mainnet)', addr.address, e?.message || String(e));
+        }
+    } catch (error: any) {
+        console.error('Starknet mainnet balance error:', error?.message || error);
+        balances.push({
+            chain: addr.chain,
+            network: 'mainnet',
+            address: addr.address,
+            balance: '0',
+            symbol: 'STRK',
+            error: 'Failed to fetch balance',
+        });
+    }
+} else if (addr.chain === 'ethereum') {
                     try {
                         const provider = new ethers.JsonRpcProvider(
                             `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
