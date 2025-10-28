@@ -69,6 +69,27 @@ router.delete(
 );
 
 /**
+ * Nellobytes third-party integrations
+ * These endpoints call external Nellobytes API for airtime, databundle and cable
+ */
+router.post('/airtime', authMiddleware, PaymentController.buyAirtime);
+router.post('/databundle', authMiddleware, PaymentController.buyDatabundle);
+router.post('/cable', authMiddleware, PaymentController.buyCable);
+
+// Crypto-payable airtime order (create order)
+router.post('/airtime/crypto', authMiddleware, PaymentController.createCryptoAirtimeOrder);
+
+// Attach a tx to an order (manual flow)
+router.post('/orders/:orderId/attach-tx', authMiddleware, PaymentController.attachTxToOrder);
+
+// Get order details
+router.get('/orders/:orderId', authMiddleware, PaymentController.getOrder);
+
+// Query or cancel by provider RequestID
+router.get('/nellobytes/query/:requestId', authMiddleware, PaymentController.queryNellobytes);
+router.post('/nellobytes/cancel/:requestId', authMiddleware, PaymentController.cancelNellobytes);
+
+/**
  * @route POST /api/payments/webhook/detect
  * @desc Webhook endpoint for automatic payment detection
  * @body userId - User ID (required)

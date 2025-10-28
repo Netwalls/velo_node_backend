@@ -3,6 +3,13 @@ import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
 import { UserAddress } from '../entities/UserAddress';
 import { KYCDocument } from '../entities/KYCDocument';
+import { MerchantPayment } from '../entities/MerchantPayment';
+import { Conversion } from '../entities/Conversion';
+import { SplitPayment } from '../entities/SplitPayment';
+import { SplitPaymentExecution } from '../entities/SplitPaymentExecution';
+import { SplitPaymentExecutionResult } from '../entities/SplitPaymentExecutionResult';
+import { SplitPaymentRecipient } from '../entities/SplitPaymentRecipient';
+import { Fee } from '../entities/Fee';
 import { AuthRequest, KYCStatus } from '../types';
 import { UsernameService } from '../services/usernameService';
 
@@ -569,7 +576,78 @@ export class UserController {
                 return;
             }
 
-            await userRepo.remove(user);
+            // Delete dependent records that do not have ON DELETE CASCADE
+            await AppDataSource.transaction(async (manager) => {
+                // Delete merchant payments referencing this user
+                await manager.delete(MerchantPayment, { userId: user.id });
+
+                // Delete split payments and all dependent records (recipients, executions, execution results)
+                const splitRepo = manager.getRepository(SplitPayment);
+                const executionsRepo = manager.getRepository(SplitPaymentExecution);
+                const execResultRepo = manager.getRepository(SplitPaymentExecutionResult);
+                const recipientsRepo = manager.getRepository(SplitPaymentRecipient);
+
+                const splits = await splitRepo.find({ where: { userId: user.id }, select: ['id'] });
+                const splitIds = splits.map((s: any) => s.id);
+                if (splitIds.length > 0) {
+                    // Find executions for these split payments using query builder to avoid array-parameter issues
+                    let executionIds: string[] = [];
+                    if (splitIds.length > 0) {
+                        const execRows: any[] = await manager
+                            .createQueryBuilder()
+                            .select('id')
+                            .from('split_payment_executions', 'e')
+                            .where('"splitPaymentId" IN (:...ids)', { ids: splitIds })
+                            .getRawMany();
+
+                        executionIds = execRows.map((r: any) => r.id || r.e_id || Object.values(r)[0]);
+                    }
+
+                    // Delete execution results
+                    if (executionIds.length > 0) {
+                        await manager
+                            .createQueryBuilder()
+                            .delete()
+                            .from('split_payment_execution_results')
+                            .where('"executionId" IN (:...ids)', { ids: executionIds })
+                            .execute();
+                    }
+
+                    // Delete executions
+                    await manager
+                        .createQueryBuilder()
+                        .delete()
+                        .from('split_payment_executions')
+                        .where('"splitPaymentId" IN (:...ids)', { ids: splitIds })
+                        .execute();
+
+                    // Delete recipients
+                    await manager
+                        .createQueryBuilder()
+                        .delete()
+                        .from('split_payment_recipients')
+                        .where('"splitPaymentId" IN (:...ids)', { ids: splitIds })
+                        .execute();
+
+                    // Delete split payments
+                    await manager
+                        .createQueryBuilder()
+                        .delete()
+                        .from('split_payments')
+                        .where('"id" IN (:...ids)', { ids: splitIds })
+                        .execute();
+                }
+
+                // Delete fees associated with this user (nullable FK)
+                await manager.delete(Fee, { userId: user.id });
+
+                // Delete any conversions referencing the user (some conversions may cascade, but delete explicitly)
+                await manager.delete(Conversion, { userId: user.id });
+
+                // Finally delete the user (addresses, kyc, refresh tokens cascade where configured)
+                await manager.delete(User, { id: user.id });
+            });
+
             res.json({ message: 'User account deleted by email (no auth)' });
         } catch (error) {
             console.error('Delete account by email error:', error);

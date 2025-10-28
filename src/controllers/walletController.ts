@@ -2014,10 +2014,12 @@ else if (chain === 'stellar') {
 
             // Group addresses by chain for better organization
             const addressesByChain = addresses.reduce((acc, addr) => {
-                if (!acc[addr.chain]) {
-                    acc[addr.chain] = [];
+                // Ensure we always use a string key (fallback to 'unknown' when chain is undefined)
+                const chainKey = String(addr.chain ?? 'unknown');
+                if (!acc[chainKey]) {
+                    acc[chainKey] = [];
                 }
-                acc[addr.chain].push({
+                acc[chainKey].push({
                     id: addr.id,
                     chain: addr.chain,
                     network: addr.network,
@@ -2686,14 +2688,13 @@ else if (chain === 'stellar') {
                 const amount = currentBalance - Number(addr.lastKnownBalance);
 
                 // Create notification
+                const chainLabel = String(addr.chain ?? 'unknown').toUpperCase();
                 await notificationRepo.save(
                     notificationRepo.create({
                         userId: addr.userId,
                         type: NotificationType.DEPOSIT,
                         title: 'Deposit Received',
-                        message: `Deposit of ${amount} ${addr.chain.toUpperCase()} received at ${
-                            addr.address
-                        }`,
+                        message: `Deposit of ${amount} ${chainLabel} received at ${addr.address}`,
                         details: {
                             address: addr.address,
                             amount,

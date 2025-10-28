@@ -370,6 +370,41 @@ export class AdminController {
             res.status(500).json({ error: 'Failed to fetch admin statistics' });
         }
     }
+
+    /**
+     * DELETE /admin/users/:id
+     * Deletes a user and related entities (best-effort) by id. Protected by auth + admin middleware.
+     */
+    static async deleteUser(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            if (!id) {
+                res.status(400).json({ error: 'User id required' });
+                return;
+            }
+
+            const userRepo = AppDataSource.getRepository(User);
+            const user = await userRepo.findOne({ where: { id } });
+            if (!user) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            // Attempt to remove user and cascade related rows if configured.
+            // Use remove() to trigger cascade hooks if TypeORM relations exist; otherwise fall back to delete.
+            try {
+                await userRepo.remove(user);
+            } catch (removeErr) {
+                console.warn('Remove failed, falling back to delete:', removeErr);
+                await userRepo.delete({ id });
+            }
+
+            res.json({ message: 'User deleted successfully', userId: id });
+        } catch (error) {
+            console.error('Admin delete user error:', error);
+            res.status(500).json({ error: 'Failed to delete user' });
+        }
+    }
 }
 
 export default AdminController;

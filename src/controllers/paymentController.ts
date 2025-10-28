@@ -3,6 +3,12 @@ import { AuthRequest } from '../types';
 import { PriceFeedService } from '../services/priceFeedService';
 import { ConversionService } from '../services/conversionService';
 import { USDTService } from '../services/usdtService';
+import NellobytesService from '../services/nellobytesService';
+import crypto from 'crypto';
+import { AppDataSource } from '../config/database';
+import ProviderOrder, { ProviderOrderStatus } from '../entities/ProviderOrder';
+import TreasuryConfig from '../config/treasury';
+import axios from 'axios';
 
 export class PaymentController {
     /**
@@ -289,6 +295,391 @@ export class PaymentController {
                         ? error.message
                         : 'Failed to cancel conversion',
             });
+        }
+    }
+
+    /**
+     * Buy airtime using Nellobytes
+     * POST /api/payments/airtime
+     */
+    static async buyAirtime(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const { mobileNetwork, amount, mobileNumber, requestId } = req.body;
+
+            if (!mobileNetwork || !amount || !mobileNumber) {
+                res.status(400).json({ error: 'mobileNetwork, amount and mobileNumber are required' });
+                return;
+            }
+
+            const rid = requestId || crypto.randomUUID();
+
+            const providerResp = await NellobytesService.buyAirtime({
+                MobileNetwork: mobileNetwork,
+                Amount: amount,
+                MobileNumber: mobileNumber,
+                RequestID: rid,
+            });
+
+            res.json({
+                message: 'Airtime request submitted',
+                requestId: rid,
+                provider: providerResp,
+            });
+        } catch (error) {
+            console.error('Buy airtime error:', error);
+            res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to buy airtime' });
+        }
+    }
+
+    /**
+     * Create a crypto-payable airtime order
+     * POST /api/payments/airtime/crypto
+     * body: { mobileNetwork, amountNGN, token }
+     */
+    static async createCryptoAirtimeOrder(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            // Accepts: mobileNetwork, amount (NGN-equivalent figure), chain (btc, eth...), mobileNumber, optional token
+            const { mobileNetwork, amountNGN, amount, token, mobileNumber, chain } = req.body;
+            const ngnAmount = amountNGN || amount;
+
+            if (!mobileNetwork || !ngnAmount || !mobileNumber || !chain) {
+                res.status(400).json({ error: 'mobileNetwork, amount (NGN), mobileNumber and chain are required' });
+                return;
+            }
+
+            // Determine token to use. If token provided, use it, otherwise infer from chain (native asset)
+            const chainTokenMap: Record<string, string> = {
+                eth: 'ETH',
+                btc: 'BTC',
+                sol: 'SOL',
+                xlm: 'XLM',
+                dot: 'DOT',
+            };
+            const tokenUpper = (token as string)?.toUpperCase() || (chainTokenMap[(chain as string).toLowerCase()] || 'USDT');
+
+            // Convert NGN -> USD. Try exchangerate.host first, fall back to internal PriceFeedService
+            let usdAmount = 0;
+            try {
+                const convResp: any = await axios.get(`https://api.exchangerate.host/convert?from=NGN&to=USD&amount=${Number(amountNGN)}`);
+                usdAmount = Number(convResp.data && convResp.data.result ? convResp.data.result : 0);
+            } catch (err) {
+                console.warn('exchangerate.host failed, falling back to PriceFeedService', err instanceof Error ? err.message : err);
+                usdAmount = 0;
+            }
+
+            if (!usdAmount || usdAmount <= 0) {
+                // Fallback: use internal price feed if available
+                try {
+                    const calc = await PriceFeedService.calculateConversion(Number(amountNGN), 'NGN', 'USD');
+                    // calculateConversion returns { outputAmount, rate, ... }
+                    if (calc && typeof calc.outputAmount === 'number') usdAmount = calc.outputAmount;
+                } catch (err) {
+                    console.error('PriceFeedService fallback failed', err instanceof Error ? err.message : err);
+                }
+            }
+
+            if (!usdAmount || usdAmount <= 0) {
+                res.status(500).json({ error: 'Failed to convert NGN to USD' });
+                return;
+            }
+
+            // Get token price in USD
+            const tokenPrice = await PriceFeedService.getPrice(tokenUpper);
+            if (!tokenPrice || tokenPrice <= 0) {
+                res.status(400).json({ error: `Unsupported token or failed to fetch price for ${token}` });
+                return;
+            }
+
+            const slippage = 0.01; // 1% cushion
+            const requiredTokenAmount = (usdAmount / tokenPrice) * (1 + slippage);
+
+            const orderRepo = AppDataSource.getRepository(ProviderOrder);
+            const order = orderRepo.create({
+                userId,
+                requestId: crypto.randomUUID(),
+                mobileNetwork,
+                mobileNumber,
+                chain,
+                amountNGN: Number(ngnAmount),
+                token: tokenUpper,
+                requiredTokenAmount,
+                status: ProviderOrderStatus.CREATED,
+            });
+
+            await orderRepo.save(order);
+
+            // Recommend treasury address for the token
+            let treasuryAddress = '';
+            try {
+                const chainMap: Record<string, string> = { ETH: 'ethereum', BTC: 'bitcoin', SOL: 'solana', XLM: 'stellar', DOT: 'polkadot', USDT: 'ethereum' };
+                const chain = chainMap[tokenUpper] || tokenUpper.toLowerCase();
+                treasuryAddress = TreasuryConfig.getTreasuryWallet(chain, 'mainnet');
+            } catch (e) {
+                treasuryAddress = '';
+            }
+
+            res.json({
+                message: 'Crypto airtime order created',
+                orderId: order.id,
+                requestId: order.requestId,
+                requiredTokenAmount,
+                token: tokenUpper,
+                treasuryAddress,
+            });
+        } catch (error) {
+            console.error('Create crypto order error:', error);
+            res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to create crypto order' });
+        }
+    }
+
+    /**
+     * Attach a tx hash to an order (manual flow)
+     * POST /api/payments/orders/:orderId/attach-tx
+     * body: { txHash, tokenAmount, fromAddress }
+     */
+    static async attachTxToOrder(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            const { orderId } = req.params;
+            const { txHash, tokenAmount, fromAddress } = req.body;
+
+            if (!orderId || !txHash || !tokenAmount) {
+                res.status(400).json({ error: 'orderId, txHash and tokenAmount are required' });
+                return;
+            }
+
+            const orderRepo = AppDataSource.getRepository(ProviderOrder);
+            const order = await orderRepo.findOne({ where: { id: orderId } });
+            if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+
+            // Ensure the requester owns the order
+            if (!userId || order.userId !== userId) {
+                res.status(403).json({ error: 'Forbidden: order does not belong to user' });
+                return;
+            }
+
+            if (order.status !== ProviderOrderStatus.CREATED && order.status !== ProviderOrderStatus.PENDING) {
+                { res.status(400).json({ error: 'Order cannot accept payment in current status' }); return; }
+            }
+
+            // Basic check: compare provided tokenAmount to requiredTokenAmount
+            const provided = Number(tokenAmount);
+            if (isNaN(provided) || provided <= 0) { res.status(400).json({ error: 'Invalid tokenAmount' }); return; }
+
+            // Convert the provided token amount to USDT (pegged to USD) using the price feed
+            const token = order.token;
+            let availableUSDT = 0;
+            try {
+                const convertCalc = await PriceFeedService.calculateConversion(Number(provided), token, 'USDT');
+                availableUSDT = convertCalc.outputAmount;
+            } catch (err) {
+                console.warn('PriceFeedService conversion to USDT failed, falling back to direct price method', err instanceof Error ? err.message : err);
+                // Fallback: value using single price lookup
+                const tokenPriceUSD = await PriceFeedService.getPrice(token);
+                if (!tokenPriceUSD || tokenPriceUSD <= 0) {
+                    order.status = ProviderOrderStatus.FAILED;
+                    await orderRepo.save(order);
+                    res.status(400).json({ error: 'Failed to fetch token price for verification' });
+                    return;
+                }
+                availableUSDT = Number(provided) * Number(tokenPriceUSD);
+            }
+
+            // Convert NGN order amount to USD again to compute required USD
+            let requiredUSD = 0;
+            try {
+                const convResp: any = await axios.get(`https://api.exchangerate.host/convert?from=NGN&to=USD&amount=${Number(order.amountNGN)}`);
+                requiredUSD = Number(convResp.data && convResp.data.result ? convResp.data.result : 0);
+            } catch (err) {
+                // fallback to open.er-api or PriceFeedService
+                try {
+                    const calc = await PriceFeedService.calculateConversion(Number(order.amountNGN), 'NGN', 'USDT');
+                    if (calc && typeof calc.outputAmount === 'number') requiredUSD = calc.outputAmount;
+                } catch (err2) {
+                    console.error('Failed to compute required USD for order', err2 instanceof Error ? err2.message : err2);
+                }
+            }
+
+            if (!requiredUSD || requiredUSD <= 0) {
+                order.status = ProviderOrderStatus.FAILED;
+                await orderRepo.save(order);
+                res.status(400).json({ error: 'Failed to compute required USD amount for the order' });
+                return;
+            }
+
+            // Allow small slippage: availableUSDT must be >= 99% of requiredUSD
+            if (availableUSDT < requiredUSD * 0.99) {
+                order.status = ProviderOrderStatus.FAILED;
+                await orderRepo.save(order);
+                res.status(400).json({ error: 'Converted amount insufficient to pay provider' });
+                return;
+            }
+
+            // Mark as paid (in production you'd verify the tx on-chain)
+            order.depositTxHash = txHash;
+            order.status = ProviderOrderStatus.PAID;
+            await orderRepo.save(order);
+
+            // Execute provider purchase
+            order.status = ProviderOrderStatus.PROCESSING;
+            await orderRepo.save(order);
+
+            const rid = order.requestId || crypto.randomUUID();
+            // Use stored mobileNumber for the provider call
+            const providerResp = await NellobytesService.buyAirtime({
+                MobileNetwork: order.mobileNetwork,
+                Amount: order.amountNGN,
+                MobileNumber: (order as any).mobileNumber || '',
+                RequestID: rid,
+            } as any);
+
+            order.providerResponse = providerResp;
+            order.status = ProviderOrderStatus.COMPLETED;
+            await orderRepo.save(order);
+
+            res.json({ message: 'Order paid and processed', order });
+        } catch (error) {
+            console.error('Attach tx to order error:', error);
+            res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to attach tx to order' });
+        }
+    }
+
+    static async getOrder(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const { orderId } = req.params;
+            if (!orderId) { res.status(400).json({ error: 'orderId required' }); return; }
+            const orderRepo = AppDataSource.getRepository(ProviderOrder);
+            const order = await orderRepo.findOne({ where: { id: orderId } });
+            if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
+            res.json({ order });
+        } catch (error) {
+            console.error('Get order error:', error);
+            res.status(500).json({ error: 'Failed to fetch order' });
+        }
+    }
+
+    /**
+     * Buy databundle using Nellobytes
+     * POST /api/payments/databundle
+     */
+    static async buyDatabundle(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const { mobileNetwork, dataPlan, mobileNumber, requestId } = req.body;
+
+            if (!mobileNetwork || !dataPlan || !mobileNumber) {
+                res.status(400).json({ error: 'mobileNetwork, dataPlan and mobileNumber are required' });
+                return;
+            }
+
+            const rid = requestId || crypto.randomUUID();
+
+            const providerResp = await NellobytesService.buyDatabundle({
+                MobileNetwork: mobileNetwork,
+                DataPlan: dataPlan,
+                MobileNumber: mobileNumber,
+                RequestID: rid,
+            });
+
+            res.json({ message: 'Databundle request submitted', requestId: rid, provider: providerResp });
+        } catch (error) {
+            console.error('Buy databundle error:', error);
+            res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to buy databundle' });
+        }
+    }
+
+    /**
+     * Buy cable TV subscription using Nellobytes
+     * POST /api/payments/cable
+     */
+    static async buyCable(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const params = req.body || {};
+            // Expecting provider-specific fields: DecoderID, Network, Bouquet, Amount, RequestID
+            if (!params.DecoderID || !params.Network || !params.Bouquet) {
+                res.status(400).json({ error: 'DecoderID, Network and Bouquet are required' });
+                return;
+            }
+
+            const rid = params.RequestID || crypto.randomUUID();
+            params.RequestID = rid;
+
+            const providerResp = await NellobytesService.buyCable(params);
+
+            res.json({ message: 'Cable TV request submitted', requestId: rid, provider: providerResp });
+        } catch (error) {
+            console.error('Buy cable error:', error);
+            res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to buy cable' });
+        }
+    }
+
+    /**
+     * Query a Nellobytes request by RequestID
+     * GET /api/payments/nellobytes/query/:requestId
+     */
+    static async queryNellobytes(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const { requestId } = req.params;
+            if (!requestId) {
+                res.status(400).json({ error: 'requestId is required' });
+                return;
+            }
+
+            const providerResp = await NellobytesService.queryStatus(requestId);
+            res.json({ provider: providerResp });
+        } catch (error) {
+            console.error('Query Nellobytes error:', error);
+            res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to query provider' });
+        }
+    }
+
+    /**
+     * Cancel a Nellobytes request by RequestID
+     * POST /api/payments/nellobytes/cancel/:requestId
+     */
+    static async cancelNellobytes(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            const { requestId } = req.params;
+            if (!requestId) {
+                res.status(400).json({ error: 'requestId is required' });
+                return;
+            }
+
+            const providerResp = await NellobytesService.cancel(requestId);
+            res.json({ provider: providerResp });
+        } catch (error) {
+            console.error('Cancel Nellobytes error:', error);
+            res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to cancel provider request' });
         }
     }
 

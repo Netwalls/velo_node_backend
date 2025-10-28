@@ -14,8 +14,9 @@ export class UserAddress {
     @Column({
         type: 'enum',
         enum: ChainType,
+        nullable: true, // temporarily allow nulls to avoid schema sync failures for existing rows
     })
-    chain!: ChainType;
+    chain?: ChainType;
 
     @Column({ type: 'enum', enum: NetworkType, default: NetworkType.MAINNET })
     network!: NetworkType;
@@ -23,8 +24,8 @@ export class UserAddress {
     @PrimaryGeneratedColumn('uuid')
     id!: string;
 
-    @Column('text')
-    address!: string;
+    @Column('text', { nullable: true })
+    address?: string;
 
     @Column('text', { nullable: true })
     encryptedPrivateKey?: string;

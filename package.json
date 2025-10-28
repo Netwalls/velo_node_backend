@@ -1,6 +1,10 @@
 {
   "name": "velo-backend",
   "version": "1.0.0",
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
   "overrides": {
     "@polkadot/util-crypto": "13.5.6"
   },

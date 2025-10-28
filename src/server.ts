@@ -45,6 +45,8 @@ app.use('/wallet', walletRouter);
 app.use('/notification', notificationRouter);
 app.use('/history', historyRouter);
 app.use('/payments', paymentRouter);
+// Also expose the payments routes under /api/payments for clients expecting the /api prefix
+app.use('/api/payments', paymentRouter);
 app.use('/transactions', transactionRoutes);
 app.use('/merchant', qrpaymentRoute);
 app.use('/split-payment', splitPaymentRoutes);
