@@ -529,6 +529,9 @@ export async function deployStrkWallet(
     const constructorCallData = CallData.compile({ publicKey });
     const account = new Account(provider, address, privateKey);
 
+    // conservative fee (hex) used in fallback attempts
+    const explicitMaxFee = '0xDE0B6B3A7640000'; // 1e18
+
     try {
         const { transaction_hash, contract_address } = await account.deployAccount({
             classHash,
@@ -547,7 +550,7 @@ export async function deployStrkWallet(
         // cannot negotiate for fee suggestion. In that case, retry deploy with an
         // explicit maxFee to avoid calling getUniversalSuggestedFee.
         const msg = String(err?.message || '').toLowerCase();
-        if (msg.includes('specification version') || msg.includes('spec version') || msg.includes('connected node specification')) {
+        if (msg.includes('specification version') || msg.includes('spec version') || msg.includes('connected node specification') || msg.includes('rpc081')) {
             try {
                 console.log('[FALLBACK] Attempting deploy with explicit maxFee to bypass fee suggestion');
                 // conservative fee (hex) - large value to be safe; units are in wei-like on Starknet
@@ -566,6 +569,44 @@ export async function deployStrkWallet(
                 return { account, transactionHash: transaction_hash, contractAddress: contract_address };
             } catch (err2: any) {
                 console.error('[FALLBACK] Deploy failed:', err2?.message || err2);
+
+                // If the failure was caused by an incompatible RPC channel spec (RPC081)
+                // try switching the provider endpoint to a v0_8 path and retrying.
+                const origUrl = (provider as any)?.nodeUrl || (provider as any)?.baseUrl || '';
+                try {
+                    if (origUrl && typeof origUrl === 'string') {
+                        let fallbackUrl = '';
+                        if (origUrl.includes('/v0_9/')) {
+                            fallbackUrl = origUrl.replace('/v0_9/', '/v0_8/');
+                        } else if (origUrl.includes('/v0_8/')) {
+                            fallbackUrl = origUrl.replace('/v0_8/', '/starknet/version/rpc/v0_9/');
+                        }
+
+                        if (fallbackUrl) {
+                            console.log('[FALLBACK] Trying provider with fallback URL:', fallbackUrl);
+                            const newProvider = new RpcProvider({ nodeUrl: fallbackUrl });
+                            const fallbackAccount = new Account(newProvider, address, privateKey);
+                            try {
+                                const fee = explicitMaxFee;
+                                const r = await fallbackAccount.deployAccount({
+                                    classHash,
+                                    constructorCalldata: constructorCallData,
+                                    addressSalt: publicKey,
+                                    maxFee: fee,
+                                } as any);
+                                await newProvider.waitForTransaction(r.transaction_hash);
+                                console.log('[FALLBACK] Account deployed with fallback provider:', r.contract_address);
+                                return { account: fallbackAccount, transactionHash: r.transaction_hash, contractAddress: r.contract_address };
+                            } catch (err3: any) {
+                                console.error('[FALLBACK] Deploy with fallback provider failed:', (err3 as any)?.message || err3);
+                                throw err3;
+                            }
+                        }
+                    }
+                } catch (finalErr) {
+                    console.error('[FALLBACK] Final deploy attempt failed:', (finalErr as any)?.message || finalErr);
+                }
+
                 throw err2;
             }
         }
