@@ -22,6 +22,7 @@ const ECPair = ECPairFactory(ecc);
 import axios from 'axios';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types/index';
+import { NotificationService } from '../services/notificationService';
 import { AppDataSource } from '../config/database';
 import { decrypt } from '../utils/keygen';
 import { checkBalance, deployStrkWallet } from '../utils/keygen';
@@ -2708,36 +2709,81 @@ else if (chain === 'stellar') {
                     const balance = await connection.getBalance(publicKey);
                     currentBalance = balance / 1e9;
                 } else if (addr.chain === 'starknet') {
-                    // Skip Starknet for now due to RPC issues
-                    console.log(
-                        'Skipping Starknet deposit check due to RPC issues'
-                    );
-                    continue;
+                    try {
+                        const STRK_MAINNET = `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`;
+                        const STRK_TESTNET = `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
+                        const provider = new RpcProvider({
+                            nodeUrl: addr.network === 'testnet' ? STRK_TESTNET : STRK_MAINNET,
+                        });
+
+                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        const res = await provider.callContract({
+                            contractAddress: strkTokenAddress,
+                            entrypoint: 'balanceOf',
+                            calldata: [addr.address as string],
+                        }, 'latest');
+
+                        const hex = res && res[0] ? res[0] : '0x0';
+                        const val = BigInt(hex);
+                        currentBalance = Number(val) / 1e18;
+                    } catch (e) {
+                        console.warn('Starknet deposit check failed for', addr.address, (e as any)?.message || String(e));
+                        continue;
+                    }
+                } else if (addr.chain === 'usdt_erc20') {
+                    // Check USDT ERC20 balance on Ethereum
+                    try {
+                        const url = addr.network === 'testnet'
+                            ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                            : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
+                        const provider = new ethers.JsonRpcProvider(url);
+                        const usdtAddr = addr.network === 'testnet'
+                            ? '0x516de3a7a567d81737e3a46ec4ff9cfd1fcb0136'
+                            : '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+                        const abi = ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'];
+                        const contract = new ethers.Contract(usdtAddr, abi, provider as any);
+                        const bal = await contract.balanceOf(addr.address as string);
+                        const decimals = await contract.decimals();
+                        currentBalance = Number(ethers.formatUnits(bal, decimals));
+                    } catch (e) {
+                        console.warn('USDT balance check failed for', addr.address, (e as any)?.message || String(e));
+                        continue;
+                    }
+                } else if (addr.chain === 'stellar') {
+                    try {
+                        const horizon = addr.network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
+                        const resp = await axios.get(`${horizon}/accounts/${addr.address}`);
+                        const data = resp.data as any;
+                        const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
+                        currentBalance = native ? Number(native.balance) : 0;
+                    } catch (e) {
+                        console.warn('Stellar balance check failed for', addr.address, (e as any)?.message || String(e));
+                        continue;
+                    }
                 }
             } catch (e) {
                 continue; // skip on error
             }
-
-            // Compare with last known balance
-            if (currentBalance > Number(addr.lastKnownBalance)) {
-                const amount = currentBalance - Number(addr.lastKnownBalance);
-
-                // Create notification
+            // Treat missing lastKnownBalance as 0 and notify when currentBalance > lastKnown (including first run)
+            const lastKnown = Number(addr.lastKnownBalance ?? 0);
+            if (currentBalance > lastKnown) {
+                const amount = currentBalance - lastKnown;
                 const chainLabel = String(addr.chain ?? 'unknown').toUpperCase();
-                await notificationRepo.save(
-                    notificationRepo.create({
-                        userId: addr.userId,
-                        type: NotificationType.DEPOSIT,
-                        title: 'Deposit Received',
-                        message: `Deposit of ${amount} ${chainLabel} received at ${addr.address}`,
-                        details: {
+                try {
+                    await NotificationService.notifyDeposit(
+                        addr.userId as string,
+                        amount.toString(),
+                        chainLabel,
+                        {
                             address: addr.address,
                             amount,
                             chain: addr.chain,
                             network: addr.network,
-                        },
-                    })
-                );
+                        }
+                    );
+                } catch (e) {
+                    console.error('Failed to create deposit notification (NotificationService) for', addr.address, (e as any)?.message || String(e));
+                }
             }
 
             // Update last known balance

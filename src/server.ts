@@ -60,10 +60,24 @@ app.use('/swap', swapRoute);
 connectDB().then(() => {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
-// WalletController.deployFundedStarknetAccounts().catch((err) =>
-//             
-        // setInterval(() => {
-        //     MerchantController.detectDeposits();
-        // }, 60_000); // every 60 seconds
+        // Start automatic deposit monitor (calls WalletController.checkForDeposits periodically)
+        try {
+            const intervalMs = Number(process.env.DEPOSIT_MONITOR_INTERVAL_MS) || 60000; // default 60s
+            // Run once immediately, then schedule
+            WalletController.checkForDeposits()
+                .then(() => console.log('Initial deposit check completed'))
+                .catch((e) => console.error('Initial deposit check failed', (e as any)?.message || e));
+
+            setInterval(async () => {
+                try {
+                    await WalletController.checkForDeposits();
+                    console.log('Periodic deposit check completed');
+                } catch (err) {
+                    console.error('Periodic deposit check error', (err as any)?.message || err);
+                }
+            }, intervalMs);
+        } catch (e) {
+            console.error('Failed to start deposit monitor', (e as any)?.message || e);
+        }
     });
 });
