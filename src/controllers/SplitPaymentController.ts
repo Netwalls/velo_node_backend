@@ -684,8 +684,8 @@ static async executeSplitPayment(req: AuthRequest, res: Response): Promise<void>
                                     try {
                                         const isUSDT = chain !== 'ethereum';
                                         const providerUrl = splitPayment.network === 'testnet'
-                                            ? 'https://eth-sepolia.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
-                                            : 'https://eth-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI';
+                                            ?  `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                            : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                                         const { JsonRpcProvider, Wallet: EthersWallet, Contract } = require('ethers');
                                         const provider = new (require('ethers').JsonRpcProvider)(providerUrl);
                                         const wallet = new (require('ethers').Wallet)(privateKey, provider);
@@ -1783,8 +1783,8 @@ private static async processPolkadotBatch(
         const results = [];
         const provider = new ethers.JsonRpcProvider(
             splitPayment.network === 'testnet'
-                ? 'https://eth-sepolia.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
-                : 'https://eth-mainnet.g.alchemy.com/v2/CP1fRkzqgL_nwb9DNNiKI'
+                ?  `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
         );
         const wallet = new ethers.Wallet(privateKey, provider);
 
