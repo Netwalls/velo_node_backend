@@ -6,23 +6,24 @@ import { ConversionService } from '../services/conversionService';
 import { USDTService } from '../services/usdtService';
 import crypto from 'crypto';
 import { AppDataSource } from '../config/database';
+import { User } from '../entities/User';
 import ProviderOrder, { ProviderOrderStatus } from '../entities/ProviderOrder';
 import TreasuryConfig from '../config/treasury';
 import axios from 'axios';
 
 export class CryptoAirtimeController {
 	/**
-	 * Unified crypto airtime purchase flow
-	 * POST /api/payments/airtime/crypto-buy
+	 * INSTANT PURCHASE - One-click airtime/data purchase using user's wallet balance
+	 * POST /api/payments/instant-buy
 	 * body: { 
+	 *   type: 'airtime' | 'data' | 'cable',
 	 *   mobileNetwork: '01' | '02' | '03' | '04',
-	 *   amount: number (NGN),
+	 *   amount: number (NGN) OR dataPlan: string,
 	 *   mobileNumber: string,
 	 *   chain: 'btc' | 'eth' | 'sol' | 'strk' | 'dot' | 'xlm' | 'usdttrc20' | 'usdterc20',
-	 *   token?: string (optional, defaults to native chain token or USDT)
 	 * }
 	 */
-	static async cryptoBuyAirtime(req: AuthRequest, res: Response): Promise<void> {
+	static async instantBuy(req: AuthRequest, res: Response): Promise<void> {
 		try {
 			const userId = req.user?.id;
 			if (!userId) {
@@ -30,13 +31,28 @@ export class CryptoAirtimeController {
 				return;
 			}
 
-			const { mobileNetwork, amount, mobileNumber, chain, token } = req.body;
+			const { type, mobileNetwork, amount, dataPlan, mobileNumber, chain, decoderID, bouquet } = req.body;
 
 			// Validation
-			if (!mobileNetwork || !amount || !mobileNumber || !chain) {
+			if (!type || !mobileNetwork || !mobileNumber || !chain) {
 				res.status(400).json({ 
-					error: 'mobileNetwork, amount (NGN), mobileNumber and chain are required' 
+					error: 'type, mobileNetwork, mobileNumber and chain are required' 
 				});
+				return;
+			}
+
+			if (type === 'airtime' && !amount) {
+				res.status(400).json({ error: 'amount is required for airtime' });
+				return;
+			}
+
+			if (type === 'data' && !dataPlan) {
+				res.status(400).json({ error: 'dataPlan is required for data' });
+				return;
+			}
+
+			if (type === 'cable' && (!decoderID || !bouquet)) {
+				res.status(400).json({ error: 'decoderID and bouquet are required for cable' });
 				return;
 			}
 
@@ -49,17 +65,26 @@ export class CryptoAirtimeController {
 				return;
 			}
 
-			// Validate amount
-			const amountNGN = Number(amount);
-			if (isNaN(amountNGN) || amountNGN < 50 || amountNGN > 200000) {
-				res.status(400).json({ 
-					error: 'Amount must be between 50 and 200,000 NGN' 
-				});
-				return;
+			// Get NGN amount for the service
+			let amountNGN = 0;
+			if (type === 'airtime') {
+				amountNGN = Number(amount);
+				if (isNaN(amountNGN) || amountNGN < 50 || amountNGN > 200000) {
+					res.status(400).json({ 
+						error: 'Amount must be between 50 and 200,000 NGN' 
+					});
+					return;
+				}
+			} else if (type === 'data') {
+				// Get data plan price (you'll need to fetch this from Nellobytes or have a price list)
+				amountNGN = await CryptoAirtimeController.getDataPlanPrice(mobileNetwork, dataPlan);
+			} else if (type === 'cable') {
+				// Get cable plan price
+				amountNGN = await CryptoAirtimeController.getCablePlanPrice(mobileNetwork, bouquet);
 			}
 
 			// Map chain to token
-			const tokenInfo = CryptoAirtimeController.getTokenForChain(chain, token);
+			const tokenInfo = CryptoAirtimeController.getTokenForChain(chain);
 			if (!tokenInfo) {
 				res.status(400).json({ 
 					error: `Unsupported chain: ${chain}` 
@@ -83,15 +108,21 @@ export class CryptoAirtimeController {
 				return;
 			}
 
-			// Add 2% slippage buffer
-			const slippage = 0.02;
-			const requiredTokenAmount = (usdAmount / tokenPrice) * (1 + slippage);
+			const requiredTokenAmount = usdAmount / tokenPrice;
 
-			// Step 3: Get treasury address for payment
-			const treasuryAddress = CryptoAirtimeController.getTreasuryAddress(
-				tokenInfo.chain, 
-				tokenInfo.network
-			);
+			// Step 3: CHECK USER'S WALLET BALANCE
+			const userBalance = await CryptoAirtimeController.getUserBalance(userId, tokenInfo.token, chain);
+			
+			if (userBalance < requiredTokenAmount) {
+				res.status(400).json({ 
+					error: 'Insufficient balance',
+					required: requiredTokenAmount,
+					available: userBalance,
+					token: tokenInfo.token,
+					shortfall: requiredTokenAmount - userBalance
+				});
+				return;
+			}
 
 			// Step 4: Create order in database
 			const orderRepo = AppDataSource.getRepository(ProviderOrder);
@@ -106,173 +137,324 @@ export class CryptoAirtimeController {
 				amountNGN,
 				token: tokenInfo.token,
 				requiredTokenAmount,
-				status: ProviderOrderStatus.CREATED,
+				status: ProviderOrderStatus.PROCESSING,
 				createdAt: new Date(),
+				...(type === 'data' && { dataPlan }),
+				...(type === 'cable' && { decoderID, bouquet }),
 			});
 
 			await orderRepo.save(order);
 
-			// Return payment instructions
-			res.json({
-				message: 'Order created. Please send crypto to complete purchase.',
-				orderId: order.id,
-				requestId,
-				payment: {
-					chain: tokenInfo.chain,
-					token: tokenInfo.token,
-					amount: requiredTokenAmount,
-					address: treasuryAddress,
-					network: tokenInfo.network,
-				},
-				order: {
-					mobileNetwork: CryptoAirtimeController.getNetworkName(mobileNetwork),
-					mobileNumber,
-					amountNGN,
-				},
-				instructions: [
-					`1. Send ${requiredTokenAmount.toFixed(6)} ${tokenInfo.token} to ${treasuryAddress}`,
-					`2. Use network: ${tokenInfo.network}`,
-					`3. After sending, call POST /api/payments/orders/${order.id}/confirm with your transaction hash`,
-				],
-			});
-
-		} catch (error) {
-			console.error('Crypto buy airtime error:', error);
-			res.status(500).json({ 
-				error: error instanceof Error ? error.message : 'Failed to create order' 
-			});
-		}
-	}
-
-	/**
-	 * Confirm payment and execute purchase
-	 * POST /api/payments/orders/:orderId/confirm
-	 * body: { txHash: string, tokenAmount: number }
-	 */
-	static async confirmPayment(req: AuthRequest, res: Response): Promise<void> {
-		try {
-			const userId = req.user?.id;
-			if (!userId) {
-				res.status(401).json({ error: 'Unauthorized' });
-				return;
-			}
-
-			const { orderId } = req.params;
-			const { txHash, tokenAmount } = req.body;
-
-			if (!txHash || !tokenAmount) {
-				res.status(400).json({ 
-					error: 'txHash and tokenAmount are required' 
-				});
-				return;
-			}
-
-			// Fetch order
-			const orderRepo = AppDataSource.getRepository(ProviderOrder);
-			const order = await orderRepo.findOne({ where: { id: orderId } });
-
-			if (!order) {
-				res.status(404).json({ error: 'Order not found' });
-				return;
-			}
-
-			if (order.userId !== userId) {
-				res.status(403).json({ error: 'Unauthorized to confirm this order' });
-				return;
-			}
-
-			if (order.status !== ProviderOrderStatus.CREATED) {
-				res.status(400).json({ 
-					error: `Order cannot be confirmed in ${order.status} status` 
-				});
-				return;
-			}
-
-			// Verify token amount (with 1% tolerance for rounding)
-			const provided = Number(tokenAmount);
-			const required = order.requiredTokenAmount;
-            
-			if (!required) {
-				res.status(400).json({ 
-					error: 'Order missing required token amount' 
-				});
-				return;
-			}
-            
-			if (provided < required * 0.99) {
-				res.status(400).json({ 
-					error: `Insufficient amount. Required: ${required.toFixed(6)} ${order.token}, Provided: ${provided.toFixed(6)} ${order.token}` 
-				});
-				return;
-			}
-
-			// Update order status to PAID
-			order.depositTxHash = txHash;
-			order.status = ProviderOrderStatus.PAID;
-			await orderRepo.save(order);
-
-			// Execute Nellobytes purchase
-			order.status = ProviderOrderStatus.PROCESSING;
-			await orderRepo.save(order);
-
-			// Validate required fields
-			if (!order.mobileNumber || !order.mobileNetwork || !order.amountNGN) {
-				order.status = ProviderOrderStatus.FAILED;
-				order.providerResponse = { error: 'Missing required order fields' };
-				await orderRepo.save(order);
-				res.status(400).json({ error: 'Order missing required fields' });
-				return;
-			}
-
+			// Step 5: DEDUCT FROM USER'S WALLET
 			try {
-				const providerResp = await NellobytesService.buyAirtime({
-					MobileNetwork: order.mobileNetwork,
-					Amount: order.amountNGN,
-					MobileNumber: order.mobileNumber,
-					RequestID: order.requestId,
+				await CryptoAirtimeController.deductFromWallet(
+					userId, 
+					tokenInfo.token, 
+					chain,
+					requiredTokenAmount,
+					order.id
+				);
+			} catch (deductError) {
+				order.status = ProviderOrderStatus.FAILED;
+				order.providerResponse = { error: 'Failed to deduct from wallet' };
+				await orderRepo.save(order);
+				
+				res.status(500).json({ 
+					error: 'Failed to deduct from wallet',
+					details: deductError instanceof Error ? deductError.message : 'Unknown error'
 				});
+				return;
+			}
+
+			// Step 6: EXECUTE PROVIDER PURCHASE (Nellobytes)
+			try {
+				let providerResp;
+
+				if (type === 'airtime') {
+					providerResp = await NellobytesService.buyAirtime({
+						MobileNetwork: mobileNetwork,
+						Amount: amountNGN,
+						MobileNumber: mobileNumber,
+						RequestID: requestId,
+					});
+				} else if (type === 'data') {
+					providerResp = await NellobytesService.buyDatabundle({
+						MobileNetwork: mobileNetwork,
+						DataPlan: dataPlan,
+						MobileNumber: mobileNumber,
+						RequestID: requestId,
+					});
+				} else if (type === 'cable') {
+					providerResp = await NellobytesService.buyCable({
+						DecoderID: decoderID,
+						Network: mobileNetwork,
+						Bouquet: bouquet,
+						RequestID: requestId,
+					});
+				}
 
 				order.providerResponse = providerResp;
 				order.status = ProviderOrderStatus.COMPLETED;
 				await orderRepo.save(order);
 
+				// Return SUCCESS response immediately
 				res.json({
-					message: 'Payment confirmed and airtime purchase completed',
+					success: true,
+					message: `${type.charAt(0).toUpperCase() + type.slice(1)} purchased successfully! 🎉`,
 					order: {
 						id: order.id,
+						type,
 						status: order.status,
 						mobileNumber: order.mobileNumber,
 						amountNGN: order.amountNGN,
 						network: CryptoAirtimeController.getNetworkName(order.mobileNetwork),
+						...(type === 'data' && { dataPlan }),
+					},
+					payment: {
+						token: tokenInfo.token,
+						amount: requiredTokenAmount,
+						usdValue: usdAmount,
 					},
 					provider: providerResp,
-					transaction: {
-						txHash,
-						token: order.token,
-						amount: provided,
-					},
+					timestamp: new Date(),
 				});
 
 			} catch (providerError) {
+				// Provider failed - REFUND the user
 				order.status = ProviderOrderStatus.FAILED;
 				order.providerResponse = { 
 					error: providerError instanceof Error ? providerError.message : 'Provider error' 
 				};
 				await orderRepo.save(order);
 
+				// Refund to wallet
+				try {
+					await CryptoAirtimeController.refundToWallet(
+						userId,
+						tokenInfo.token,
+						chain,
+						requiredTokenAmount,
+						order.id
+					);
+				} catch (refundError) {
+					console.error('CRITICAL: Failed to refund user', refundError);
+					// Log this for manual resolution
+				}
+
 				res.status(500).json({ 
-					error: 'Payment confirmed but airtime purchase failed',
+					error: 'Purchase failed, amount refunded to your wallet',
 					orderId: order.id,
 					details: providerError instanceof Error ? providerError.message : 'Unknown error',
 				});
 			}
 
 		} catch (error) {
-			console.error('Confirm payment error:', error);
+			console.error('Instant buy error:', error);
 			res.status(500).json({ 
-				error: error instanceof Error ? error.message : 'Failed to confirm payment' 
+				error: error instanceof Error ? error.message : 'Failed to process purchase' 
 			});
 		}
+	}
+
+	/**
+	 * Get user's balance for a specific token/chain
+	 */
+	private static async getUserBalance(
+		userId: string, 
+		token: string, 
+		chain: string
+	): Promise<number> {
+		try {
+			const userRepo = AppDataSource.getRepository(User);
+			const user = await userRepo.findOne({ where: { id: userId } });
+			if (!user) return 0;
+
+			const t = token.toUpperCase();
+			switch (t) {
+				case 'USDT':
+					return Number(user.usdtBalance) || 0;
+				case 'ETH':
+					return Number(user.ethBalance) || 0;
+				case 'STRK':
+					return Number(user.strkBalance) || 0;
+				case 'SOL':
+					return Number(user.solBalance) || 0;
+				case 'BTC':
+					return Number(user.btcBalance) || 0;
+				case 'XLM':
+					return Number(user.xlmBalance) || 0;
+				case 'DOT':
+					return Number(user.dotBalance) || 0;
+				default:
+					console.warn(`Balance check not implemented for token ${token} on chain ${chain}`);
+					return 0;
+			}
+		} catch (error) {
+			console.error('Get user balance error:', error);
+			return 0;
+		}
+	}
+
+	/**
+	 * Deduct amount from user's wallet
+	 */
+	private static async deductFromWallet(
+		userId: string,
+		token: string,
+		chain: string,
+		amount: number,
+		orderId: string
+	): Promise<void> {
+		// Minimal implementation: directly decrement user's USDT balance for USDT payments.
+		// In production this should be atomic and use ledger entries.
+		try {
+			const userRepo = AppDataSource.getRepository(User);
+			const user = await userRepo.findOne({ where: { id: userId } });
+			if (!user) throw new Error('User not found');
+
+			const t = token.toUpperCase();
+			switch (t) {
+				case 'USDT':
+					{
+						const current = Number(user.usdtBalance) || 0;
+						if (current < amount) throw new Error('Insufficient USDT balance');
+						user.usdtBalance = current - amount;
+					}
+					break;
+				case 'ETH':
+					{
+						const current = Number(user.ethBalance) || 0;
+						if (current < amount) throw new Error('Insufficient ETH balance');
+						user.ethBalance = current - amount;
+					}
+					break;
+				case 'STRK':
+					{
+						const current = Number(user.strkBalance) || 0;
+						if (current < amount) throw new Error('Insufficient STRK balance');
+						user.strkBalance = current - amount;
+					}
+					break;
+				case 'SOL':
+					{
+						const current = Number(user.solBalance) || 0;
+						if (current < amount) throw new Error('Insufficient SOL balance');
+						user.solBalance = current - amount;
+					}
+					break;
+				case 'BTC':
+					{
+						const current = Number(user.btcBalance) || 0;
+						if (current < amount) throw new Error('Insufficient BTC balance');
+						user.btcBalance = current - amount;
+					}
+					break;
+				case 'XLM':
+					{
+						const current = Number(user.xlmBalance) || 0;
+						if (current < amount) throw new Error('Insufficient XLM balance');
+						user.xlmBalance = current - amount;
+					}
+					break;
+				case 'DOT':
+					{
+						const current = Number(user.dotBalance) || 0;
+						if (current < amount) throw new Error('Insufficient DOT balance');
+						user.dotBalance = current - amount;
+					}
+					break;
+				default:
+					throw new Error(`Deduct from wallet not implemented for token ${token}`);
+			}
+
+			await userRepo.save(user);
+			console.log(`Deducted ${amount} ${token} from user ${userId} for order ${orderId}`);
+		} catch (error) {
+			console.error('Deduct from wallet error:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Refund amount back to user's wallet
+	 */
+	private static async refundToWallet(
+		userId: string,
+		token: string,
+		chain: string,
+		amount: number,
+		orderId: string
+	): Promise<void> {
+		try {
+			const userRepo = AppDataSource.getRepository(User);
+			const user = await userRepo.findOne({ where: { id: userId } });
+			if (!user) throw new Error('User not found');
+
+			const t = token.toUpperCase();
+			switch (t) {
+				case 'USDT':
+					user.usdtBalance = (Number(user.usdtBalance) || 0) + amount;
+					break;
+				case 'ETH':
+					user.ethBalance = (Number(user.ethBalance) || 0) + amount;
+					break;
+				case 'STRK':
+					user.strkBalance = (Number(user.strkBalance) || 0) + amount;
+					break;
+				case 'SOL':
+					user.solBalance = (Number(user.solBalance) || 0) + amount;
+					break;
+				case 'BTC':
+					user.btcBalance = (Number(user.btcBalance) || 0) + amount;
+					break;
+				case 'XLM':
+					user.xlmBalance = (Number(user.xlmBalance) || 0) + amount;
+					break;
+				case 'DOT':
+					user.dotBalance = (Number(user.dotBalance) || 0) + amount;
+					break;
+				default:
+					throw new Error(`Refund to wallet not implemented for token ${token}`);
+			}
+
+			await userRepo.save(user);
+			console.log(`Refunded ${amount} ${token} to user ${userId} for order ${orderId}`);
+		} catch (error) {
+			console.error('Refund to wallet error:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get data plan price from Nellobytes or local cache
+	 */
+	private static async getDataPlanPrice(network: string, dataPlan: string): Promise<number> {
+		// TODO: Implement price fetching from Nellobytes API or maintain a price list
+		// For now, return a placeholder
+		const dataPlanPrices: Record<string, number> = {
+			'MTN_1GB': 300,
+			'MTN_2GB': 500,
+			'GLO_1GB': 250,
+            
+			// Add more plans
+		};
+		
+		const key = `${CryptoAirtimeController.getNetworkName(network)}_${dataPlan}`;
+		return dataPlanPrices[key] || 500; // Default fallback
+	}
+
+	/**
+	 * Get cable plan price
+	 */
+	private static async getCablePlanPrice(network: string, bouquet: string): Promise<number> {
+		// TODO: Implement price fetching
+		const cablePrices: Record<string, number> = {
+			'DSTV_COMPACT': 10500,
+			'GOTV_MAX': 4850,
+			// Add more plans
+		};
+		
+		return cablePrices[bouquet] || 5000; // Default fallback
 	}
 
 	/**
@@ -297,7 +479,6 @@ export class CryptoAirtimeController {
 				return;
 			}
 
-			// Allow viewing order if authenticated or public query
 			if (userId && order.userId !== userId) {
 				res.status(403).json({ error: 'Unauthorized to view this order' });
 				return;
@@ -313,7 +494,6 @@ export class CryptoAirtimeController {
 					amountNGN: order.amountNGN,
 					token: order.token,
 					requiredTokenAmount: order.requiredTokenAmount,
-					depositTxHash: order.depositTxHash,
 					createdAt: order.createdAt,
 					providerResponse: order.providerResponse,
 				},
@@ -327,7 +507,7 @@ export class CryptoAirtimeController {
 
 	// Helper methods
 
-	private static getTokenForChain(chain: string, customToken?: string): {
+	private static getTokenForChain(chain: string): {
 		chain: string;
 		token: string;
 		network: string;
@@ -336,7 +516,7 @@ export class CryptoAirtimeController {
         
 		const chainMap: Record<string, { token: string; network: string; chain: string }> = {
 			btc: { token: 'BTC', network: 'Bitcoin Mainnet', chain: 'bitcoin' },
-			eth: { token: customToken?.toUpperCase() || 'ETH', network: 'Ethereum Mainnet', chain: 'ethereum' },
+			eth: { token: 'ETH', network: 'Ethereum Mainnet', chain: 'ethereum' },
 			sol: { token: 'SOL', network: 'Solana Mainnet', chain: 'solana' },
 			strk: { token: 'STRK', network: 'Starknet Mainnet', chain: 'starknet' },
 			dot: { token: 'DOT', network: 'Polkadot Mainnet', chain: 'polkadot' },
@@ -350,7 +530,6 @@ export class CryptoAirtimeController {
 
 	private static async convertNGNToUSD(amountNGN: number): Promise<number> {
 		try {
-			// Try exchangerate.host first
 			const response = await axios.get<{ result?: number }>(
 				`https://api.exchangerate.host/convert?from=NGN&to=USD&amount=${amountNGN}`,
 				{ timeout: 5000 }
@@ -364,7 +543,6 @@ export class CryptoAirtimeController {
 		}
 
 		try {
-			// Fallback to PriceFeedService
 			const calc = await PriceFeedService.calculateConversion(
 				amountNGN, 
 				'NGN', 
@@ -374,15 +552,6 @@ export class CryptoAirtimeController {
 		} catch (error) {
 			console.error('All NGN->USD conversion methods failed');
 			throw new Error('Currency conversion unavailable');
-		}
-	}
-
-	private static getTreasuryAddress(chain: string, network: string): string {
-		try {
-			return TreasuryConfig.getTreasuryWallet(chain, 'mainnet');
-		} catch (error) {
-			console.error(`Failed to get treasury address for ${chain}:`, error);
-			return 'Treasury address not configured';
 		}
 	}
 
@@ -398,8 +567,7 @@ export class CryptoAirtimeController {
 }
 
 /**
- * Backwards-compatible wrapper used by routes expecting PaymentController.
- * Delegates to existing services and controllers implemented above.
+ * Backwards-compatible wrapper
  */
 export class PaymentController {
 	static async getConversionRates(_req: Request, res: Response) {
@@ -521,6 +689,11 @@ export class PaymentController {
 		}
 	}
 
+	// INSTANT BUY - Main entry point
+	static async instantBuy(req: AuthRequest, res: Response) {
+		return CryptoAirtimeController.instantBuy(req, res);
+	}
+
 	// Nellobytes passthroughs
 	static async buyAirtime(req: AuthRequest, res: Response) {
 		try {
@@ -552,20 +725,10 @@ export class PaymentController {
 		}
 	}
 
-	// Crypto-airtime related wrappers
-	static async createCryptoAirtimeOrder(req: AuthRequest, res: Response) {
-		return CryptoAirtimeController.cryptoBuyAirtime(req, res);
-	}
-
-	static async attachTxToOrder(req: AuthRequest, res: Response) {
-		return CryptoAirtimeController.confirmPayment(req, res);
-	}
-
 	static async getOrder(req: AuthRequest, res: Response) {
 		return CryptoAirtimeController.getOrderStatus(req, res);
 	}
 
-	// Nellobytes query/cancel
 	static async queryNellobytes(req: AuthRequest, res: Response) {
 		try {
 			const { requestId } = req.params;
@@ -588,10 +751,6 @@ export class PaymentController {
 		}
 	}
 
-	/**
-	 * Simulate payment detection webhook.
-	 * Body: { userId, currency, amount, fromAddress, txHash }
-	 */
 	static async simulatePaymentDetection(req: Request, res: Response) {
 		try {
 			const { userId, currency, amount, fromAddress, txHash } = req.body;
@@ -611,5 +770,14 @@ export class PaymentController {
 			console.error('simulatePaymentDetection error:', err);
 			res.status(500).json({ error: 'Failed to simulate payment detection' });
 		}
+	}
+
+	// Legacy compatibility
+	static async createCryptoAirtimeOrder(req: AuthRequest, res: Response) {
+		return CryptoAirtimeController.instantBuy(req, res);
+	}
+
+	static async attachTxToOrder(req: AuthRequest, res: Response) {
+		return CryptoAirtimeController.getOrderStatus(req, res);
 	}
 }

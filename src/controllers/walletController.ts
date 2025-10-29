@@ -2171,7 +2171,7 @@ else if (chain === 'stellar') {
                         const result = await provider.callContract({
                             contractAddress: strkTokenAddress,
                             entrypoint: 'balanceOf',
-                            calldata: [addr.address],
+                            calldata: [padStarknetAddress(addr.address as string)],
                         });
 
                         const balanceHex =
@@ -2740,11 +2740,64 @@ else if (chain === 'stellar') {
                         const usdtAddr = addr.network === 'testnet'
                             ? '0x516de3a7a567d81737e3a46ec4ff9cfd1fcb0136'
                             : '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+                        // Defensive check: ensure the USDT contract actually exists at the address
+                        let code: string | null = null;
+                        try {
+                            code = await provider.getCode(usdtAddr);
+                        } catch (codeErr) {
+                            console.warn('Failed to fetch contract code for USDT address:', usdtAddr, (codeErr as any)?.message || String(codeErr));
+                        }
+
+                        if (!code || code === '0x' || code === '0x0') {
+                            console.warn('USDT contract not found at', usdtAddr, 'on network', addr.network);
+                            continue;
+                        }
+
                         const abi = ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'];
                         const contract = new ethers.Contract(usdtAddr, abi, provider as any);
-                        const bal = await contract.balanceOf(addr.address as string);
-                        const decimals = await contract.decimals();
-                        currentBalance = Number(ethers.formatUnits(bal, decimals));
+
+                        // Use checksum address for the user address when calling the contract
+                        let userAddrChecksum = addr.address as string;
+                        try {
+                            userAddrChecksum = ethers.getAddress(userAddrChecksum);
+                        } catch (checksumErr) {
+                            console.warn('Invalid user address for ERC20 balanceOf, skipping:', addr.address, (checksumErr as any)?.message || String(checksumErr));
+                            continue;
+                        }
+
+                        // Call balanceOf and decimals with defensive error handling
+                        let bal: any;
+                        try {
+                            bal = await contract.balanceOf(userAddrChecksum);
+                        } catch (callErr: any) {
+                            // ethers throws BAD_DATA when RPC returns empty result ("0x"). Log and skip this address.
+                            console.warn('USDT balanceOf call failed for', userAddrChecksum, 'contract:', usdtAddr, 'error:', (callErr as any)?.message || String(callErr));
+                            continue;
+                        }
+
+                        let decimals = 6; // default to 6 for USDT
+                        try {
+                            const d = await contract.decimals();
+                            if (typeof d === 'number' || typeof d === 'bigint' || (d && d.toString)) {
+                                decimals = Number(d.toString());
+                            }
+                        } catch (decErr) {
+                            // If decimals lookup fails, default to 6 (USDT standard)
+                            console.warn('Could not read decimals() from USDT contract, defaulting to 6', (decErr as any)?.message || String(decErr));
+                            decimals = 6;
+                        }
+
+                        if (bal === undefined || bal === null) {
+                            console.warn('USDT balance call returned empty for', userAddrChecksum);
+                            continue;
+                        }
+
+                        try {
+                            currentBalance = Number(ethers.formatUnits(bal, decimals));
+                        } catch (fmtErr) {
+                            console.warn('Failed to format USDT balance for', userAddrChecksum, (fmtErr as any)?.message || String(fmtErr));
+                            continue;
+                        }
                     } catch (e) {
                         console.warn('USDT balance check failed for', addr.address, (e as any)?.message || String(e));
                         continue;

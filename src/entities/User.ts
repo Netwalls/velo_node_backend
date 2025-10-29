@@ -60,6 +60,25 @@ export class User {
     @Column('decimal', { precision: 18, scale: 8, default: 0 })
     usdtBalance!: number;
 
+    // Balances for other supported tokens (application-level ledger)
+    @Column('decimal', { precision: 30, scale: 18, default: 0 })
+    ethBalance!: number;
+
+    @Column('decimal', { precision: 30, scale: 18, default: 0 })
+    strkBalance!: number;
+
+    @Column('decimal', { precision: 30, scale: 18, default: 0 })
+    solBalance!: number;
+
+    @Column('decimal', { precision: 30, scale: 8, default: 0 })
+    btcBalance!: number;
+
+    @Column('decimal', { precision: 30, scale: 7, default: 0 })
+    xlmBalance!: number;
+
+    @Column('decimal', { precision: 30, scale: 10, default: 0 })
+    dotBalance!: number;
+
     @Column({ nullable: true })
     emailOTP?: string;
 

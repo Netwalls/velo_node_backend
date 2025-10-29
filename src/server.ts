@@ -7,7 +7,7 @@ import userRouter from './routes/userRoute';
 import walletRouter from './routes/walletRoute';
 import notificationRouter from './routes/notificationRoute';
 import historyRouter from './routes/historyRoute';
-// import paymentRouter from './routes/payment';
+import paymentRouter from './routes/payment';
 import fiatRoutes from './routes/fiatRoute';
 import transactionRoutes from './routes/transactionRoute';
 import splitPaymentRoutes from './routes/splitPaymentRoute';
@@ -44,9 +44,9 @@ app.use('/user', userRouter);
 app.use('/wallet', walletRouter);
 app.use('/notification', notificationRouter);
 app.use('/history', historyRouter);
-// app.use('/payments', paymentRouter);
-// Also expose the payments routes under /api/payments for clients expecting the /api prefix
-// app.use('/api/payments', paymentRouter);
+// Mount payments routes (both /payments and /api/payments for compatibility)
+app.use('/payments', paymentRouter);
+app.use('/api/payments', paymentRouter);
 app.use('/transactions', transactionRoutes);
 app.use('/merchant', qrpaymentRoute);
 app.use('/split-payment', splitPaymentRoutes);
