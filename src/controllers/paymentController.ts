@@ -3,12 +3,10 @@ import { AuthRequest } from '../types';
 import { PriceFeedService } from '../services/priceFeedService';
 import NellobytesService from '../services/nellobytesService';
 import { ConversionService } from '../services/conversionService';
-import { USDTService } from '../services/usdtService';
 import crypto from 'crypto';
 import { AppDataSource } from '../config/database';
-import { User } from '../entities/User';
 import ProviderOrder, { ProviderOrderStatus } from '../entities/ProviderOrder';
-import TreasuryConfig from '../config/treasury';
+import {User} from '../entities/User';
 import axios from 'axios';
 
 export class CryptoAirtimeController {
@@ -305,73 +303,23 @@ export class CryptoAirtimeController {
 		amount: number,
 		orderId: string
 	): Promise<void> {
-		// Minimal implementation: directly decrement user's USDT balance for USDT payments.
-		// In production this should be atomic and use ledger entries.
+		// This should integrate with your wallet/balance management system
+		// For now, we'll use the ConversionService to record the deduction
+		
 		try {
-			const userRepo = AppDataSource.getRepository(User);
-			const user = await userRepo.findOne({ where: { id: userId } });
-			if (!user) throw new Error('User not found');
-
-			const t = token.toUpperCase();
-			switch (t) {
-				case 'USDT':
-					{
-						const current = Number(user.usdtBalance) || 0;
-						if (current < amount) throw new Error('Insufficient USDT balance');
-						user.usdtBalance = current - amount;
-					}
-					break;
-				case 'ETH':
-					{
-						const current = Number(user.ethBalance) || 0;
-						if (current < amount) throw new Error('Insufficient ETH balance');
-						user.ethBalance = current - amount;
-					}
-					break;
-				case 'STRK':
-					{
-						const current = Number(user.strkBalance) || 0;
-						if (current < amount) throw new Error('Insufficient STRK balance');
-						user.strkBalance = current - amount;
-					}
-					break;
-				case 'SOL':
-					{
-						const current = Number(user.solBalance) || 0;
-						if (current < amount) throw new Error('Insufficient SOL balance');
-						user.solBalance = current - amount;
-					}
-					break;
-				case 'BTC':
-					{
-						const current = Number(user.btcBalance) || 0;
-						if (current < amount) throw new Error('Insufficient BTC balance');
-						user.btcBalance = current - amount;
-					}
-					break;
-				case 'XLM':
-					{
-						const current = Number(user.xlmBalance) || 0;
-						if (current < amount) throw new Error('Insufficient XLM balance');
-						user.xlmBalance = current - amount;
-					}
-					break;
-				case 'DOT':
-					{
-						const current = Number(user.dotBalance) || 0;
-						if (current < amount) throw new Error('Insufficient DOT balance');
-						user.dotBalance = current - amount;
-					}
-					break;
-				default:
-					throw new Error(`Deduct from wallet not implemented for token ${token}`);
-			}
-
-			await userRepo.save(user);
+			// Create a conversion record showing the spend
+			await ConversionService.processManualConversion(
+				userId,
+				token,
+				'NGN', // Converting to service
+				amount,
+				`internal-deduction-${orderId}`
+			);
+			
 			console.log(`Deducted ${amount} ${token} from user ${userId} for order ${orderId}`);
 		} catch (error) {
 			console.error('Deduct from wallet error:', error);
-			throw error;
+			throw new Error('Failed to deduct from wallet');
 		}
 	}
 
@@ -386,42 +334,19 @@ export class CryptoAirtimeController {
 		orderId: string
 	): Promise<void> {
 		try {
-			const userRepo = AppDataSource.getRepository(User);
-			const user = await userRepo.findOne({ where: { id: userId } });
-			if (!user) throw new Error('User not found');
-
-			const t = token.toUpperCase();
-			switch (t) {
-				case 'USDT':
-					user.usdtBalance = (Number(user.usdtBalance) || 0) + amount;
-					break;
-				case 'ETH':
-					user.ethBalance = (Number(user.ethBalance) || 0) + amount;
-					break;
-				case 'STRK':
-					user.strkBalance = (Number(user.strkBalance) || 0) + amount;
-					break;
-				case 'SOL':
-					user.solBalance = (Number(user.solBalance) || 0) + amount;
-					break;
-				case 'BTC':
-					user.btcBalance = (Number(user.btcBalance) || 0) + amount;
-					break;
-				case 'XLM':
-					user.xlmBalance = (Number(user.xlmBalance) || 0) + amount;
-					break;
-				case 'DOT':
-					user.dotBalance = (Number(user.dotBalance) || 0) + amount;
-					break;
-				default:
-					throw new Error(`Refund to wallet not implemented for token ${token}`);
-			}
-
-			await userRepo.save(user);
+			// Reverse the deduction by adding back to balance
+			await ConversionService.processManualConversion(
+				userId,
+				'NGN',
+				token,
+				amount,
+				`refund-${orderId}`
+			);
+			
 			console.log(`Refunded ${amount} ${token} to user ${userId} for order ${orderId}`);
 		} catch (error) {
 			console.error('Refund to wallet error:', error);
-			throw error;
+			throw new Error('Failed to refund to wallet');
 		}
 	}
 
@@ -435,7 +360,6 @@ export class CryptoAirtimeController {
 			'MTN_1GB': 300,
 			'MTN_2GB': 500,
 			'GLO_1GB': 250,
-            
 			// Add more plans
 		};
 		
@@ -529,30 +453,41 @@ export class CryptoAirtimeController {
 	}
 
 	private static async convertNGNToUSD(amountNGN: number): Promise<number> {
+		// Method 1: Try exchangerate-api.com (free, no auth needed)
+		try {
+			const response = await axios.get(
+				`https://open.er-api.com/v6/latest/NGN`,
+				{ timeout: 5000 }
+			);
+
+			const data = response.data as { rates?: { USD?: number } };
+			if (data?.rates?.USD) {
+				const rate = Number(data.rates.USD);
+				return amountNGN * rate;
+			}
+		} catch (error) {
+			console.warn('open.er-api.com failed, trying next method');
+		}
+
+		// Method 2: Try exchangerate.host
 		try {
 			const response = await axios.get<{ result?: number }>(
 				`https://api.exchangerate.host/convert?from=NGN&to=USD&amount=${amountNGN}`,
 				{ timeout: 5000 }
 			);
-            
+			
 			if (response.data?.result) {
 				return Number(response.data.result);
 			}
 		} catch (error) {
-			console.warn('exchangerate.host failed, trying fallback');
+			console.warn('exchangerate.host failed, trying hardcoded rate');
 		}
 
-		try {
-			const calc = await PriceFeedService.calculateConversion(
-				amountNGN, 
-				'NGN', 
-				'USD'
-			);
-			return calc.outputAmount;
-		} catch (error) {
-			console.error('All NGN->USD conversion methods failed');
-			throw new Error('Currency conversion unavailable');
-		}
+		// Method 3: Fallback to approximate rate (1 USD = ~1,600 NGN as of 2024/2025)
+		// Update this periodically or fetch from your own DB
+		const FALLBACK_NGN_TO_USD = 1 / 1600; // 1 NGN = 0.000625 USD
+		console.warn(`Using fallback NGN->USD rate: ${FALLBACK_NGN_TO_USD}`);
+		return amountNGN * FALLBACK_NGN_TO_USD;
 	}
 
 	private static getNetworkName(code: string): string {

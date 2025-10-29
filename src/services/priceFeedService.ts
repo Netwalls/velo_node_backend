@@ -14,11 +14,10 @@ export class PriceFeedService {
         { price: number; timestamp: number }
     > = new Map();
 
-    // Simple rate-limit / concurrency control to avoid CoinGecko 429s
     private static inflight: Map<string, Promise<number>> = new Map();
     private static MAX_CONCURRENT_REQUESTS = Number(process.env.COINGECKO_MAX_CONC || 2);
     private static currentRequests = 0;
-    private static rateLimitedUntil = 0; // epoch ms until which we back off because of 429
+    private static rateLimitedUntil = 0;
 
     // CoinGecko ID mappings
     private static readonly CURRENCY_IDS = {
@@ -55,13 +54,24 @@ export class PriceFeedService {
                 if (Date.now() < this.rateLimitedUntil) {
                     const cachedWhenLimited = this.priceCache.get(cacheKey);
                     if (cachedWhenLimited) {
-                        console.warn(`[PriceFeed] Global rate-limited until ${new Date(this.rateLimitedUntil).toISOString()}, returning cached ${cacheKey}`);
+                        console.warn(`[PriceFeed] Global rate-limited, returning cached ${cacheKey}`);
                         return cachedWhenLimited.price;
                     }
                     throw new Error('Rate limited by CoinGecko');
                 }
 
-                // Concurrency limiter: wait until a slot is available
+                // Special-case: USD
+                if (cacheKey === 'USD') {
+                    this.priceCache.set(cacheKey, { price: 1, timestamp: Date.now() });
+                    return 1;
+                }
+
+                // Special-case: NGN (Nigerian Naira)
+                if (cacheKey === 'NGN') {
+                    return await this.getNGNPrice();
+                }
+
+                // Concurrency limiter
                 while (this.currentRequests >= this.MAX_CONCURRENT_REQUESTS) {
                     await new Promise((r) => setTimeout(r, 50));
                 }
@@ -88,28 +98,23 @@ export class PriceFeedService {
                         throw new Error(`Price not found for ${currency}`);
                     }
 
-                    // Cache the price
                     this.priceCache.set(cacheKey, { price, timestamp: Date.now() });
-
                     console.log(`[PriceFeed] ${currency}: $${price}`);
                     return price;
                 } finally {
                     this.currentRequests = Math.max(0, this.currentRequests - 1);
                 }
             } catch (error: any) {
-                // If CoinGecko returns 429, honor Retry-After header and back off
                 const status = error?.response?.status;
                 if (status === 429) {
                     const ra = parseInt(error?.response?.headers?.['retry-after'] || '0', 10);
                     const waitMs = isNaN(ra) || ra <= 0 ? 5000 : ra * 1000;
                     this.rateLimitedUntil = Date.now() + waitMs;
-                    console.warn(`[PriceFeed] Received 429 from CoinGecko, backing off for ${waitMs}ms`);
+                    console.warn(`[PriceFeed] Received 429, backing off for ${waitMs}ms`);
 
                     const cached = this.priceCache.get(cacheKey);
                     if (cached) {
-                        console.log(
-                            `[PriceFeed] Using stale cache for ${currency}: $${cached.price}`
-                        );
+                        console.log(`[PriceFeed] Using stale cache for ${currency}: $${cached.price}`);
                         return cached.price;
                     }
                     throw new Error(`Unable to fetch price for ${currency} (rate limited)`);
@@ -117,12 +122,9 @@ export class PriceFeedService {
 
                 console.error(`Failed to fetch price for ${currency}:`, error);
 
-                // Return cached price if available, even if expired
                 const cached = this.priceCache.get(cacheKey);
                 if (cached) {
-                    console.log(
-                        `[PriceFeed] Using stale cache for ${currency}: $${cached.price}`
-                    );
+                    console.log(`[PriceFeed] Using stale cache for ${currency}: $${cached.price}`);
                     return cached.price;
                 }
 
@@ -136,6 +138,84 @@ export class PriceFeedService {
         } finally {
             this.inflight.delete(cacheKey);
         }
+    }
+
+    /**
+     * Get NGN to USD rate with multiple fallbacks
+     */
+    private static async getNGNPrice(): Promise<number> {
+        const cacheKey = 'NGN';
+        
+        // Try Method 1: open.er-api.com (free, reliable)
+        try {
+            const response = await axios.get<{ rates?: { USD?: number } }>(
+                'https://open.er-api.com/v6/latest/NGN',
+                { timeout: 5000 }
+            );
+            
+            if (response.data?.rates?.USD) {
+                const usdPerNgn = Number(response.data.rates.USD);
+                if (usdPerNgn > 0 && !isNaN(usdPerNgn)) {
+                    this.priceCache.set(cacheKey, { price: usdPerNgn, timestamp: Date.now() });
+                    console.log(`[PriceFeed] NGN->USD (open.er-api): $${usdPerNgn}`);
+                    return usdPerNgn;
+                }
+            }
+        } catch (error) {
+            console.warn('[PriceFeed] open.er-api.com failed for NGN');
+        }
+
+        // Try Method 2: exchangerate.host
+        try {
+            const response = await axios.get<{ result?: number }>(
+                'https://api.exchangerate.host/convert?from=NGN&to=USD&amount=1',
+                { timeout: 5000 }
+            );
+            
+            if (response.data?.result) {
+                const usdPerNgn = Number(response.data.result);
+                if (usdPerNgn > 0 && !isNaN(usdPerNgn)) {
+                    this.priceCache.set(cacheKey, { price: usdPerNgn, timestamp: Date.now() });
+                    console.log(`[PriceFeed] NGN->USD (exchangerate.host): $${usdPerNgn}`);
+                    return usdPerNgn;
+                }
+            }
+        } catch (error) {
+            console.warn('[PriceFeed] exchangerate.host failed for NGN');
+        }
+
+        // Try Method 3: api.exchangerate-api.com (backup)
+        try {
+            const response = await axios.get<{ conversion_rates?: { USD?: number } }>(
+                'https://v6.exchangerate-api.com/v6/latest/NGN',
+                { timeout: 5000 }
+            );
+            
+            if (response.data?.conversion_rates?.USD) {
+                const usdPerNgn = Number(response.data.conversion_rates.USD);
+                if (usdPerNgn > 0 && !isNaN(usdPerNgn)) {
+                    this.priceCache.set(cacheKey, { price: usdPerNgn, timestamp: Date.now() });
+                    console.log(`[PriceFeed] NGN->USD (exchangerate-api): $${usdPerNgn}`);
+                    return usdPerNgn;
+                }
+            }
+        } catch (error) {
+            console.warn('[PriceFeed] exchangerate-api.com failed for NGN');
+        }
+
+        // Fallback: Use cached value if available (even if old)
+        const cached = this.priceCache.get(cacheKey);
+        if (cached) {
+            console.warn(`[PriceFeed] Using stale cached NGN rate: $${cached.price}`);
+            return cached.price;
+        }
+
+        // Last resort: Hardcoded approximate rate
+        // Update this based on current market rates (as of Oct 2024: ~1,600 NGN = 1 USD)
+        const FALLBACK_RATE = 1 / 1600; // 1 NGN = ~0.000625 USD
+        this.priceCache.set(cacheKey, { price: FALLBACK_RATE, timestamp: Date.now() });
+        console.warn(`[PriceFeed] Using hardcoded fallback NGN rate: $${FALLBACK_RATE}`);
+        return FALLBACK_RATE;
     }
 
     /**
@@ -169,7 +249,6 @@ export class PriceFeedService {
         const rate = await this.getConversionRate(fromCurrency, toCurrency);
         let convertedAmount = amount * rate;
 
-        // Apply slippage (0.5% default)
         const slippage = includeSlippage ? 0.005 : 0;
         if (includeSlippage) {
             convertedAmount = convertedAmount * (1 - slippage);
@@ -186,10 +265,9 @@ export class PriceFeedService {
      * Get all current prices
      */
     static async getAllPrices(): Promise<Record<string, number>> {
-        const entries = Object.entries(this.CURRENCY_IDS); // [ ['ETH','ethereum'], ... ]
+        const entries = Object.entries(this.CURRENCY_IDS);
         const prices: Record<string, number> = {};
 
-        // Build a unique comma-separated coinId list to request in one call (reduces rate-limit and network errors)
         const uniqueIds = Array.from(new Set(entries.map(([, id]) => id))).join(',');
 
         try {
@@ -210,9 +288,8 @@ export class PriceFeedService {
 
             return prices;
         } catch (err) {
-            console.warn('[PriceFeed] Bulk fetch failed, falling back to per-currency requests', (err as any) && ((err as any).message || String(err)));
+            console.warn('[PriceFeed] Bulk fetch failed, falling back to individual requests');
 
-            // Fallback to previous behavior (per-currency requests) to be resilient
             const currencies = Object.keys(this.CURRENCY_IDS);
             await Promise.allSettled(
                 currencies.map(async (currency) => {
@@ -237,7 +314,7 @@ export class PriceFeedService {
         amount: number,
         fromCurrency: string,
         toCurrency: string = 'USDT',
-        feePercentage: number = 0.003 // 0.3% default fee
+        feePercentage: number = 0.003
     ): Promise<{
         inputAmount: number;
         outputAmount: number;
@@ -253,11 +330,9 @@ export class PriceFeedService {
             true
         );
 
-        // Calculate fee in output currency
         const fee = conversion.convertedAmount * feePercentage;
         const finalAmount = conversion.convertedAmount - fee;
 
-        // Calculate fee in USD for tracking
         const feeInUSD =
             toCurrency === 'USDT'
                 ? fee
@@ -274,7 +349,7 @@ export class PriceFeedService {
     }
 
     /**
-     * Clear price cache (useful for testing)
+     * Clear price cache
      */
     static clearCache(): void {
         this.priceCache.clear();
