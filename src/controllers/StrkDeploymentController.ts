@@ -246,13 +246,50 @@ static async getMainnetBalancesDeploy(
                 console.log(`[DEBUG] Checking if can deploy with STRK...`);
                 
                 try {
-                    // Check balance with STRK preference
-                    const { hasSufficientFunds, balance, token } = await checkBalance(
-                        provider,
-                        addr.address,
-                        BigInt('500000000000000000'), // 0.5 STRK minimum
-                        true // Prefer STRK
-                    );
+                    // INLINE balance check to avoid caching issues
+                    console.log('[DEBUG] Performing INLINE balance check...');
+                    const strkTokenAddr = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                    const ethTokenAddr = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
+                    const minBal = BigInt('500000000000000000');
+                    
+                    // Check STRK balance
+                    const strkRes = await provider.callContract({
+                        contractAddress: strkTokenAddr,
+                        entrypoint: 'balanceOf',
+                        calldata: [addr.address],
+                    }, 'latest');
+                    const strkBal = BigInt(strkRes?.[0] || '0');
+                    
+                    console.log(`[DEBUG] INLINE STRK Balance: ${Number(strkBal) / 1e18} STRK`);
+                    
+                    let hasSufficientFunds = false;
+                    let balance = strkBal;
+                    let token: 'STRK' | 'ETH' = 'STRK';
+                    
+                    if (strkBal >= minBal) {
+                        hasSufficientFunds = true;
+                        balance = strkBal;
+                        token = 'STRK';
+                    } else {
+                        // Check ETH as fallback
+                        const ethRes = await provider.callContract({
+                            contractAddress: ethTokenAddr,
+                            entrypoint: 'balanceOf',
+                            calldata: [addr.address],
+                        }, 'latest');
+                        const ethBal = BigInt(ethRes?.[0] || '0');
+                        
+                        console.log(`[DEBUG] INLINE ETH Balance: ${Number(ethBal) / 1e18} ETH`);
+                        
+                        if (ethBal >= minBal) {
+                            hasSufficientFunds = true;
+                            balance = ethBal;
+                            token = 'ETH';
+                        } else {
+                            balance = strkBal;
+                            token = 'STRK';
+                        }
+                    }
 
                     const balanceFormatted = (Number(balance) / 1e18).toFixed(4);
                     
@@ -302,7 +339,7 @@ static async getMainnetBalancesDeploy(
                                 network: 'mainnet',
                                 balance: balanceInSTRK,
                                 feeToken: token,
-                                transactionHash: deployResult
+                                transactionHash: deployResult.transactionHash,
                             },
                             isRead: false,
                             createdAt: new Date(),

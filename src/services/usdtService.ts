@@ -36,15 +36,15 @@ export class USDTService {
             addresses.forEach((addr) => {
                 if (addr.chain === ChainType.USDT_ERC20) {
                     if (addr.network === NetworkType.MAINNET) {
-                        result.erc20.mainnet = addr.address;
+                        result.erc20.mainnet = addr.address || '';
                     } else if (addr.network === NetworkType.TESTNET) {
-                        result.erc20.testnet = addr.address;
+                        result.erc20.testnet = addr.address || '';
                     }
                 } else if (addr.chain === ChainType.USDT_TRC20) {
                     if (addr.network === NetworkType.MAINNET) {
-                        result.trc20.mainnet = addr.address;
+                        result.trc20.mainnet = addr.address || '';
                     } else if (addr.network === NetworkType.TESTNET) {
-                        result.trc20.testnet = addr.address;
+                        result.trc20.testnet = addr.address || '';
                     }
                 }
             });

@@ -431,12 +431,16 @@ export function generateStrkWallet(customPrivateKey?: string): GeneratedWallet {
 //         }
 //     }
 // }
+
+
 export async function checkBalance(
     provider: RpcProvider,
     address: string,
     minBalance: bigint = BigInt('500000000000000000'), // 0.5 STRK minimum for deployment
     preferStrk: boolean = true // Prefer STRK over ETH
 ): Promise<{ balance: bigint; hasSufficientFunds: boolean; token: 'STRK' | 'ETH' }> {
+    console.log('[DEBUG] checkBalance called - VERSION 2.0 with latest block');
+    
     const ethTokenAddress = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
     const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
@@ -493,6 +497,8 @@ export async function checkBalance(
         return { balance: BigInt(0), hasSufficientFunds: false, token: 'STRK' };
     }
 }
+
+
 /**
  * Deploy Starknet wallet
  */
