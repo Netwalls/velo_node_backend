@@ -3,6 +3,21 @@ import { PaymentController } from '../controllers/paymentController';
 import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
+router.post(
+    '/instant-buy',
+    authMiddleware,
+    PaymentController.instantBuy
+);
+
+/**
+ * Order Management
+ */
+router.get(
+    '/orders/:orderId',
+    authMiddleware,
+    PaymentController.getOrder
+);
+
 
 /**
  * @route GET /api/payments/rates

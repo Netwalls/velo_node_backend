@@ -3,10 +3,11 @@ import { AuthRequest } from '../types';
 import { PriceFeedService } from '../services/priceFeedService';
 import NellobytesService from '../services/nellobytesService';
 import { ConversionService } from '../services/conversionService';
+import { USDTService } from '../services/usdtService';
 import crypto from 'crypto';
 import { AppDataSource } from '../config/database';
 import ProviderOrder, { ProviderOrderStatus } from '../entities/ProviderOrder';
-import {User} from '../entities/User';
+import TreasuryConfig from '../config/treasury';
 import axios from 'axios';
 
 export class CryptoAirtimeController {
@@ -29,7 +30,7 @@ export class CryptoAirtimeController {
 				return;
 			}
 
-			const { type, mobileNetwork, amount, dataPlan, mobileNumber, chain, decoderID, bouquet } = req.body;
+			const { type, mobileNetwork, amount, dataPlan, mobileNumber, chain, decoderID, bouquet, network } = req.body;
 
 			// Validation
 			if (!type || !mobileNetwork || !mobileNumber || !chain) {
@@ -38,6 +39,9 @@ export class CryptoAirtimeController {
 				});
 				return;
 			}
+
+			// Default to mainnet if not specified
+			const selectedNetwork: 'mainnet' | 'testnet' = network === 'testnet' ? 'testnet' : 'mainnet';
 
 			if (type === 'airtime' && !amount) {
 				res.status(400).json({ error: 'amount is required for airtime' });
@@ -109,7 +113,8 @@ export class CryptoAirtimeController {
 			const requiredTokenAmount = usdAmount / tokenPrice;
 
 			// Step 3: CHECK USER'S WALLET BALANCE
-			const userBalance = await CryptoAirtimeController.getUserBalance(userId, tokenInfo.token, chain);
+			// Use the canonical chain name from tokenInfo (e.g. 'solana', 'stellar') so it matches stored UserAddress.chain
+			const userBalance = await CryptoAirtimeController.getUserBalance(userId, tokenInfo.token, tokenInfo.chain, selectedNetwork);
 			
 			if (userBalance < requiredTokenAmount) {
 				res.status(400).json({ 
@@ -146,9 +151,9 @@ export class CryptoAirtimeController {
 			// Step 5: DEDUCT FROM USER'S WALLET
 			try {
 				await CryptoAirtimeController.deductFromWallet(
-					userId, 
-					tokenInfo.token, 
-					chain,
+					userId,
+					tokenInfo.token,
+					tokenInfo.chain,
 					requiredTokenAmount,
 					order.id
 				);
@@ -212,6 +217,8 @@ export class CryptoAirtimeController {
 						token: tokenInfo.token,
 						amount: requiredTokenAmount,
 						usdValue: usdAmount,
+						chain: tokenInfo.chain,
+						network: selectedNetwork,
 					},
 					provider: providerResp,
 					timestamp: new Date(),
@@ -230,7 +237,7 @@ export class CryptoAirtimeController {
 					await CryptoAirtimeController.refundToWallet(
 						userId,
 						tokenInfo.token,
-						chain,
+						tokenInfo.chain,
 						requiredTokenAmount,
 						order.id
 					);
@@ -255,38 +262,93 @@ export class CryptoAirtimeController {
 	}
 
 	/**
-	 * Get user's balance for a specific token/chain
+	 * Get user's balance for a specific token/chain/network
+	 * Reuses WalletController balance fetching logic to stay DRY
+	 * Supports both mainnet and testnet
 	 */
 	private static async getUserBalance(
 		userId: string, 
 		token: string, 
-		chain: string
+		chain: string,
+		network: 'mainnet' | 'testnet' = 'mainnet'
 	): Promise<number> {
 		try {
-			const userRepo = AppDataSource.getRepository(User);
-			const user = await userRepo.findOne({ where: { id: userId } });
-			if (!user) return 0;
+			const { UserAddress } = await import('../entities/UserAddress');
+			const addressRepo = AppDataSource.getRepository(UserAddress);
 
-			const t = token.toUpperCase();
-			switch (t) {
-				case 'USDT':
-					return Number(user.usdtBalance) || 0;
-				case 'ETH':
-					return Number(user.ethBalance) || 0;
-				case 'STRK':
-					return Number(user.strkBalance) || 0;
-				case 'SOL':
-					return Number(user.solBalance) || 0;
-				case 'BTC':
-					return Number(user.btcBalance) || 0;
-				case 'XLM':
-					return Number(user.xlmBalance) || 0;
-				case 'DOT':
-					return Number(user.dotBalance) || 0;
-				default:
-					console.warn(`Balance check not implemented for token ${token} on chain ${chain}`);
-					return 0;
+			// Map chain name to the format stored in UserAddress
+			const chainMap: Record<string, string> = {
+				'bitcoin': 'bitcoin',
+				'ethereum': 'ethereum',
+				'solana': 'solana',
+				'starknet': 'starknet',
+				'stellar': 'stellar',
+				'polkadot': 'polkadot',
+				'tron': 'usdt_trc20',
+			};
+
+			const mappedChain = chainMap[chain.toLowerCase()] || chain.toLowerCase();
+
+			// Find user's address for this chain on specified network
+			const userAddress = await addressRepo.findOne({
+				where: {
+					userId,
+					// mappedChain is a string like 'solana'/'stellar' while the entity expects ChainType enum
+					// cast to any to satisfy TypeORM/TS here (runtime values match enum string literals)
+					chain: mappedChain as any,
+					network: network as any,
+				},
+			});
+
+			if (!userAddress || !userAddress.address) {
+				console.log(`[Balance Check] No address found for user ${userId} on ${mappedChain} ${network}`);
+				return 0;
 			}
+
+			// Import WalletController and reuse its balance fetching logic
+			const { WalletController } = await import('./walletController');
+			
+			// Create a mock request object with just the user info
+			const mockReq = {
+				user: { id: userId }
+			} as any;
+
+			// Create a mock response object to capture the balance data
+			let balanceData: any = null;
+			const mockRes = {
+				status: () => mockRes,
+				json: (data: any) => {
+					balanceData = data;
+					return mockRes;
+				}
+			} as any;
+
+			// Call appropriate balance method based on network
+			if (network === 'mainnet') {
+				await WalletController.getMainnetBalances(mockReq, mockRes);
+			} else {
+				await WalletController.getTestnetBalances(mockReq, mockRes);
+			}
+
+			if (!balanceData || !balanceData.balances) {
+				console.error(`[Balance Check] Failed to fetch ${network} balances`);
+				return 0;
+			}
+
+			// Find the balance for our specific chain
+			const chainBalance = balanceData.balances.find(
+				(b: any) => b.chain === mappedChain && b.network === network
+			);
+
+			if (!chainBalance) {
+				console.log(`[Balance Check] No balance data found for ${mappedChain} on ${network}`);
+				return 0;
+			}
+
+			const balance = Number(chainBalance.balance) || 0;
+			console.log(`[Balance Check] ${token} balance for user ${userId} on ${network}: ${balance} (chain: ${mappedChain})`);
+			
+			return balance;
 		} catch (error) {
 			console.error('Get user balance error:', error);
 			return 0;
@@ -455,14 +517,13 @@ export class CryptoAirtimeController {
 	private static async convertNGNToUSD(amountNGN: number): Promise<number> {
 		// Method 1: Try exchangerate-api.com (free, no auth needed)
 		try {
-			const response = await axios.get(
+			const response = await axios.get<{ rates?: Record<string, number> }>(
 				`https://open.er-api.com/v6/latest/NGN`,
 				{ timeout: 5000 }
 			);
-
-			const data = response.data as { rates?: { USD?: number } };
-			if (data?.rates?.USD) {
-				const rate = Number(data.rates.USD);
+			
+			if (response.data?.rates?.USD) {
+				const rate = Number(response.data.rates.USD);
 				return amountNGN * rate;
 			}
 		} catch (error) {

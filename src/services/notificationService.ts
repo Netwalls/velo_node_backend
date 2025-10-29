@@ -207,4 +207,26 @@ export class NotificationService {
             { amount, currency, ...details }
         );
     }
+
+    /**
+     * Create airtime purchase notification
+     */
+    static async notifyAirtimePurchase(
+        userId: string,
+        amount: string,
+        currency: string,
+        mobileNumber: string,
+        network?: string,
+        details?: any
+    ): Promise<Notification> {
+        const title = 'Airtime Purchase Successful';
+        const message = `Your airtime purchase of ${amount} ${currency} for ${mobileNumber}${network ? ` on ${network}` : ''} was successful.`;
+        return this.createNotification(
+            userId,
+            NotificationType.AIRTIME_PURCHASE,
+            title,
+            message,
+            { amount, currency, mobileNumber, network, ...details }
+        );
+    }
 }

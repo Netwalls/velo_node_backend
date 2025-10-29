@@ -62,20 +62,49 @@ connectDB().then(() => {
         console.log(`Server is running on port ${PORT}`);
         // Start automatic deposit monitor (calls WalletController.checkForDeposits periodically)
         try {
-            const intervalMs = Number(process.env.DEPOSIT_MONITOR_INTERVAL_MS) || 60000; // default 60s
-            // Run once immediately, then schedule
-            WalletController.checkForDeposits()
-                .then(() => console.log('Initial deposit check completed'))
-                .catch((e) => console.error('Initial deposit check failed', (e as any)?.message || e));
+            // Deposit monitor with backoff, jitter and non-overlapping runs to avoid
+            // hammering upstream providers (e.g. Alchemy). Default base interval is 5 minutes.
+            const baseIntervalMs = Number(process.env.DEPOSIT_MONITOR_INTERVAL_MS) || 30 * 60 * 1000; // default 5m
+            const maxBackoffMultiplier = Number(process.env.DEPOSIT_MONITOR_MAX_BACKOFF_MULTIPLIER) || 8; // exponential cap
+            const jitterFraction = Number(process.env.DEPOSIT_MONITOR_JITTER_FRACTION) || 0.1; // up to 10% jitter
 
-            setInterval(async () => {
-                try {
-                    await WalletController.checkForDeposits();
-                    console.log('Periodic deposit check completed');
-                } catch (err) {
-                    console.error('Periodic deposit check error', (err as any)?.message || err);
-                }
-            }, intervalMs);
+            let consecutiveFailures = 0;
+            let isRunning = false;
+
+            const scheduleNext = (delayMs: number) => {
+                setTimeout(async () => {
+                    if (isRunning) {
+                        console.log('Deposit monitor: previous run still in progress, skipping this cycle');
+                        // schedule next with base interval and light jitter
+                        const jitter = Math.floor(Math.random() * baseIntervalMs * jitterFraction);
+                        scheduleNext(baseIntervalMs + jitter);
+                        return;
+                    }
+
+                    isRunning = true;
+                    try {
+                        await WalletController.checkForDeposits();
+                        console.log('Deposit monitor: run completed');
+                        consecutiveFailures = 0;
+
+                        // schedule next run with base interval + jitter
+                        const jitter = Math.floor(Math.random() * baseIntervalMs * jitterFraction);
+                        scheduleNext(baseIntervalMs + jitter);
+                    } catch (err) {
+                        consecutiveFailures++;
+                        const backoffMultiplier = Math.min(2 ** consecutiveFailures, maxBackoffMultiplier);
+                        const nextDelay = Math.min(baseIntervalMs * backoffMultiplier, baseIntervalMs * maxBackoffMultiplier);
+                        const jitter = Math.floor(Math.random() * baseIntervalMs * jitterFraction);
+                        console.error('Deposit monitor run failed:', (err as any)?.message || err, ` — scheduling retry in ${nextDelay + jitter}ms`);
+                        scheduleNext(nextDelay + jitter);
+                    } finally {
+                        isRunning = false;
+                    }
+                }, delayMs);
+            };
+
+            // Start the monitor: run once immediately (without delay)
+            scheduleNext(0);
         } catch (e) {
             console.error('Failed to start deposit monitor', (e as any)?.message || e);
         }
