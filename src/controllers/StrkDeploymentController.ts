@@ -64,7 +64,7 @@ export class StrkController {
                         const result = await provider.callContract({
                             contractAddress: strkTokenAddress,
                             entrypoint: 'balanceOf',
-                            calldata: [addr.address],
+                            calldata: [addr.address as string],
                         });
 
                         const balanceHex =
@@ -86,15 +86,15 @@ export class StrkController {
                         if (balanceDecimal > 0 && addr.encryptedPrivateKey) {
                             try {
                                 // Check if already deployed
-                                await provider.getClassHashAt(addr.address);
-                                console.log(`[DEBUG] Starknet account ${addr.address} already deployed`);
+                                await provider.getClassHashAt(addr.address as string);
+                                console.log(`[DEBUG] Starknet account ${addr.address as string} already deployed`);
                             } catch (error) {
                                 // Account not deployed, check balance and deploy
                                 console.log(`[DEBUG] Checking if ${addr.address} can be deployed...`);
                                 
                                 const { hasSufficientFunds, balance } = await checkBalance(
                                     provider,
-                                    addr.address
+                                    addr.address as string
                                 );
 
                                 if (hasSufficientFunds) {
@@ -111,7 +111,7 @@ export class StrkController {
                                         provider,
                                         privateKey,
                                         publicKey,
-                                        addr.address,
+                                        addr.address as string,
                                         false // Skip balance check since we already did it
                                     );
 
@@ -217,7 +217,7 @@ static async getMainnetBalancesDeploy(
         const strkResult = await provider.callContract({
             contractAddress: strkTokenAddress,
             entrypoint: 'balanceOf',
-            calldata: [addr.address],
+            calldata: [addr.address as string],
         }, 'latest');
 
         const strkBalanceHex = strkResult && strkResult[0] ? strkResult[0] : '0x0';
@@ -238,55 +238,57 @@ static async getMainnetBalancesDeploy(
         if (strkBalanceDecimal > 0 && addr.encryptedPrivateKey) {
             try {
                 // Check if already deployed
-                const classHash = await provider.getClassHashAt(addr.address);
-                console.log(`[DEBUG] Account ${addr.address} already deployed (classHash: ${classHash})`);
+                const classHash = await provider.getClassHashAt(addr.address as string);
+                console.log(`[DEBUG] Account ${addr.address as string} already deployed (classHash: ${classHash})`);
             } catch (deployCheckError: any) {
                 // Account not deployed
                 console.log(`[DEBUG] Account ${addr.address} not deployed yet`);
                 console.log(`[DEBUG] Checking if can deploy with STRK...`);
                 
-                try {
+                    try {
                     // INLINE balance check to avoid caching issues
-                    console.log('[DEBUG] Performing INLINE balance check...');
+                    // Prefer checking STRK first for mainnet deployments (default fee token)
+                    console.log('[DEBUG] Performing INLINE balance check (STRK-first)...');
                     const strkTokenAddr = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
                     const ethTokenAddr = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
                     const minBal = BigInt('500000000000000000');
-                    
-                    // Check STRK balance
+
+                    // Check STRK first (default)
                     const strkRes = await provider.callContract({
                         contractAddress: strkTokenAddr,
                         entrypoint: 'balanceOf',
-                        calldata: [addr.address],
+                        calldata: [addr.address as string],
                     }, 'latest');
                     const strkBal = BigInt(strkRes?.[0] || '0');
-                    
+
                     console.log(`[DEBUG] INLINE STRK Balance: ${Number(strkBal) / 1e18} STRK`);
-                    
+
+                    // If STRK is sufficient, prefer STRK for deployment fees
                     let hasSufficientFunds = false;
                     let balance = strkBal;
                     let token: 'STRK' | 'ETH' = 'STRK';
-                    
+
                     if (strkBal >= minBal) {
                         hasSufficientFunds = true;
                         balance = strkBal;
                         token = 'STRK';
                     } else {
-                        // Check ETH as fallback
+                        // Fallback: check ETH (native gas token)
                         const ethRes = await provider.callContract({
                             contractAddress: ethTokenAddr,
                             entrypoint: 'balanceOf',
-                            calldata: [addr.address],
+                            calldata: [addr.address as string],
                         }, 'latest');
                         const ethBal = BigInt(ethRes?.[0] || '0');
-                        
+
                         console.log(`[DEBUG] INLINE ETH Balance: ${Number(ethBal) / 1e18} ETH`);
-                        
+
                         if (ethBal >= minBal) {
                             hasSufficientFunds = true;
                             balance = ethBal;
                             token = 'ETH';
                         } else {
-                            balance = strkBal;
+                            balance = strkBal; // keep STRK as primary value if neither sufficient
                             token = 'STRK';
                         }
                     }
@@ -314,18 +316,21 @@ static async getMainnetBalancesDeploy(
                             privateKey,
                             publicKey,
                             addr.address,
-                            false, // Skip balance check (we already did it)
-                            // token  // Use detected token (STRK or ETH)
+                            false // Skip balance check (we already did it)
                         );
 
+                        const txHash = deployResult.transactionHash || '';
+                        const contractAddr = deployResult.contractAddress || addr.address;
+
                         console.log(`[SUCCESS] ✅ Mainnet account deployed!`);
-                        console.log(`[SUCCESS] Transaction hash: ${deployResult}`);
+                        console.log(`[SUCCESS] Transaction hash: ${txHash}`);
+                        console.log(`[SUCCESS] Contract address: ${contractAddr}`);
                         console.log(`[SUCCESS] Fee paid in: ${token}`);
-                        
+
                         balances[balances.length - 1].deployed = true;
                         balances[balances.length - 1].deploymentStatus = 'success';
                         balances[balances.length - 1].feeToken = token;
-                        balances[balances.length - 1].transactionHash = deployResult;
+                        balances[balances.length - 1].transactionHash = txHash;
 
                         // Create notification
                         await AppDataSource.getRepository(Notification).save({
@@ -339,7 +344,7 @@ static async getMainnetBalancesDeploy(
                                 network: 'mainnet',
                                 balance: balanceInSTRK,
                                 feeToken: token,
-                                transactionHash: deployResult.transactionHash,
+                                transactionHash: txHash,
                             },
                             isRead: false,
                             createdAt: new Date(),

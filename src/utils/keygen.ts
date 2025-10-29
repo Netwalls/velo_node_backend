@@ -508,12 +508,12 @@ export async function deployStrkWallet(
     publicKey: string,
     address: string,
     checkBalanceFirst: boolean = true
-): Promise<Account> {
+): Promise<{ account: Account; transactionHash: string; contractAddress: string }> {
     // Check if already deployed
     try {
         await provider.getClassHashAt(address);
         console.log('Account already deployed');
-        return new Account(provider, address, privateKey);
+        return { account: new Account(provider, address, privateKey), transactionHash: '', contractAddress: '' };
     } catch {}
 
     // Check balance if required
@@ -529,14 +529,47 @@ export async function deployStrkWallet(
     const constructorCallData = CallData.compile({ publicKey });
     const account = new Account(provider, address, privateKey);
 
-    const { transaction_hash, contract_address } = await account.deployAccount({
-        classHash,
-        constructorCalldata: constructorCallData,
-        addressSalt: publicKey,
-    });
+    try {
+        const { transaction_hash, contract_address } = await account.deployAccount({
+            classHash,
+            constructorCalldata: constructorCallData,
+            addressSalt: publicKey,
+        });
 
-    await provider.waitForTransaction(transaction_hash);
-    console.log('Account deployed:', contract_address);
+        await provider.waitForTransaction(transaction_hash);
+        console.log('Account deployed:', contract_address);
 
-    return account;
+        return { account, transactionHash: transaction_hash, contractAddress: contract_address };
+    } catch (err: any) {
+        console.error('deployStrkWallet primary deploy error:', err?.message || err);
+
+        // Fallback: some RPC nodes report a specification version that the library
+        // cannot negotiate for fee suggestion. In that case, retry deploy with an
+        // explicit maxFee to avoid calling getUniversalSuggestedFee.
+        const msg = String(err?.message || '').toLowerCase();
+        if (msg.includes('specification version') || msg.includes('spec version') || msg.includes('connected node specification')) {
+            try {
+                console.log('[FALLBACK] Attempting deploy with explicit maxFee to bypass fee suggestion');
+                // conservative fee (hex) - large value to be safe; units are in wei-like on Starknet
+                const explicitMaxFee = '0xDE0B6B3A7640000'; // 1e18
+
+                const { transaction_hash, contract_address } = await account.deployAccount({
+                    classHash,
+                    constructorCalldata: constructorCallData,
+                    addressSalt: publicKey,
+                    maxFee: explicitMaxFee,
+                } as any);
+
+                await provider.waitForTransaction(transaction_hash);
+                console.log('[FALLBACK] Account deployed (fallback):', contract_address);
+
+                return { account, transactionHash: transaction_hash, contractAddress: contract_address };
+            } catch (err2: any) {
+                console.error('[FALLBACK] Deploy failed:', err2?.message || err2);
+                throw err2;
+            }
+        }
+
+        throw err;
+    }
 }
