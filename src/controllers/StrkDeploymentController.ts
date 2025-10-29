@@ -206,18 +206,19 @@ static async getMainnetBalancesDeploy(
         for (const addr of addresses) {
             if (addr.chain === 'starknet') {
     try {
+        // Use v0_9 to match getMainnetBalances
         const provider = new RpcProvider({
-            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_7/${process.env.ALCHEMY_STARKNET_KEY}`,
+            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
         });
 
         const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
-        // Check STRK balance
+        // Check STRK balance - use 'latest' like in getMainnetBalances
         const strkResult = await provider.callContract({
             contractAddress: strkTokenAddress,
             entrypoint: 'balanceOf',
             calldata: [addr.address],
-        });
+        }, 'latest');
 
         const strkBalanceHex = strkResult && strkResult[0] ? strkResult[0] : '0x0';
         const strkBalanceDecimal = parseInt(strkBalanceHex, 16);
@@ -233,13 +234,16 @@ static async getMainnetBalancesDeploy(
             symbol: 'STRK',
         });
 
-        // Check if account needs deployment
+        // Check if account needs deployment (only if has balance and private key)
         if (strkBalanceDecimal > 0 && addr.encryptedPrivateKey) {
             try {
+                // Check if already deployed
                 const classHash = await provider.getClassHashAt(addr.address);
-                console.log(`[DEBUG] Account ${addr.address} already deployed`);
+                console.log(`[DEBUG] Account ${addr.address} already deployed (classHash: ${classHash})`);
             } catch (deployCheckError: any) {
-                console.log(`[DEBUG] Account not deployed, checking if can deploy with STRK...`);
+                // Account not deployed
+                console.log(`[DEBUG] Account ${addr.address} not deployed yet`);
+                console.log(`[DEBUG] Checking if can deploy with STRK...`);
                 
                 try {
                     // Check balance with STRK preference
@@ -252,34 +256,41 @@ static async getMainnetBalancesDeploy(
 
                     const balanceFormatted = (Number(balance) / 1e18).toFixed(4);
                     
-                    console.log(`[DEBUG] Deployment check:`);
-                    console.log(`  - Token: ${token}`);
-                    console.log(`  - Has sufficient ${token}: ${hasSufficientFunds}`);
-                    console.log(`  - Balance: ${balanceFormatted} ${token}`);
-                    console.log(`  - Min Required: 0.5 ${token}`);
+                    console.log(`[DEBUG] Deployment check results:`);
+                    console.log(`  - Fee Token: ${token}`);
+                    console.log(`  - Sufficient ${token}: ${hasSufficientFunds}`);
+                    console.log(`  - Current Balance: ${balanceFormatted} ${token}`);
+                    console.log(`  - Required Balance: 0.5 ${token}`);
 
                     if (hasSufficientFunds) {
-                        console.log(`[DEBUG] ✅ Deploying mainnet account with ${token}...`);
+                        console.log(`[DEBUG] ✅ Starting deployment with ${token} fee token...`);
                         
+                        // Decrypt private key
                         const privateKey = decrypt(addr.encryptedPrivateKey);
                         const publicKey = ec.starkCurve.getStarkKey(privateKey);
+                        
+                        console.log(`[DEBUG] Private key decrypted, public key: ${publicKey}`);
 
                         // Deploy with STRK fee token
-                        await deployStrkWallet(
+                        const deployResult = await deployStrkWallet(
                             provider,
                             privateKey,
                             publicKey,
                             addr.address,
-                            false,
-                            // token // Use detected token (STRK or ETH)
+                            false, // Skip balance check (we already did it)
+                            // token  // Use detected token (STRK or ETH)
                         );
 
-                        console.log(`[SUCCESS] ✅ Mainnet account deployed using ${token}!`);
+                        console.log(`[SUCCESS] ✅ Mainnet account deployed!`);
+                        console.log(`[SUCCESS] Transaction hash: ${deployResult}`);
+                        console.log(`[SUCCESS] Fee paid in: ${token}`);
                         
                         balances[balances.length - 1].deployed = true;
                         balances[balances.length - 1].deploymentStatus = 'success';
                         balances[balances.length - 1].feeToken = token;
+                        balances[balances.length - 1].transactionHash = deployResult;
 
+                        // Create notification
                         await AppDataSource.getRepository(Notification).save({
                             userId: req.user!.id,
                             type: NotificationType.DEPOSIT,
@@ -291,6 +302,7 @@ static async getMainnetBalancesDeploy(
                                 network: 'mainnet',
                                 balance: balanceInSTRK,
                                 feeToken: token,
+                                transactionHash: deployResult
                             },
                             isRead: false,
                             createdAt: new Date(),
@@ -299,6 +311,7 @@ static async getMainnetBalancesDeploy(
                         console.log(`[WARNING] ❌ Insufficient ${token} for deployment`);
                         console.log(`  Current: ${balanceFormatted} ${token}`);
                         console.log(`  Required: 0.5 ${token} minimum`);
+                        console.log(`  💡 You have ${balanceInSTRK} STRK but need ${token === 'ETH' ? 'ETH' : 'more STRK'} to deploy`);
                         
                         balances[balances.length - 1].deploymentStatus = 'insufficient_balance';
                         balances[balances.length - 1].requiredToken = token;
@@ -306,20 +319,25 @@ static async getMainnetBalancesDeploy(
                         balances[balances.length - 1].currentAmount = balanceFormatted;
                     }
                 } catch (deployError: any) {
-                    console.error(`[ERROR] Deployment failed:`, deployError?.message);
+                    console.error(`[ERROR] Deployment failed:`, deployError?.message || deployError);
                     
-                    // Check if it's a fee-related error
-                    if (deployError?.message?.includes('STRK')) {
-                        console.log(`[TIP] 💡 Try ensuring you have at least 0.5 STRK for gas`);
+                    // Log more details for debugging
+                    if (deployError?.message) {
+                        console.error(`[ERROR] Error message: ${deployError.message}`);
+                    }
+                    if (deployError?.stack) {
+                        console.error(`[ERROR] Stack trace:`, deployError.stack);
                     }
                     
                     balances[balances.length - 1].deploymentStatus = 'failed';
-                    balances[balances.length - 1].deploymentError = deployError?.message;
+                    balances[balances.length - 1].deploymentError = deployError?.message || 'Unknown error';
                 }
             }
+        } else if (!addr.encryptedPrivateKey) {
+            console.log(`[DEBUG] No private key available for ${addr.address} - cannot deploy`);
         }
     } catch (error: any) {
-        console.error('Starknet mainnet error:', error?.message || error);
+        console.error('Starknet mainnet balance/deployment error:', error?.message || error);
         balances.push({
             chain: addr.chain,
             network: 'mainnet',

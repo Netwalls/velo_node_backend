@@ -442,11 +442,13 @@ export async function checkBalance(
 
     try {
         // Check STRK token balance first if preferred
+        // Use 'latest' block identifier like in getMainnetBalances
         const strkRes = await provider.callContract({
             contractAddress: strkTokenAddress,
             entrypoint: 'balanceOf',
             calldata: [address],
-        });
+        }, 'latest'); // Use 'latest' instead of 'pending'
+
         const strkBalance = BigInt(strkRes && strkRes[0] ? strkRes[0] : '0');
 
         console.log(`[DEBUG] STRK Balance for ${address}: ${strkBalance} wei (${Number(strkBalance) / 1e18} STRK)`);
@@ -463,7 +465,8 @@ export async function checkBalance(
             contractAddress: ethTokenAddress,
             entrypoint: 'balanceOf',
             calldata: [address],
-        });
+        }, 'latest'); // Use 'latest' instead of 'pending'
+
         const ethBalance = BigInt(ethRes && ethRes[0] ? ethRes[0] : '0');
 
         console.log(`[DEBUG] ETH Balance for ${address}: ${ethBalance} wei (${Number(ethBalance) / 1e18} ETH)`);
@@ -485,8 +488,8 @@ export async function checkBalance(
         }
         return { balance: ethBalance, hasSufficientFunds: false, token: 'ETH' };
 
-    } catch (err) {
-        console.error('checkBalance error:', err);
+    } catch (err: any) {
+        console.error('checkBalance error:', err?.message || err);
         return { balance: BigInt(0), hasSufficientFunds: false, token: 'STRK' };
     }
 }
