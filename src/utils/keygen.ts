@@ -381,27 +381,115 @@ export function generateStrkWallet(customPrivateKey?: string): GeneratedWallet {
 /**
  * Check if address has sufficient balance
  */
+// export async function checkBalance(
+//     provider: RpcProvider,
+//     address: string,
+//     minBalance: bigint = BigInt('1000000000000000')
+// ): Promise<{ balance: bigint; hasSufficientFunds: boolean }> {
+//     // Check ETH-like native token on Starknet (used to pay gas for deployment)
+//     // ETH token contract address on Starknet
+//     const ethTokenAddress = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
+//     const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+
+//     try {
+//         // Prefer checking ETH token balance (this is what pays gas)
+//         const ethRes = await provider.callContract({
+//             contractAddress: ethTokenAddress,
+//             entrypoint: 'balanceOf',
+//             calldata: [address],
+//         });
+//         const ethBalance = BigInt(ethRes && ethRes[0] ? ethRes[0] : '0');
+
+//         // If ETH balance is sufficient for deployment, return immediately
+//         if (ethBalance >= minBalance) {
+//             return { balance: ethBalance, hasSufficientFunds: true };
+//         }
+
+//         // Fallback: check STRK token balance (useful for logging / UI), but STRK cannot pay gas
+//         const strkRes = await provider.callContract({
+//             contractAddress: strkTokenAddress,
+//             entrypoint: 'balanceOf',
+//             calldata: [address],
+//         });
+//         const strkBalance = BigInt(strkRes && strkRes[0] ? strkRes[0] : '0');
+
+//         // Return ETH balance as primary value (even if zero) and Sufficient based on ETH
+//         return { balance: ethBalance, hasSufficientFunds: ethBalance >= minBalance };
+//     } catch (err) {
+//         // If anything goes wrong, attempt to at least fetch STRK token balance for visibility
+//         try {
+//             const strkRes = await provider.callContract({
+//                 contractAddress: strkTokenAddress,
+//                 entrypoint: 'balanceOf',
+//                 calldata: [address],
+//             });
+//             const strkBalance = BigInt(strkRes && strkRes[0] ? strkRes[0] : '0');
+//             return { balance: strkBalance, hasSufficientFunds: strkBalance >= minBalance };
+//         } catch (err2) {
+//             console.error('checkBalance error (both ETH and STRK checks failed):', err, err2);
+//             return { balance: BigInt(0), hasSufficientFunds: false };
+//         }
+//     }
+// }
 export async function checkBalance(
     provider: RpcProvider,
     address: string,
-    minBalance: bigint = BigInt('1000000000000000')
-): Promise<{ balance: bigint; hasSufficientFunds: boolean }> {
-    const strkTokenAddress =
-        '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+    minBalance: bigint = BigInt('500000000000000000'), // 0.5 STRK minimum for deployment
+    preferStrk: boolean = true // Prefer STRK over ETH
+): Promise<{ balance: bigint; hasSufficientFunds: boolean; token: 'STRK' | 'ETH' }> {
+    const ethTokenAddress = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
+    const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
-    const result = await provider.callContract({
-        contractAddress: strkTokenAddress,
-        entrypoint: 'balanceOf',
-        calldata: [address],
-    });
-console.log("amount",result);
-    const balanceInWei = BigInt(result[0]);
-    return {
-        balance: balanceInWei,
-        hasSufficientFunds: balanceInWei >= minBalance,
-    };
+    try {
+        // Check STRK token balance first if preferred
+        const strkRes = await provider.callContract({
+            contractAddress: strkTokenAddress,
+            entrypoint: 'balanceOf',
+            calldata: [address],
+        });
+        const strkBalance = BigInt(strkRes && strkRes[0] ? strkRes[0] : '0');
+
+        console.log(`[DEBUG] STRK Balance for ${address}: ${strkBalance} wei (${Number(strkBalance) / 1e18} STRK)`);
+
+        // If STRK balance is sufficient and preferred, use STRK
+        if (preferStrk && strkBalance >= minBalance) {
+            console.log(`[DEBUG] ✅ Sufficient STRK balance for deployment`);
+            console.log(`[DEBUG] Has: ${Number(strkBalance) / 1e18} STRK, Needs: ${Number(minBalance) / 1e18} STRK`);
+            return { balance: strkBalance, hasSufficientFunds: true, token: 'STRK' };
+        }
+
+        // Fallback to ETH if STRK is insufficient or not preferred
+        const ethRes = await provider.callContract({
+            contractAddress: ethTokenAddress,
+            entrypoint: 'balanceOf',
+            calldata: [address],
+        });
+        const ethBalance = BigInt(ethRes && ethRes[0] ? ethRes[0] : '0');
+
+        console.log(`[DEBUG] ETH Balance for ${address}: ${ethBalance} wei (${Number(ethBalance) / 1e18} ETH)`);
+
+        // Check if ETH is sufficient
+        if (ethBalance >= minBalance) {
+            console.log(`[DEBUG] ✅ Sufficient ETH balance for deployment`);
+            return { balance: ethBalance, hasSufficientFunds: true, token: 'ETH' };
+        }
+
+        // Neither is sufficient
+        console.log(`[WARNING] ❌ Insufficient balance for deployment`);
+        console.log(`  - STRK: ${Number(strkBalance) / 1e18} (need ${Number(minBalance) / 1e18})`);
+        console.log(`  - ETH: ${Number(ethBalance) / 1e18} (need ${Number(minBalance) / 1e18})`);
+
+        // Return STRK balance if preferred, otherwise ETH
+        if (preferStrk) {
+            return { balance: strkBalance, hasSufficientFunds: false, token: 'STRK' };
+        }
+        return { balance: ethBalance, hasSufficientFunds: false, token: 'ETH' };
+
+    } catch (err) {
+        console.error('checkBalance error:', err);
+        return { balance: BigInt(0), hasSufficientFunds: false, token: 'STRK' };
+    }
 }
-
 /**
  * Deploy Starknet wallet
  */

@@ -207,22 +207,23 @@ static async getMainnetBalancesDeploy(
             if (addr.chain === 'starknet') {
     try {
         const provider = new RpcProvider({
-            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_7/${process.env.ALCHEMY_STARKNET_KEY}`,
         });
 
-        const strkTokenAddress =
-            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
-        // ✅ CORRECT WAY - Direct RPC call
-        const result = await provider.callContract({
+        // Check STRK balance
+        const strkResult = await provider.callContract({
             contractAddress: strkTokenAddress,
             entrypoint: 'balanceOf',
             calldata: [addr.address],
-        }, 'latest');
+        });
 
-        const balanceHex = result && result[0] ? result[0] : '0x0';
-        const balanceDecimal = parseInt(balanceHex, 16);
-        const balanceInSTRK = (balanceDecimal / 1e18).toString();
+        const strkBalanceHex = strkResult && strkResult[0] ? strkResult[0] : '0x0';
+        const strkBalanceDecimal = parseInt(strkBalanceHex, 16);
+        const balanceInSTRK = (strkBalanceDecimal / 1e18).toString();
+
+        console.log(`[DEBUG] Mainnet ${addr.address}: ${balanceInSTRK} STRK`);
 
         balances.push({
             chain: addr.chain,
@@ -232,59 +233,93 @@ static async getMainnetBalancesDeploy(
             symbol: 'STRK',
         });
 
-        // Check if account needs deployment (mainnet)
-        if (balanceDecimal > 0 && addr.encryptedPrivateKey) {
+        // Check if account needs deployment
+        if (strkBalanceDecimal > 0 && addr.encryptedPrivateKey) {
             try {
-                await provider.getClassHashAt(addr.address);
-                console.log(`[DEBUG] Starknet mainnet account ${addr.address} already deployed`);
-            } catch (error) {
-                console.log(`[DEBUG] Checking if mainnet ${addr.address} can be deployed...`);
+                const classHash = await provider.getClassHashAt(addr.address);
+                console.log(`[DEBUG] Account ${addr.address} already deployed`);
+            } catch (deployCheckError: any) {
+                console.log(`[DEBUG] Account not deployed, checking if can deploy with STRK...`);
                 
-                const { hasSufficientFunds, balance } = await checkBalance(
-                    provider,
-                    addr.address
-                );
-
-                if (hasSufficientFunds) {
-                    console.log(`[DEBUG] Deploying Starknet mainnet account ${addr.address}...`);
-                    
-                    const privateKey = decrypt(addr.encryptedPrivateKey);
-                    const publicKey = ec.starkCurve.getStarkKey(privateKey);
-                    
-                    await deployStrkWallet(
+                try {
+                    // Check balance with STRK preference
+                    const { hasSufficientFunds, balance, token } = await checkBalance(
                         provider,
-                        privateKey,
-                        publicKey,
                         addr.address,
-                        false
+                        BigInt('500000000000000000'), // 0.5 STRK minimum
+                        true // Prefer STRK
                     );
 
-                    console.log(`[SUCCESS] Starknet mainnet account ${addr.address} deployed successfully`);
+                    const balanceFormatted = (Number(balance) / 1e18).toFixed(4);
                     
-                    balances[balances.length - 1].deployed = true;
-                    balances[balances.length - 1].deploymentStatus = 'success';
+                    console.log(`[DEBUG] Deployment check:`);
+                    console.log(`  - Token: ${token}`);
+                    console.log(`  - Has sufficient ${token}: ${hasSufficientFunds}`);
+                    console.log(`  - Balance: ${balanceFormatted} ${token}`);
+                    console.log(`  - Min Required: 0.5 ${token}`);
 
-                    await AppDataSource.getRepository(Notification).save({
-                        userId: req.user!.id,
-                        type: NotificationType.DEPOSIT,
-                        title: 'Starknet Account Deployed',
-                        message: `Your Starknet mainnet account has been successfully deployed at ${addr.address}`,
-                        details: {
-                            address: addr.address,
-                            chain: 'starknet',
-                            network: 'mainnet',
-                            balance: balanceInSTRK,
-                        },
-                        isRead: false,
-                        createdAt: new Date(),
-                    });
-                } else {
-                    console.log(`[DEBUG] Insufficient funds for mainnet deployment. Balance: ${balance}`);
+                    if (hasSufficientFunds) {
+                        console.log(`[DEBUG] ✅ Deploying mainnet account with ${token}...`);
+                        
+                        const privateKey = decrypt(addr.encryptedPrivateKey);
+                        const publicKey = ec.starkCurve.getStarkKey(privateKey);
+
+                        // Deploy with STRK fee token
+                        await deployStrkWallet(
+                            provider,
+                            privateKey,
+                            publicKey,
+                            addr.address,
+                            false,
+                            // token // Use detected token (STRK or ETH)
+                        );
+
+                        console.log(`[SUCCESS] ✅ Mainnet account deployed using ${token}!`);
+                        
+                        balances[balances.length - 1].deployed = true;
+                        balances[balances.length - 1].deploymentStatus = 'success';
+                        balances[balances.length - 1].feeToken = token;
+
+                        await AppDataSource.getRepository(Notification).save({
+                            userId: req.user!.id,
+                            type: NotificationType.DEPOSIT,
+                            title: 'Starknet Account Deployed',
+                            message: `Your Starknet mainnet account has been deployed at ${addr.address} using ${token} for gas fees`,
+                            details: {
+                                address: addr.address,
+                                chain: 'starknet',
+                                network: 'mainnet',
+                                balance: balanceInSTRK,
+                                feeToken: token,
+                            },
+                            isRead: false,
+                            createdAt: new Date(),
+                        });
+                    } else {
+                        console.log(`[WARNING] ❌ Insufficient ${token} for deployment`);
+                        console.log(`  Current: ${balanceFormatted} ${token}`);
+                        console.log(`  Required: 0.5 ${token} minimum`);
+                        
+                        balances[balances.length - 1].deploymentStatus = 'insufficient_balance';
+                        balances[balances.length - 1].requiredToken = token;
+                        balances[balances.length - 1].requiredAmount = '0.5';
+                        balances[balances.length - 1].currentAmount = balanceFormatted;
+                    }
+                } catch (deployError: any) {
+                    console.error(`[ERROR] Deployment failed:`, deployError?.message);
+                    
+                    // Check if it's a fee-related error
+                    if (deployError?.message?.includes('STRK')) {
+                        console.log(`[TIP] 💡 Try ensuring you have at least 0.5 STRK for gas`);
+                    }
+                    
+                    balances[balances.length - 1].deploymentStatus = 'failed';
+                    balances[balances.length - 1].deploymentError = deployError?.message;
                 }
             }
         }
     } catch (error: any) {
-        console.error('Starknet mainnet balance/deployment error:', error?.message || error);
+        console.error('Starknet mainnet error:', error?.message || error);
         balances.push({
             chain: addr.chain,
             network: 'mainnet',
