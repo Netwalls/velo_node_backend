@@ -47,6 +47,14 @@ export class ProviderOrder {
     @Column('json', { nullable: true })
     providerResponse?: any;
 
+    @Column({
+        type: 'enum',
+        enum: ['mainnet', 'testnet'],
+        default: 'mainnet',
+        nullable: true,
+    })
+    network?: 'mainnet' | 'testnet';
+
     @CreateDateColumn()
     createdAt!: Date;
 

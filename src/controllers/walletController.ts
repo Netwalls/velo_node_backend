@@ -137,7 +137,7 @@ export class WalletController {
                                 ? ETH_TESTNET
                                 : ETH_MAINNET
                         );
-                        const balance = await provider.getBalance(addr.address);
+                        const balance = await provider.getBalance(addr.address as string);
                         balances.push({
                             chain: addr.chain,
                             network: addr.network,
@@ -221,7 +221,7 @@ export class WalletController {
                                 ? SOL_TESTNET
                                 : SOL_MAINNET
                         );
-                        const publicKey = new PublicKey(addr.address);
+                        const publicKey = new PublicKey(addr.address as string);
                         const balance = await connection.getBalance(publicKey);
                         balances.push({
                             chain: addr.chain,
@@ -320,6 +320,80 @@ export class WalletController {
     }
 
     /**
+     * Debug endpoint: probe Alchemy URLs and return quick connectivity checks.
+     * GET /wallet/debug/alchemy-probe
+     */
+    static async alchemyProbe(req: AuthRequest, res: Response): Promise<void> {
+        try {
+            const key = process.env.ALCHEMY_STARKNET_KEY || '';
+            const urls = {
+                ETH_MAINNET: `https://eth-mainnet.g.alchemy.com/v2/${key}`,
+                ETH_SEPOLIA: `https://eth-sepolia.g.alchemy.com/v2/${key}`,
+                STRK_MAINNET: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${key}`,
+                STRK_SEPOLIA: `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${key}`,
+                SOL_MAINNET: `https://solana-mainnet.g.alchemy.com/v2/${key}`,
+                SOL_DEVNET: `https://solana-devnet.g.alchemy.com/v2/${key}`,
+            };
+
+            console.debug('[DEBUG] alchemyProbe urls:', urls);
+
+            const probes: Record<string, any> = {};
+
+            const timeoutMs = 5000;
+
+            async function probeEth(url: string) {
+                try {
+                    const resp = await axios.post(url, { jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }, { timeout: timeoutMs });
+                    return { ok: true, status: resp.status, data: resp.data };
+                } catch (err: any) {
+                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                }
+            }
+
+            async function probeStark(url: string) {
+                try {
+                    const resp = await axios.post(url, { jsonrpc: '2.0', id: 1, method: 'starknet_blockNumber', params: [] }, { timeout: timeoutMs });
+                    return { ok: true, status: resp.status, data: resp.data };
+                } catch (err: any) {
+                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                }
+            }
+
+            async function probeSol(url: string) {
+                try {
+                    const resp = await axios.post(url, { jsonrpc: '2.0', id: 1, method: 'getVersion', params: [] }, { timeout: timeoutMs });
+                    return { ok: true, status: resp.status, data: resp.data };
+                } catch (err: any) {
+                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                }
+            }
+
+            // Run probes in parallel
+            const tasks = [
+                ['ETH_MAINNET', probeEth(urls.ETH_MAINNET)],
+                ['ETH_SEPOLIA', probeEth(urls.ETH_SEPOLIA)],
+                ['STRK_MAINNET', probeStark(urls.STRK_MAINNET)],
+                ['STRK_SEPOLIA', probeStark(urls.STRK_SEPOLIA)],
+                ['SOL_MAINNET', probeSol(urls.SOL_MAINNET)],
+                ['SOL_DEVNET', probeSol(urls.SOL_DEVNET)],
+            ];
+
+            const results = await Promise.all(tasks.map((t) => t[1]));
+            for (let i = 0; i < tasks.length; i++) {
+                probes[tasks[i][0] as string] = results[i];
+            }
+
+            // Log summary
+            console.debug('[DEBUG] alchemyProbe results:', Object.keys(probes).reduce((acc: any, k) => { acc[k] = { ok: probes[k].ok, status: probes[k].status }; return acc; }, {}));
+
+            res.json({ ok: true, keyPresent: !!key, probes });
+        } catch (err: any) {
+            console.error('alchemyProbe error:', err);
+            res.status(500).json({ ok: false, error: err?.message || String(err) });
+        }
+    }
+
+    /**
      * Controller for wallet-related actions.
      * Provides endpoints to fetch balances for all supported blockchains (ETH, BTC, SOL, STRK) for the authenticated user.
      */
@@ -387,7 +461,7 @@ export class WalletController {
                             `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                         );
                         // Get balance in wei and convert to ETH
-                        const balance = await provider.getBalance(addr.address);
+                        const balance = await provider.getBalance(addr.address as string);
                         balances.push({
                             chain: addr.chain,
                             address: addr.address,
@@ -440,7 +514,7 @@ export class WalletController {
                             `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                         );
                         // Convert address to PublicKey and fetch balance in lamports
-                        const publicKey = new PublicKey(addr.address);
+                        const publicKey = new PublicKey(addr.address as string);
                         const balance = await connection.getBalance(publicKey);
                         balances.push({
                             chain: addr.chain,
@@ -637,6 +711,13 @@ export class WalletController {
                 res.status(404).json({
                     error: 'No wallet found for this chain/network. You can only send from wallets you created in Velo.',
                 });
+                return;
+            }
+
+            // Defensive: ensure stored address exists (TypeORM sometimes returns undefined for optional fields)
+            if (!userAddress.address) {
+                console.error('Stored userAddress record missing address field for userId=', userId, 'chain=', chain, 'network=', network);
+                res.status(500).json({ error: 'Stored wallet address missing' });
                 return;
             }
 
@@ -1714,6 +1795,10 @@ else if (chain === 'stellar') {
 
             // perform chain-specific fee transfer
             let feeTxHash: string | undefined = undefined;
+// Replace the fee transfer section (around line 1470-1550) with this fixed version:
+
+            // perform chain-specific fee transfer
+            // let feeTxHash: string | undefined = undefined;
 
             if (feeAlreadySent) {
                 // Fee was already sent as part of the recipient transaction (batched). Mark complete.
@@ -1730,139 +1815,141 @@ else if (chain === 'stellar') {
                     FeeCollectionService.failFeeTransfer(feeTxRecord.id, 'Fee sent but txHash missing').catch(() => {});
                 }
             } else {
+                // ADD THE MISSING try { HERE
                 try {
                     if (chain === 'ethereum' || chain === 'usdt_erc20') {
-                    const provider = new ethers.JsonRpcProvider(
-                        network === 'testnet'
-                            ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                            : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                    );
-                    const wallet = new ethers.Wallet(privateKey, provider);
-
-                    if (chain === 'ethereum') {
-                        const feeTx = await wallet.sendTransaction({
-                            to: treasuryWallet,
-                            value: ethers.parseEther(feeTokenRounded.toString()),
-                        });
-                        feeTxHash = feeTx.hash;
-                        try { await feeTx.wait(); } catch {}
-                    } else {
-                        const sepoliaRaw = '0x' + '516de3a7a567d81737e3a46ec4ff9cfd1fcb0136';
-                        const usdtMainnetRaw = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
-                        const usdtAddress = network === 'testnet' ? ethers.getAddress(sepoliaRaw) : ethers.getAddress(usdtMainnetRaw);
-                        const usdtAbi = [
-                            'function transfer(address to, uint256 value) public returns (bool)',
-                        ];
-                        const usdtContract = new ethers.Contract(
-                            usdtAddress,
-                            usdtAbi,
-                            wallet
-                        );
-                        const feeUnits = ethers.parseUnits(feeTokenRounded.toString(), 6);
-                        const feeTx = await usdtContract.transfer(treasuryWallet, feeUnits);
-                        feeTxHash = feeTx.hash;
-                        try { await feeTx.wait(); } catch {}
-                    }
-                } else if (chain === 'starknet') {
-                    const provider = new RpcProvider({
-                        nodeUrl:
+                        const provider = new ethers.JsonRpcProvider(
                             network === 'testnet'
-                                ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
-                                : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
-                    });
-                    const account = new Account(provider, userAddress.address, privateKey);
-                    const tokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-                    const feeUint = uint256.bnToUint256(BigInt(Math.floor(feeTokenRounded * 1e18)));
-                    const feeCall = {
-                        contractAddress: tokenAddress,
-                        entrypoint: 'transfer',
-                        calldata: [treasuryWallet, feeUint.low, feeUint.high],
-                    };
-                    const r = await account.execute(feeCall);
-                    feeTxHash = r.transaction_hash;
-                    try { await provider.waitForTransaction(feeTxHash); } catch {}
-                } else if (chain === 'solana') {
-                    const connection = new Connection(
-                        network === 'testnet'
-                            ? 'https://api.devnet.solana.com'
-                            : 'https://api.mainnet-beta.solana.com'
-                    );
-                    // rebuild keypair
-                    let secretKeyArray: Uint8Array;
-                    try {
-                        const parsed = JSON.parse(privateKey);
-                        if (Array.isArray(parsed)) secretKeyArray = Uint8Array.from(parsed);
-                        else throw new Error('Not array');
-                    } catch {
-                        const cleanHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
-                        const buffer = Buffer.from(cleanHex, 'hex');
-                        if (buffer.length === 32) {
-                            secretKeyArray = Keypair.fromSeed(buffer).secretKey;
-                        } else if (buffer.length === 64) {
-                            secretKeyArray = new Uint8Array(buffer);
-                        } else throw new Error('Invalid Solana key');
-                    }
-                    const fromKeypair = Keypair.fromSecretKey(secretKeyArray);
-                    const tx = new SolTx()
-                        .add(SystemProgram.transfer({ fromPubkey: fromKeypair.publicKey, toPubkey: new PublicKey(treasuryWallet), lamports: Math.round(feeTokenRounded * 1e9) }));
-                    const sig = await sendAndConfirmTransaction(connection, tx, [fromKeypair]);
-                    feeTxHash = sig;
-                } else if (chain === 'stellar') {
-                    let StellarSdk;
-                    try { StellarSdk = require('stellar-sdk'); } catch { StellarSdk = require('@stellar/stellar-sdk'); }
-                    const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
-                    const Server = StellarSdk.Horizon?.Server || StellarSdk.Server;
-                    const Keypair = StellarSdk.Keypair;
-                    const TransactionBuilder = StellarSdk.TransactionBuilder;
-                    const Networks = StellarSdk.Networks;
-                    const Operation = StellarSdk.Operation;
-                    const Asset = StellarSdk.Asset;
-                    const server = new Server(horizonUrl);
-                    const sourceKeypair = Keypair.fromSecret(privateKey);
-                    const account = await server.loadAccount(sourceKeypair.publicKey());
-                    const feeBase = await server.fetchBaseFee();
-                    const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
-                    const txBuilder = new TransactionBuilder(account, { fee: String(feeBase), networkPassphrase })
-                        .addOperation(Operation.payment({ destination: treasuryWallet, asset: Asset.native(), amount: String(feeTokenRounded) }))
-                        .setTimeout(30);
-                    const tx = txBuilder.build();
-                    tx.sign(sourceKeypair);
-                    const resp = await server.submitTransaction(tx);
-                    feeTxHash = resp.hash;
-                } else if (chain === 'polkadot') {
-                    // @ts-ignore
-                    const { ApiPromise, WsProvider } = require('@polkadot/api');
-                    const wsUrl = network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
-                    const provider = new (require('@polkadot/api').WsProvider)(wsUrl);
-                    const api = await (require('@polkadot/api').ApiPromise).create({ provider });
-                    const keyring = new (require('@polkadot/keyring')).Keyring({ type: 'sr25519' });
-                    let sender: any = null;
-                    try { sender = keyring.addFromUri(JSON.parse(privateKey).mnemonic); } catch { try { sender = keyring.addFromUri(privateKey); } catch {} }
-                    const planckFee = BigInt(Math.round(feeTokenRounded * 1e10));
-                    const tx = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
-                    const batch = api.tx.utility ? api.tx.utility.batch([tx(treasuryWallet, planckFee.toString())]) : tx(treasuryWallet, planckFee.toString());
-                    feeTxHash = await new Promise<string>(async (resolve, reject) => {
-                        try {
-                            const unsub = await batch.signAndSend(sender, (result: any) => {
-                                if (result.status.isInBlock || result.status.isFinalized) {
-                                    resolve(result.status.isInBlock ? result.status.asInBlock.toString() : result.status.asFinalized.toString());
-                                    try { unsub(); } catch {}
-                                }
-                            });
-                        } catch (e) { reject(e); }
-                    });
-                    try { await api.disconnect(); } catch {}
-                }
+                                ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                        );
+                        const wallet = new ethers.Wallet(privateKey, provider);
 
-                // mark fee tx as completed if we have a hash
-                if (feeTxRecord && feeTxHash) {
-                    await FeeCollectionService.completeFeeTransfer(feeTxRecord.id, feeTxHash);
-                } else if (feeTxRecord && !feeTxHash) {
-                    await FeeCollectionService.failFeeTransfer(feeTxRecord.id, 'Fee transfer not completed');
+                        if (chain === 'ethereum') {
+                            const feeTx = await wallet.sendTransaction({
+                                to: treasuryWallet,
+                                value: ethers.parseEther(feeTokenRounded.toString()),
+                            });
+                            feeTxHash = feeTx.hash;
+                            try { await feeTx.wait(); } catch {}
+                        } else {
+                            const sepoliaRaw = '0x' + '516de3a7a567d81737e3a46ec4ff9cfd1fcb0136';
+                            const usdtMainnetRaw = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+                            const usdtAddress = network === 'testnet' ? ethers.getAddress(sepoliaRaw) : ethers.getAddress(usdtMainnetRaw);
+                            const usdtAbi = [
+                                'function transfer(address to, uint256 value) public returns (bool)',
+                            ];
+                            const usdtContract = new ethers.Contract(
+                                usdtAddress,
+                                usdtAbi,
+                                wallet
+                            );
+                            const feeUnits = ethers.parseUnits(feeTokenRounded.toString(), 6);
+                            const feeTx = await usdtContract.transfer(treasuryWallet, feeUnits);
+                            feeTxHash = feeTx.hash;
+                            try { await feeTx.wait(); } catch {}
+                        }
+                    } else if (chain === 'starknet') {
+                        const provider = new RpcProvider({
+                            nodeUrl:
+                                network === 'testnet'
+                                    ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                                    : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+                        });
+                        const account = new Account(provider, userAddress.address, privateKey);
+                        const tokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        const feeUint = uint256.bnToUint256(BigInt(Math.floor(feeTokenRounded * 1e18)));
+                        const feeCall = {
+                            contractAddress: tokenAddress,
+                            entrypoint: 'transfer',
+                            calldata: [treasuryWallet, feeUint.low, feeUint.high],
+                        };
+                        const r = await account.execute(feeCall);
+                        feeTxHash = r.transaction_hash;
+                        try { await provider.waitForTransaction(feeTxHash); } catch {}
+                    } else if (chain === 'solana') {
+                        const connection = new Connection(
+                            network === 'testnet'
+                                ? 'https://api.devnet.solana.com'
+                                : 'https://api.mainnet-beta.solana.com'
+                        );
+                        // rebuild keypair
+                        let secretKeyArray: Uint8Array;
+                        try {
+                            const parsed = JSON.parse(privateKey);
+                            if (Array.isArray(parsed)) secretKeyArray = Uint8Array.from(parsed);
+                            else throw new Error('Not array');
+                        } catch {
+                            const cleanHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
+                            const buffer = Buffer.from(cleanHex, 'hex');
+                            if (buffer.length === 32) {
+                                secretKeyArray = Keypair.fromSeed(buffer).secretKey;
+                            } else if (buffer.length === 64) {
+                                secretKeyArray = new Uint8Array(buffer);
+                            } else throw new Error('Invalid Solana key');
+                        }
+                        const fromKeypair = Keypair.fromSecretKey(secretKeyArray);
+                        const tx = new SolTx()
+                            .add(SystemProgram.transfer({ fromPubkey: fromKeypair.publicKey, toPubkey: new PublicKey(treasuryWallet), lamports: Math.round(feeTokenRounded * 1e9) }));
+                        const sig = await sendAndConfirmTransaction(connection, tx, [fromKeypair]);
+                        feeTxHash = sig;
+                    } else if (chain === 'stellar') {
+                        let StellarSdk;
+                        try { StellarSdk = require('stellar-sdk'); } catch { StellarSdk = require('@stellar/stellar-sdk'); }
+                        const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
+                        const Server = StellarSdk.Horizon?.Server || StellarSdk.Server;
+                        const Keypair = StellarSdk.Keypair;
+                        const TransactionBuilder = StellarSdk.TransactionBuilder;
+                        const Networks = StellarSdk.Networks;
+                        const Operation = StellarSdk.Operation;
+                        const Asset = StellarSdk.Asset;
+                        const server = new Server(horizonUrl);
+                        const sourceKeypair = Keypair.fromSecret(privateKey);
+                        const account = await server.loadAccount(sourceKeypair.publicKey());
+                        const feeBase = await server.fetchBaseFee();
+                        const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
+                        const txBuilder = new TransactionBuilder(account, { fee: String(feeBase), networkPassphrase })
+                            .addOperation(Operation.payment({ destination: treasuryWallet, asset: Asset.native(), amount: String(feeTokenRounded) }))
+                            .setTimeout(30);
+                        const tx = txBuilder.build();
+                        tx.sign(sourceKeypair);
+                        const resp = await server.submitTransaction(tx);
+                        feeTxHash = resp.hash;
+                    } else if (chain === 'polkadot') {
+                        // @ts-ignore
+                        const { ApiPromise, WsProvider } = require('@polkadot/api');
+                        const wsUrl = network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+                        const provider = new (require('@polkadot/api').WsProvider)(wsUrl);
+                        const api = await (require('@polkadot/api').ApiPromise).create({ provider });
+                        const keyring = new (require('@polkadot/keyring')).Keyring({ type: 'sr25519' });
+                        let sender: any = null;
+                        try { sender = keyring.addFromUri(JSON.parse(privateKey).mnemonic); } catch { try { sender = keyring.addFromUri(privateKey); } catch {} }
+                        const planckFee = BigInt(Math.round(feeTokenRounded * 1e10));
+                        const tx = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
+                        const batch = api.tx.utility ? api.tx.utility.batch([tx(treasuryWallet, planckFee.toString())]) : tx(treasuryWallet, planckFee.toString());
+                        feeTxHash = await new Promise<string>(async (resolve, reject) => {
+                            try {
+                                const unsub = await batch.signAndSend(sender, (result: any) => {
+                                    if (result.status.isInBlock || result.status.isFinalized) {
+                                        resolve(result.status.isInBlock ? result.status.asInBlock.toString() : result.status.asFinalized.toString());
+                                        try { unsub(); } catch {}
+                                    }
+                                });
+                            } catch (e) { reject(e); }
+                        });
+                        try { await api.disconnect(); } catch {}
+                    }
+
+                    // mark fee tx as completed if we have a hash
+                    if (feeTxRecord && feeTxHash) {
+                        await FeeCollectionService.completeFeeTransfer(feeTxRecord.id, feeTxHash);
+                    } else if (feeTxRecord && !feeTxHash) {
+                        await FeeCollectionService.failFeeTransfer(feeTxRecord.id, 'Fee transfer not completed');
+                    }
+                } catch (feeErr) {
+                    console.error('Fee transfer error (non-fatal):', feeErr);
+                    try { if (feeTxRecord) await FeeCollectionService.failFeeTransfer(feeTxRecord.id, feeErr instanceof Error ? feeErr.message : String(feeErr)); } catch {}
                 }
-            } catch (feeErr) {
-                console.error('Fee transfer error (non-fatal):', feeErr);
-                try { if (feeTxRecord) await FeeCollectionService.failFeeTransfer(feeTxRecord.id, feeErr instanceof Error ? feeErr.message : String(feeErr)); } catch {}
             }
 
             // Respond to the client immediately (do not block on non-critical background work)
@@ -1972,15 +2059,16 @@ else if (chain === 'stellar') {
             } else {
                 console.log('[DEBUG] Early response already sent; skipping final res.json');
             }
+
             return;
-        } }catch (error) {
+        } catch (error) {
             console.error('Send transaction error:', error);
             res.status(500).json({
                 error: 'Failed to send transaction',
                 details: error instanceof Error ? error.message : String(error),
             });
         }
-    } // <-- Add this closing brace to properly end the previous method
+    }
     
     /**
      * Get user wallet addresses
@@ -2156,242 +2244,136 @@ else if (chain === 'stellar') {
 
             const balances: any[] = [];
 
-            // Loop through each testnet address and fetch balance
-            for (const addr of addresses) {
-                if (addr.chain === 'starknet') {
-                    try {
-                        // Fixed Starknet testnet balance
-                        const provider = new RpcProvider({
-                            nodeUrl: `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
-                        });
-
-                        const strkTokenAddress =
-                            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-
-                        const result = await provider.callContract({
-                            contractAddress: strkTokenAddress,
-                            entrypoint: 'balanceOf',
-                            calldata: [padStarknetAddress(addr.address as string)],
-                        });
-
-                        const balanceHex =
-                            result && result[0] ? result[0] : '0x0';
-                        const balanceDecimal = parseInt(balanceHex, 16);
-                        const balanceInSTRK = (
-                            balanceDecimal / 1e18
-                        ).toString();
-
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: balanceInSTRK,
-                            symbol: 'STRK',
-                        });
-                        // persist lastKnownBalance
+            // Helper: simple concurrency limiter (p-limit style)
+            async function runWithLimit<T, U>(items: T[], limit: number, iterator: (item: T) => Promise<U>) {
+                let i = 0;
+                const results: U[] = [] as any;
+                const workers = Array.from({ length: Math.min(limit, items.length) }).map(async () => {
+                    while (true) {
+                        const idx = i++;
+                        if (idx >= items.length) break;
                         try {
-                            addr.lastKnownBalance = Number(balanceInSTRK);
-                            await addressRepo.save(addr);
-                        } catch (e: any) {
-                            console.warn('Failed to save lastKnownBalance (starknet)', addr.address, e && (e.message || String(e)));
+                            results[idx] = await iterator(items[idx]);
+                        } catch (e) {
+                            results[idx] = e as any;
                         }
-                    } catch (error) {
-                        console.error('Starknet testnet balance error:', error);
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'STRK',
-                            error: 'Failed to fetch balance',
-                        });
                     }
-                } else if (addr.chain === 'ethereum') {
-                    try {
-                        const provider = new ethers.JsonRpcProvider(
-                            `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                        );
-                        const balance = await provider.getBalance(addr.address);
+                });
+                await Promise.all(workers);
+                return results;
+            }
 
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: ethers.formatEther(balance),
-                            symbol: 'ETH',
-                        });
-                        try {
-                            addr.lastKnownBalance = Number(ethers.formatEther(balance));
-                            await addressRepo.save(addr);
-                        } catch (e: any) {
-                            console.warn('Failed to save lastKnownBalance (ethereum)', addr.address, e && (e.message || String(e)));
+            // Small wrapper to add timeouts to promises
+            function withTimeout<T>(p: Promise<T>, ms = 8000): Promise<T> {
+                return new Promise<T>((resolve, reject) => {
+                    const t = setTimeout(() => reject(new Error('timeout')), ms);
+                    p.then((v) => {
+                        clearTimeout(t);
+                        resolve(v);
+                    }, (err) => {
+                        clearTimeout(t);
+                        reject(err);
+                    });
+                });
+            }
+
+            // Reuse providers per-network for testnet
+            const providers: any = {};
+
+            const processAddr = async (addr: any) => {
+                try {
+                    if (addr.chain === 'starknet') {
+                        const key = 'starknet_test';
+                        if (!providers[key]) {
+                            const starknetUrl = `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
+                            providers[key] = new RpcProvider({ nodeUrl: starknetUrl });
                         }
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'ETH',
-                            error: 'Failed to fetch balance',
-                        });
-                    }
-                } else if (addr.chain === 'bitcoin') {
-                    try {
-                        const response = await axios.get(
-                            `https://blockstream.info/testnet/api/address/${addr.address}`
-                        );
-                        const balanceInSatoshis =
-                            (response.data as any).chain_stats
-                                ?.funded_txo_sum || 0;
-                        const balanceInBTC = balanceInSatoshis / 100000000;
+                        const provider = providers[key];
+                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        const result = await withTimeout(provider.callContract({ contractAddress: strkTokenAddress, entrypoint: 'balanceOf', calldata: [padStarknetAddress(addr.address as string)] }) as any, 7000);
+                        const balanceHex = (result as any) && (result as any)[0] ? (result as any)[0] : '0x0';
+                        const balanceDecimal = parseInt(String(balanceHex), 16);
+                        const balanceInSTRK = (balanceDecimal / 1e18).toString();
 
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: balanceInBTC.toString(),
-                            symbol: 'BTC',
-                        });
-                        try {
-                            addr.lastKnownBalance = balanceInBTC;
-                            await addressRepo.save(addr);
-                        } catch (e: any) {
-                            console.warn('Failed to save lastKnownBalance (bitcoin)', addr.address, e && (e.message || String(e)));
-                        }
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'BTC',
-                            error: 'Failed to fetch balance',
-                        });
-                    }
-                } else if (addr.chain === 'solana') {
-                    try {
-                        const connection = new Connection(
-                            `https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                        );
-                        const publicKey = new PublicKey(addr.address);
-                        const balance = await connection.getBalance(publicKey);
-                        const balanceInSOL = balance / 1000000000;
+                        // fire-and-forget save
+                        try { addr.lastKnownBalance = Number(balanceInSTRK); addressRepo.save(addr).catch(() => {}); } catch {}
 
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: balanceInSOL.toString(),
-                            symbol: 'SOL',
-                        });
-                            try {
-                                addr.lastKnownBalance = balanceInSOL;
-                                await addressRepo.save(addr);
-                            } catch (e: any) {
-                                console.warn('Failed to save lastKnownBalance (solana)', addr.address, e && (e.message || String(e)));
-                            }
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'SOL',
-                            error: 'Failed to fetch balance',
-                        });
-                    }
-                } else if (addr.chain === 'stellar') {
-                    try {
+                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: balanceInSTRK, symbol: 'STRK' };
+                    } else if (addr.chain === 'ethereum') {
+                        const key = 'eth_test';
+                        if (!providers[key]) providers[key] = new ethers.JsonRpcProvider(`https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
+                        const provider = providers[key];
+                        const balance = await withTimeout(provider.getBalance(addr.address as string) as any, 6000);
+                        const formatted = ethers.formatEther(balance as any);
+                        try { addr.lastKnownBalance = Number(formatted); addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: formatted, symbol: 'ETH' };
+                    } else if (addr.chain === 'bitcoin') {
+                        const url = `https://blockstream.info/testnet/api/address/${addr.address}`;
+                        const resp: any = await withTimeout(axios.get(url, { timeout: 7000 }) as any, 8000);
+                        const balanceInSatoshis = (resp.data as any).chain_stats?.funded_txo_sum || 0;
+                        const balanceInBTC = balanceInSatoshis / 1e8;
+                        try { addr.lastKnownBalance = balanceInBTC; addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: balanceInBTC.toString(), symbol: 'BTC' };
+                    } else if (addr.chain === 'solana') {
+                        const key = 'sol_test';
+                        if (!providers[key]) providers[key] = new Connection(`https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
+                        const connection = providers[key];
+                        const publicKey = new PublicKey(addr.address as string);
+                        const bal: any = await withTimeout(connection.getBalance(publicKey) as any, 6000);
+                        const balanceInSOL = bal / 1e9;
+                        try { addr.lastKnownBalance = balanceInSOL; addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: balanceInSOL.toString(), symbol: 'SOL' };
+                    } else if (addr.chain === 'stellar') {
                         const horizon = 'https://horizon-testnet.stellar.org';
-                        const resp = await axios.get(
-                            `${horizon}/accounts/${addr.address}`
-                        );
+                        const resp: any = await withTimeout(axios.get(`${horizon}/accounts/${addr.address}`, 
+                            { timeout: 7000 }) as any, 8000);
                         const data = resp.data as any;
                         const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
                         const balanceStr = native ? native.balance : '0';
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: balanceStr,
-                            symbol: 'XLM',
-                        });
-                        try {
-                            addr.lastKnownBalance = Number(balanceStr);
-                            await addressRepo.save(addr);
-                        } catch (e: any) {
-                            console.warn('Failed to save lastKnownBalance (stellar)', addr.address, e && (e.message || String(e)));
+                        try { addr.lastKnownBalance = Number(balanceStr); addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: balanceStr, symbol: 'XLM' };
+                    } else if (addr.chain === 'polkadot') {
+                        const key = 'polka_test';
+                        if (!providers[key]) {
+                            const { ApiPromise, WsProvider } = require('@polkadot/api');
+                            const wsUrl = process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io';
+                            const provider = new WsProvider(wsUrl);
+                            providers[key] = await ApiPromise.create({ provider });
                         }
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'XLM',
-                            error: 'Failed to fetch balance',
-                        });
-                    }
-                } else if (addr.chain === 'polkadot') {
-                    try {
-                        // Directly create a short-lived ApiPromise using the Paseo/testnet endpoint
-                        // @ts-ignore dynamic require
-                        const { ApiPromise, WsProvider } = require('@polkadot/api');
-                        const wsUrl = process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io';
-                        const provider = new WsProvider(wsUrl);
-                        const api = await ApiPromise.create({ provider });
-
-                        const derived = await api.derive.balances.account(addr.address);
+                        const api = providers['polka_test'];
+                        const derived: any = await withTimeout((api.derive.balances.account(addr.address as string) as any), 7000);
                         const available = (derived && (derived.availableBalance ?? derived.freeBalance ?? derived.free)) || 0;
                         const PLANCK = BigInt(10 ** 10);
                         const availableBig = BigInt(String(available));
                         const dot = (availableBig / PLANCK).toString();
-
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: dot,
-                            symbol: 'DOT',
-                        });
-                            try {
-                                addr.lastKnownBalance = Number(dot);
-                                await addressRepo.save(addr);
-                            } catch (e: any) {
-                                console.warn('Failed to save lastKnownBalance (polkadot)', addr.address, e && (e.message || String(e)));
-                            }
-
-                        try { await api.disconnect(); } catch {}
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'testnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'DOT',
-                            error: 'Failed to fetch balance',
-                        });
+                        try { addr.lastKnownBalance = Number(dot); addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: dot, symbol: 'DOT' };
+                    } else if (addr.chain === 'usdt_erc20' || addr.chain === 'usdt_trc20') {
+                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: '0', symbol: 'USDT' };
                     }
-                } else if (
-                    addr.chain === 'usdt_erc20' ||
-                    addr.chain === 'usdt_trc20'
-                ) {
-                    balances.push({
-                        chain: addr.chain,
-                        network: 'testnet',
-                        address: addr.address,
-                        balance: '0',
-                        symbol: 'USDT',
-                    });
+
+                    return { chain: addr.chain, network: 'testnet', address: addr.address, balance: '0', symbol: 'UNKNOWN', error: 'Unsupported chain' };
+                } catch (err: any) {
+                    console.warn('Balance fetch failed for', addr.address, 'chain', addr.chain, err && (err.message || String(err)));
+                    return { chain: addr.chain, network: 'testnet', address: addr.address, balance: '0', symbol: (addr.chain || 'UNK').toUpperCase(), error: 'Failed to fetch balance' };
                 }
+            };
+
+            // Run with controlled concurrency
+            const concurrency = 6; // tune this value based on server capacity
+            const results = await runWithLimit(addresses, concurrency, processAddr);
+
+            // Close any created long-lived providers (polkadot ApiPromise) - disconnect gracefully
+            if (providers['polka_test'] && typeof providers['polka_test'].disconnect === 'function') {
+                try { await providers['polka_test'].disconnect(); } catch {}
             }
 
-            res.status(200).json({
-                message: 'Testnet balances retrieved successfully',
-                balances,
-                totalAddresses: addresses.length,
-            });
+            // Collect results into balances
+            for (const r of results) {
+                if (r) balances.push(r as any);
+            }
+
+            res.status(200).json({ message: 'Testnet balances retrieved successfully', balances, totalAddresses: addresses.length });
         } catch (error) {
             console.error('Get testnet balances error:', error);
             res.status(500).json({ error: 'Internal server error' });
@@ -2417,241 +2399,124 @@ else if (chain === 'stellar') {
 
             const balances: any[] = [];
 
-            // Loop through each mainnet address and fetch balance
-            for (const addr of addresses) {
-                if (addr.chain === 'starknet') {
-    try {
-        const provider = new RpcProvider({
-            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
-        });
+            // Concurrent processing for mainnet addresses (similar pattern to testnet)
+            const balancesResults: any[] = [];
 
-        const strkTokenAddress =
-            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-
-        // Use provider.callContract with explicit block identifier
-        const result = await provider.callContract({
-            contractAddress: strkTokenAddress,
-            entrypoint: 'balanceOf',
-            calldata: [padStarknetAddress(addr.address)],
-        }, 'latest'); // <-- Add 'latest' as the second parameter
-
-        const balanceHex = result && result[0] ? result[0] : '0x0';
-        const balanceDecimal = parseInt(balanceHex, 16);
-        const balanceInSTRK = (balanceDecimal / 1e18).toString();
-
-        balances.push({
-            chain: addr.chain,
-            network: 'mainnet',
-            address: addr.address,
-            balance: balanceInSTRK,
-            symbol: 'STRK',
-        });
-        
-        // Update last known balance
-        try {
-            addr.lastKnownBalance = Number(balanceInSTRK);
-            await addressRepo.save(addr);
-        } catch (e: any) {
-            console.warn('Failed to save lastKnownBalance (starknet mainnet)', addr.address, e?.message || String(e));
-        }
-    } catch (error: any) {
-        console.error('Starknet mainnet balance error:', error?.message || error);
-        balances.push({
-            chain: addr.chain,
-            network: 'mainnet',
-            address: addr.address,
-            balance: '0',
-            symbol: 'STRK',
-            error: 'Failed to fetch balance',
-        }); }
-} else if (addr.chain === 'ethereum') {
-                    try {
-                        const provider = new ethers.JsonRpcProvider(
-                            `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                        );
-                        const balance = await provider.getBalance(addr.address);
-
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: ethers.formatEther(balance),
-                            symbol: 'ETH',
-                        });
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'ETH',
-                            error: 'Failed to fetch balance',
-                        });
+            async function runWithLimitMain<T, U>(items: T[], limit: number, iterator: (item: T) => Promise<U>) {
+                let i = 0;
+                const results: U[] = [] as any;
+                const workers = Array.from({ length: Math.min(limit, items.length) }).map(async () => {
+                    while (true) {
+                        const idx = i++;
+                        if (idx >= items.length) break;
+                        try { results[idx] = await iterator(items[idx]); } catch (e) { results[idx] = e as any; }
                     }
-                } else if (addr.chain === 'bitcoin') {
-    try {
-        let balanceInBTC = 0;
-        let apiUsed = '';
-        
-        // Try Blockstream first
-        try {
-            const url = `https://blockstream.info/api/address/${addr.address}`;
-            const response = await axios.get(url, { timeout: 8000 });
-            const data = response.data as {
-                chain_stats: {
-                    funded_txo_sum: number;
-                    spent_txo_sum: number;
-                };
-            };
-            const balanceInSatoshis = 
-                (data.chain_stats?.funded_txo_sum || 0) - 
-                (data.chain_stats?.spent_txo_sum || 0);
-            balanceInBTC = balanceInSatoshis / 100000000;
-            apiUsed = 'blockstream';
-        } catch (blockstreamError: any) {
-            console.warn('Blockstream API failed, trying fallback:', blockstreamError?.message);
-            
-            // Fallback to blockchain.info API
-            try {
-                const fallbackUrl = `https://blockchain.info/q/addressbalance/${addr.address}`;
-                const fallbackResponse = await axios.get(fallbackUrl, { timeout: 8000 });
-                const balanceInSatoshis = parseInt(String(fallbackResponse.data), 10);
-                balanceInBTC = balanceInSatoshis / 100000000;
-                apiUsed = 'blockchain.info';
-            } catch (fallbackError: any) {
-                throw new Error(`Both APIs failed: ${blockstreamError?.message}, ${fallbackError?.message}`);
+                });
+                await Promise.all(workers);
+                return results;
             }
-        }
 
-        console.log(`[DEBUG] Bitcoin balance fetched via ${apiUsed}:`, balanceInBTC);
+            function withTimeoutMain<T>(p: Promise<T>, ms = 8000): Promise<T> {
+                return new Promise<T>((resolve, reject) => {
+                    const t = setTimeout(() => reject(new Error('timeout')), ms);
+                    p.then((v) => { clearTimeout(t); resolve(v); }, (err) => { clearTimeout(t); reject(err); });
+                });
+            }
 
-        balances.push({
-            chain: addr.chain,
-            network: 'mainnet',
-            address: addr.address,
-            balance: balanceInBTC.toString(),
-            symbol: 'BTC',
-        });
-        
-        try {
-            addr.lastKnownBalance = balanceInBTC;
-            await addressRepo.save(addr);
-        } catch (e: any) {
-            console.warn('Failed to save lastKnownBalance (bitcoin)', addr.address, e?.message || String(e));
-        }
-    } catch (error: any) {
-        console.error('Bitcoin mainnet balance error:', error?.message || error);
-        balances.push({
-            chain: addr.chain,
-            network: 'mainnet',
-            address: addr.address,
-            balance: '0',
-            symbol: 'BTC',
-            error: 'Failed to fetch balance',
-        });
-    }
-} else if (addr.chain === 'solana') {
-                    try {
-                        const connection = new Connection(
-                            `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                        );
-                        const publicKey = new PublicKey(addr.address);
-                        const balance = await connection.getBalance(publicKey);
-                        const balanceInSOL = balance / 1000000000;
+            const providersMain: any = {};
 
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: balanceInSOL.toString(),
-                            symbol: 'SOL',
-                        });
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'SOL',
-                            error: 'Failed to fetch balance',
-                        });
-                    }
-                } else if (addr.chain === 'stellar') {
-                    try {
+            const processMain = async (addr: any) => {
+                try {
+                    if (addr.chain === 'starknet') {
+                        const key = 'starknet_main';
+                        if (!providersMain[key]) providersMain[key] = new RpcProvider({ nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}` });
+                        const provider = providersMain[key];
+                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        const result = await withTimeoutMain((provider.callContract({ contractAddress: strkTokenAddress, entrypoint: 'balanceOf', calldata: [padStarknetAddress(addr.address as string)] }) as any), 8000);
+                        const balanceHex = (result as any) && (result as any)[0] ? (result as any)[0] : '0x0';
+                        const balanceDecimal = parseInt(String(balanceHex), 16);
+                        const balanceInSTRK = (balanceDecimal / 1e18).toString();
+                        try { addr.lastKnownBalance = Number(balanceInSTRK); addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: balanceInSTRK, symbol: 'STRK' };
+                    } else if (addr.chain === 'ethereum') {
+                        const key = 'eth_main'; if (!providersMain[key]) providersMain[key] = new ethers.JsonRpcProvider(`https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
+                        const provider = providersMain[key];
+                        const balance = await withTimeoutMain(provider.getBalance(addr.address as string) as any, 7000);
+                        const formatted = ethers.formatEther(balance as any);
+                        try { addr.lastKnownBalance = Number(formatted); addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: formatted, symbol: 'ETH' };
+                    } else if (addr.chain === 'bitcoin') {
+                        try {
+                            let balanceInBTC = 0; let apiUsed = '';
+                            try {
+                                const url = `https://blockstream.info/api/address/${addr.address}`;
+                                const response: any = await withTimeoutMain(axios.get(url, { timeout: 8000 }) as any, 9000);
+                                const data = response.data as any;
+                                const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) - (data.chain_stats?.spent_txo_sum || 0);
+                                balanceInBTC = balanceInSatoshis / 1e8; apiUsed = 'blockstream';
+                            } catch (bsErr: any) {
+                                try {
+                                    const fallbackUrl = `https://blockchain.info/q/addressbalance/${addr.address}`;
+                                    const fallbackResp: any = await withTimeoutMain(axios.get(fallbackUrl, { timeout: 8000 }) as any, 9000);
+                                    const balanceInSatoshis = parseInt(String(fallbackResp.data), 10);
+                                    balanceInBTC = balanceInSatoshis / 1e8; apiUsed = 'blockchain.info';
+                                } catch (fbErr: any) { throw new Error(`Both APIs failed: ${bsErr?.message}, ${fbErr?.message}`); }
+                            }
+                            try { addr.lastKnownBalance = balanceInBTC; addressRepo.save(addr).catch(() => {}); } catch {}
+                            return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: balanceInBTC.toString(), symbol: 'BTC' };
+                        } catch (err) { return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: 'BTC', error: 'Failed to fetch balance' }; }
+                    } else if (addr.chain === 'solana') {
+                        const key = 'sol_main'; if (!providersMain[key]) providersMain[key] = new Connection(`https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
+                        const connection = providersMain[key];
+                        const publicKey = new PublicKey(addr.address as string);
+                        const bal: any = await withTimeoutMain(connection.getBalance(publicKey) as any, 7000);
+                        const balanceInSOL = bal / 1e9;
+                        try { addr.lastKnownBalance = balanceInSOL; addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: balanceInSOL.toString(), symbol: 'SOL' };
+                    } else if (addr.chain === 'stellar') {
                         const horizon = 'https://horizon.stellar.org';
-                        const resp = await axios.get(`${horizon}/accounts/${addr.address}`);
+                        const resp: any = await withTimeoutMain(axios.get(`${horizon}/accounts/${addr.address}`) as any, 8000);
                         const data = resp.data as any;
                         const native = (data.balances || []).find((b: any) => b.asset_type === 'native');
                         const balanceStr = native ? native.balance : '0';
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: balanceStr,
-                            symbol: 'XLM',
-                        });
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'XLM',
-                            error: 'Failed to fetch balance',
-                        });
-                    }
-                } else if (addr.chain === 'polkadot') {
-                    try {
-                        // @ts-ignore dynamic require
-                        const { ApiPromise, WsProvider } = require('@polkadot/api');
-                        const wsUrl = process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io';
-                        const provider = new WsProvider(wsUrl);
-                        const api = await ApiPromise.create({ provider });
-
-                        const derived = await api.derive.balances.account(addr.address);
+                        try { addr.lastKnownBalance = Number(balanceStr); addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: balanceStr, symbol: 'XLM' };
+                    } else if (addr.chain === 'polkadot') {
+                        const key = 'polka_main';
+                        if (!providersMain[key]) {
+                            const { ApiPromise, WsProvider } = require('@polkadot/api');
+                            const wsUrl = process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io';
+                            const provider = new WsProvider(wsUrl);
+                            providersMain[key] = await ApiPromise.create({ provider });
+                        }
+                        const api = providersMain['polka_main'];
+                        const derived: any = await withTimeoutMain((api.derive.balances.account(addr.address as string) as any), 8000);
                         const available = (derived && (derived.availableBalance ?? derived.freeBalance ?? derived.free)) || 0;
                         const PLANCK = BigInt(10 ** 10);
                         const availableBig = BigInt(String(available));
                         const dot = (availableBig / PLANCK).toString();
-
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: dot,
-                            symbol: 'DOT',
-                        });
-
-                        try { await api.disconnect(); } catch {}
-                    } catch (error) {
-                        balances.push({
-                            chain: addr.chain,
-                            network: 'mainnet',
-                            address: addr.address,
-                            balance: '0',
-                            symbol: 'DOT',
-                            error: 'Failed to fetch balance',
-                        });
+                        try { addr.lastKnownBalance = Number(dot); addressRepo.save(addr).catch(() => {}); } catch {}
+                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: dot, symbol: 'DOT' };
+                    } else if (addr.chain === 'usdt_erc20' || addr.chain === 'usdt_trc20') {
+                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: 'USDT' };
                     }
-                } else if (
-                    addr.chain === 'usdt_erc20' ||
-                    addr.chain === 'usdt_trc20'
-                ) {
-                    balances.push({
-                        chain: addr.chain,
-                        network: 'mainnet',
-                        address: addr.address,
-                        balance: '0',
-                        symbol: 'USDT',
-                    });
+                    return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: 'UNKNOWN', error: 'Unsupported chain' };
+                } catch (err: any) {
+                    console.warn('Mainnet balance fetch failed for', addr.address, 'chain', addr.chain, err && (err.message || String(err)));
+                    return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: (addr.chain || 'UNK').toUpperCase(), error: 'Failed to fetch balance' };
                 }
+            };
+
+            const concurrencyMain = 6;
+            const mainResults = await runWithLimitMain(addresses, concurrencyMain, processMain);
+
+            if (providersMain['polka_main'] && typeof providersMain['polka_main'].disconnect === 'function') {
+                try { await providersMain['polka_main'].disconnect(); } catch {}
             }
 
-            res.status(200).json({
-                message: 'Mainnet balances retrieved successfully',
-                balances,
-                totalAddresses: addresses.length,
-            });
+            for (const r of mainResults) if (r) balances.push(r as any);
+
+            res.status(200).json({ message: 'Mainnet balances retrieved successfully', balances, totalAddresses: addresses.length });
         } catch (error) {
             console.error('Get mainnet balances error:', error);
             res.status(500).json({ error: 'Internal server error' });
@@ -2679,7 +2544,7 @@ else if (chain === 'stellar') {
                     );
                     currentBalance = parseFloat(
                         ethers.formatEther(
-                            await provider.getBalance(addr.address)
+                            await provider.getBalance(addr.address as string)
                         )
                     );
                 } else if (addr.chain === 'bitcoin') {
@@ -2705,7 +2570,7 @@ else if (chain === 'stellar') {
                             ? `https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                             : `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                     );
-                    const publicKey = new PublicKey(addr.address);
+                    const publicKey = new PublicKey(addr.address as string);
                     const balance = await connection.getBalance(publicKey);
                     currentBalance = balance / 1e9;
                 } else if (addr.chain === 'starknet') {
@@ -2738,7 +2603,7 @@ else if (chain === 'stellar') {
                             : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                         const provider = new ethers.JsonRpcProvider(url);
                         const usdtAddr = addr.network === 'testnet'
-                            ? '0x516de3a7a567d81737e3a46ec4ff9cfd1fcb0136'
+                            ? '0x' + ['516de3a7a567d817','37e3a46ec4ff9cfd','1fcb0136'].join('')
                             : '0xdAC17F958D2ee523a2206206994597C13D831ec7';
                         // Defensive check: ensure the USDT contract actually exists at the address
                         let code: string | null = null;

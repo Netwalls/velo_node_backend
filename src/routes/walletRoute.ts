@@ -47,4 +47,9 @@ router.post('/send', authMiddleware, async (req, res) => {
     await WalletController.sendTransaction(req, res);
 });
 
+// Debug probe for Alchemy endpoints (requires auth)
+router.get('/debug/alchemy-probe', authMiddleware, async (req, res) => {
+    await WalletController.alchemyProbe(req as any, res as any);
+});
+
 export default router;

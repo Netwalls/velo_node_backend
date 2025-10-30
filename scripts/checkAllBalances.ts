@@ -86,7 +86,7 @@ async function fetchBalanceForAddress(addr: UserAddress): Promise<{ chain: strin
                 // @ts-ignore
                 const { RpcProvider } = await import('starknet');
                 const nodeUrl = addr.network === 'testnet'
-                    ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                    ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`
                     : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`;
                 const provider = new RpcProvider({ nodeUrl });
                 const tokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';

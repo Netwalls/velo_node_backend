@@ -1,0 +1,1 @@
+{"version":3,"file":"historyController.d.ts","sourceRoot":"","sources":["../../src/controllers/historyController.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,QAAQ,EAAE,MAAM,SAAS,CAAC;AAGnC,OAAO,EAAE,WAAW,EAAE,MAAM,UAAU,CAAC;AAEvC,qBAAa,iBAAiB;WAEb,UAAU,CAAC,GAAG,EAAE,WAAW,EAAE,GAAG,EAAE,QAAQ,GAAG,OAAO,CAAC,IAAI,CAAC;CAa1E"}

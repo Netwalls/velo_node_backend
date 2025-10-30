@@ -4,7 +4,7 @@ export async function isStarknetAccountDeployed(address: string, network: 'mainn
     const nodeUrl =
         network === 'mainnet'
             ? `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`
-            : `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
+            : `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`;
 
     const provider = new RpcProvider({ nodeUrl });
 

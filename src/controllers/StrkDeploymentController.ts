@@ -55,7 +55,7 @@ export class StrkController {
                     try {
                         const provider = new RpcProvider({
                             nodeUrl:
-                                `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
+                                `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
                         });
 
                         const strkTokenAddress =
