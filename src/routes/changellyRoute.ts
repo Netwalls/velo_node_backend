@@ -1,27 +1,17 @@
 import { Router } from 'express';
-import { ChangellyController } from '../controllers/changellyController';
+import { ChangellyRampController } from '../controllers/changellyController';
+import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
-// Public endpoints to proxy Changelly fiat API
-router.get('/providers', ChangellyController.getProviders);
-router.get('/currencies', ChangellyController.getCurrencies);
-router.get('/available-countries', ChangellyController.getAvailableCountries);
-router.get('/offers', ChangellyController.getOffers);
-router.post('/orders', ChangellyController.createOrder);
-router.post('/validate-address', ChangellyController.validateAddress);
+// On-Ramp: Buy crypto with NGN
+router.post('/deposit', authMiddleware, ChangellyRampController.deposit);
 
-// Simplified single-endpoint flows for frontend
-// POST /fiat/changelly/crypto/deposit  -> create on-ramp order (NGN -> crypto)
-router.post('/crypto/deposit', ChangellyController.deposit);
-// POST /fiat/changelly/crypto/withdraw -> create off-ramp order (crypto -> NGN)
-router.post('/crypto/withdraw', ChangellyController.withdraw);
+// Off-Ramp: Sell crypto for NGN
+router.post('/withdraw', authMiddleware, ChangellyRampController.withdraw);
 
-// Off-ramp
-router.get('/sell/offers', ChangellyController.getSellOffers);
-router.post('/sell/orders', ChangellyController.createSellOrder);
-
-// Orders listing
-router.get('/orders', ChangellyController.getOrders);
+// Get quotes without creating orders
+router.post('/quote/buy', authMiddleware, ChangellyRampController.getBuyQuote);
+router.post('/quote/sell', authMiddleware, ChangellyRampController.getSellQuote);
 
 export default router;

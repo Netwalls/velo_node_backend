@@ -11,14 +11,13 @@ import paymentRouter from './routes/payment';
 import fiatRoutes from './routes/fiatRoute';
 import transactionRoutes from './routes/transactionRoute';
 import splitPaymentRoutes from './routes/splitPaymentRoute';
-import { WalletController } from './controllers/walletController';
 import strkRoute from "./routes/strkDeploymentRoute";
 import qrpaymentRoute from './routes/qrpaymentRoute';
-import createRateLimiter from './middleware/rateLimiter';
 import adminRoute from './routes/adminRoute';
 import publicRoute from './routes/publicRoute';
 import swapRoute from './routes/swapRoute';
 import feeRoute from './routes/feeRoute';
+import changellyRoute from './routes/changellyRoute';
 
 // Load environment variables
 dotenv.config();
@@ -39,6 +38,7 @@ app.get('/', (req, res) => {
     res.send('Velo Backend Server is running!');
 });
 
+app.use('/fiat', changellyRoute);
 app.use('/fiat', fiatRoutes);
 app.use('/auth', authRouter);
 app.use('/user', userRouter);

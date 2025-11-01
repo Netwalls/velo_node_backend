@@ -29,6 +29,12 @@ async function callChangelly(method: 'get' | 'post', path: string, data?: any, p
     const payload = method === 'post' ? JSON.stringify(data || {}) : '';
     const signature = signPayload(payload);
 
+    // Mask the API key for safe debug logging (do not log the secret)
+    const maskedKey = API_KEY ? `${API_KEY.slice(0, 8)}...${API_KEY.slice(-4)}` : '';
+    // Helpful debug log — will show masked key, signature and minimal payload info
+    // Remove or lower log level in production
+    console.debug('[Changelly] request', { method, url, maskedKey, signature: signature.slice(0, 8) + '...', payloadLength: payload.length });
+
     const headers: Record<string, string> = {
         'X-Api-Key': API_KEY || '',
         'X-Api-Signature': signature,
