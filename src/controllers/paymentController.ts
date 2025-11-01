@@ -699,7 +699,8 @@ export const PaymentController = {
 	},
 
 	createCryptoAirtimeOrder: async (_req: Request, res: Response) => {
-		res.status(501).json({ error: 'createCryptoAirtimeOrder not implemented here' });
+		// Support legacy route /airtime/crypto by delegating to the instantBuy flow
+		return CryptoAirtimeController.instantBuy(_req as any, res as any);
 	},
 	attachTxToOrder: async (_req: Request, res: Response) => {
 		res.status(501).json({ error: 'attachTxToOrder not implemented here' });
