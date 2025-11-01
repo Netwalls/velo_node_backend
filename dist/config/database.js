@@ -45,7 +45,7 @@ exports.AppDataSource = new typeorm_1.DataSource({
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
     // ssl: false,
-    // ssl: { rejectUnauthorized: false },
+    ssl: { rejectUnauthorized: false },
 });
 const connectDB = async () => {
     try {
