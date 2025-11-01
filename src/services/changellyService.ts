@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 class ChangellyService {
     private apiKey: string;
-    private apiSecret: string;
+    private privateKey: string;
     private baseURL: string;
     private client: ReturnType<typeof axios.create>;
 
@@ -13,11 +13,11 @@ class ChangellyService {
         const apiSecretRaw = process.env.CHANGELLY_API_SECRET || '';
         
         // Decode the Base64-encoded private key
-        this.apiSecret = this.decodePrivateKey(apiSecretRaw);
+        this.privateKey = this.decodePrivateKey(apiSecretRaw);
 
         this.baseURL = 'https://fiat-api.changelly.com';
 
-        if (!this.apiKey || !this.apiSecret) {
+        if (!this.apiKey || !this.privateKey) {
             throw new Error('CHANGELLY_API_KEY and CHANGELLY_API_SECRET must be set in environment variables');
         }
 
@@ -45,18 +45,27 @@ class ChangellyService {
             return decoded;
         } catch (error) {
             console.error('Failed to decode private key:', error);
-            return encodedKey; // Return as-is if decoding fails
+            return encodedKey;
         }
     }
 
     /**
-     * Generate HMAC SHA512 signature for Changelly API
+     * Generate RSA SHA256 signature for Changelly API
+     * Changelly uses RSA signature, not HMAC!
      */
     private generateSignature(message: string): string {
-        return crypto
-            .createHmac('sha512', this.apiSecret)
-            .update(message)
-            .digest('hex');
+        try {
+            const sign = crypto.createSign('RSA-SHA256');
+            sign.update(message);
+            sign.end();
+            
+            // Sign with private key and return hex
+            const signature = sign.sign(this.privateKey, 'hex');
+            return signature;
+        } catch (error) {
+            console.error('Signature generation error:', error);
+            throw error;
+        }
     }
 
     /**
@@ -64,15 +73,36 @@ class ChangellyService {
      */
     private async get(endpoint: string, params?: any) {
         try {
-            // Build query string
-            const queryString = params 
-                ? '?' + new URLSearchParams(params).toString()
-                : '';
+            // Build query string manually
+            let queryString = '';
+            if (params) {
+                const sortedParams: any = {};
+                // Sort parameters alphabetically for consistent signature
+                Object.keys(params).sort().forEach(key => {
+                    if (params[key] !== undefined && params[key] !== null) {
+                        sortedParams[key] = params[key];
+                    }
+                });
+                
+                const queryParts = Object.entries(sortedParams).map(
+                    ([key, value]) => `${key}=${encodeURIComponent(String(value))}`
+                );
+                
+                if (queryParts.length > 0) {
+                    queryString = '?' + queryParts.join('&');
+                }
+            }
             
             const fullPath = endpoint + queryString;
             
-            // Generate signature (sign the full path including query params)
+            // Generate signature from the full path
             const signature = this.generateSignature(fullPath);
+
+            console.log('GET Request Debug:', {
+                path: fullPath,
+                apiKey: this.apiKey.substring(0, 10) + '...',
+                signatureLength: signature.length
+            });
 
             const response = await this.client.get(fullPath, {
                 headers: {
@@ -92,16 +122,24 @@ class ChangellyService {
      */
     private async post(endpoint: string, data: any) {
         try {
-            // Stringify the body for signature
-            const body = JSON.stringify(data);
+            // Stringify the body for signature (no spaces, sorted keys)
+            const body = JSON.stringify(data, Object.keys(data).sort());
             
-            // Generate signature (sign the request body)
+            // Generate signature from the request body
             const signature = this.generateSignature(body);
+
+            console.log('POST Request Debug:', {
+                endpoint,
+                apiKey: this.apiKey.substring(0, 10) + '...',
+                bodyLength: body.length,
+                signatureLength: signature.length
+            });
 
             const response = await this.client.post(endpoint, data, {
                 headers: {
                     'X-Api-Key': this.apiKey,
                     'X-Api-Signature': signature,
+                    'Content-Type': 'application/json'
                 }
             });
 
