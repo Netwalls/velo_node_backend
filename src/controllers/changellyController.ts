@@ -88,12 +88,12 @@ export class ChangellyRampController {
                 country,
                 walletAddress,
                 paymentMethod: selectedPaymentMethod?.method || undefined,
-                ip: req.ip || req.headers['x-forwarded-for'] || undefined,
+                ip: (typeof req.ip === 'string' && req.ip) || (Array.isArray(req.headers['x-forwarded-for']) ? req.headers['x-forwarded-for'][0] : (req.headers['x-forwarded-for'] as string | undefined)) || undefined,
                 userAgent: req.get('User-Agent') || undefined
             };
 
             // Step 6: Create the order
-            const order = await ChangellyService.createOrder(orderPayload);
+            const order: any = await ChangellyService.createOrder(orderPayload);
 
             // Step 7: Return success response
             return res.json({
@@ -208,12 +208,12 @@ export class ChangellyRampController {
                 amountFrom: String(amount),
                 country,
                 refundAddress,
-                ip: req.ip || req.headers['x-forwarded-for'] || undefined,
+                ip: (typeof req.ip === 'string' && req.ip) || (Array.isArray(req.headers['x-forwarded-for']) ? req.headers['x-forwarded-for'][0] : (req.headers['x-forwarded-for'] as string | undefined)) || undefined,
                 userAgent: req.get('User-Agent') || undefined
             };
 
             // Step 5: Create the sell order
-            const order = await ChangellyService.createSellOrder(orderPayload);
+            const order: any = await ChangellyService.createSellOrder(orderPayload);
 
             // Step 6: Return success response
             return res.json({
@@ -282,7 +282,7 @@ export class ChangellyRampController {
                 currencyTo: String(currencyTo).toUpperCase(),
                 amountFrom: String(amount),
                 country
-            });
+            }) as any[];
 
             if (!offers || offers.length === 0) {
                 return res.status(404).json({
@@ -350,9 +350,9 @@ export class ChangellyRampController {
                 currencyTo: 'NGN',
                 amountFrom: String(amount),
                 country
-            });
+            }) as any[];
 
-            if (!offers || offers.length === 0) {
+            if (!offers || (Array.isArray(offers) && offers.length === 0)) {
                 return res.status(404).json({
                     success: false,
                     error: 'No quotes available'
