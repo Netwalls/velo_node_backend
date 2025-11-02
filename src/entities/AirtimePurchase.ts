@@ -4,10 +4,10 @@
 
     // Define possible statuses for an airtime purchase
     export enum AirtimePurchaseStatus {
-        PENDING = 'pending',      // Waiting for crypto payment
-        PROCESSING = 'processing', // Crypto received, processing airtime
-        COMPLETED = 'completed',  // Airtime sent successfully
-        FAILED = 'failed'         // Something went wrong
+        PENDING = 'pending',      
+        PROCESSING = 'processing', 
+        COMPLETED = 'completed',  
+        FAILED = 'failed'        
     }
 
     // Define supported mobile networks

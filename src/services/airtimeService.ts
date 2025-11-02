@@ -552,13 +552,13 @@ export class AirtimeService {
    */
   private getBlockchainWallet(blockchain: Blockchain): string {
     const walletMap: { [key in Blockchain]: string | undefined } = {
-      [Blockchain.ETHEREUM]: process.env.ETH_AIRTIME_WALLET,
-      [Blockchain.BITCOIN]: process.env.BTC_AIRTIME_WALLET,
-      [Blockchain.SOLANA]: process.env.SOL_AIRTIME_WALLET,
-      [Blockchain.STELLAR]: process.env.XLM_AIRTIME_WALLET,
-      [Blockchain.POLKADOT]: process.env.DOT_AIRTIME_WALLET,
-      [Blockchain.STARKNET]: process.env.STRK_AIRTIME_WALLET,
-      [Blockchain.USDT_ERC20]: process.env.USDT_AIRTIME_WALLET,
+      [Blockchain.ETHEREUM]: process.env.ETH_WALLET,
+      [Blockchain.BITCOIN]: process.env.BTC_WALLET,
+      [Blockchain.SOLANA]: process.env.SOL_WALLET,
+      [Blockchain.STELLAR]: process.env.XLM_WALLET,
+      [Blockchain.POLKADOT]: process.env.DOT_WALLET,
+      [Blockchain.STARKNET]: process.env.STRK_WALLET,
+      [Blockchain.USDT_ERC20]: process.env.USDT_WALLET,
     };
 
     const walletAddress = walletMap[blockchain];
