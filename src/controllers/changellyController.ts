@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Request, Response } from 'express';
-import ChangellyService from '../services/changellyService';
+import ChangellyService from '../services/changellyService_impl';
 
 export class ChangellyRampController {
     static async deposit(req: Request, res: Response) {
