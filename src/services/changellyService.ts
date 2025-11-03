@@ -5,17 +5,29 @@ class ChangellyService {
     private client: any;
 
     constructor() {
-        const privateKey = process.env.CHANGELLY_API_SECRET || process.env.CHANGELLY_PRIVATE_KEY;
+        const privateKeyBase64 = process.env.CHANGELLY_API_SECRET || process.env.CHANGELLY_PRIVATE_KEY;
         const publicKey = process.env.CHANGELLY_API_KEY || process.env.CHANGELLY_PUBLIC_KEY;
 
-        if (!privateKey || !publicKey) {
+        if (!privateKeyBase64 || !publicKey) {
             throw new Error('CHANGELLY_API_KEY and CHANGELLY_API_SECRET must be set in environment variables');
+        }
+
+        // Decode the Base64 private key
+        let privateKey: string;
+        try {
+            privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8');
+            console.log('✓ Private key decoded successfully');
+        } catch (error) {
+            console.error('Failed to decode private key:', error);
+            throw new Error('Invalid private key format');
         }
 
         this.client = new ChangellyFiatClient({
             privateKey,
             publicKey,
         });
+
+        console.log('✓ Changelly client initialized');
     }
 
     async getProviders() {
@@ -108,3 +120,13 @@ class ChangellyService {
 }
 
 export default new ChangellyService();
+```
+
+## What was happening:
+
+When I decoded your Base64 key, it contains:
+// ```
+// -----BEGIN PRIVATE KEY-----
+// MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQClMvpsaCd6rAPY
+// [...rest of the key...]
+// -----END PRIVATE KEY-----

@@ -1201,6 +1201,51 @@ else if (chain === 'polkadot') {
 
         const tx = transfer(toAddress, planck.toString());
 
+        // --- Polkadot preflight fee + existential deposit check ---
+        try {
+            // Estimate fee for this extrinsic using the sender keypair
+            let estimatedFeePlanck = BigInt(0);
+            try {
+                const paymentInfo: any = await tx.paymentInfo(sender);
+                estimatedFeePlanck = BigInt((paymentInfo && paymentInfo.partialFee) ? paymentInfo.partialFee.toString() : '0');
+                console.log('[DEBUG] Polkadot estimated partialFee (planck):', estimatedFeePlanck.toString());
+            } catch (pfErr) {
+                console.warn('[WARN] Could not estimate Polkadot paymentInfo:', ((pfErr as any)?.message || String(pfErr)));
+            }
+
+            // Existential deposit (planck)
+            let existentialDepositPlanck = BigInt(0);
+            try {
+                existentialDepositPlanck = BigInt((api.consts.balances.existentialDeposit as any).toString());
+                console.log('[DEBUG] Polkadot existentialDeposit (planck):', existentialDepositPlanck.toString());
+            } catch (edErr) {
+                console.warn('[WARN] Could not read existentialDeposit from chain constants:', ((edErr as any)?.message || String(edErr)));
+            }
+
+            // Re-check account free balance (planck)
+            const freshAccount = await api.query.system.account(userAddress.address);
+            const freePlanck = BigInt(freshAccount.data.free.toString());
+            console.log('[DEBUG] Polkadot fresh free balance (planck):', freePlanck.toString());
+
+            // small safety buffer: 0.01 DOT (in planck)
+            const safetyBufferPlanck = BigInt(Math.round(0.01 * 1e10));
+
+            const requiredPlanck = planck + estimatedFeePlanck + existentialDepositPlanck + safetyBufferPlanck;
+            if (freePlanck < requiredPlanck) {
+                const toDot = (p: bigint) => (Number(p) / 1e10).toFixed(8);
+                try { await api.disconnect(); } catch {}
+                throw new Error(
+                    `Insufficient balance for Polkadot transfer. ` +
+                    `Have: ${toDot(freePlanck)} DOT, ` +
+                    `Required: ${toDot(requiredPlanck)} DOT (amount ${toDot(planck)} + estFee ${toDot(estimatedFeePlanck)} + existentialDeposit ${toDot(existentialDepositPlanck)} + buffer 0.01). ` +
+                    `Reduce the amount or top up the account.`
+                );
+            }
+        } catch (preflightErr) {
+            console.error('Polkadot preflight check failed:', (preflightErr as any)?.message || String(preflightErr));
+            throw preflightErr;
+        }
+
         // Sign and send
         try {
             txHash = await new Promise<string>(async (resolve, reject) => {
