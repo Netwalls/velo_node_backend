@@ -17,16 +17,16 @@ import { SplitPaymentExecutionResult } from '../entities/SplitPaymentExecutionRe
 import { Fee } from '../entities/Fee';
 import ProviderOrder from '../entities/ProviderOrder';
 
-// Decide SSL usage:
-// - If DATABASE_SSL=true is set, we enable TLS.
-// - Otherwise enable TLS in production or when DATABASE_URL is not localhost.
-const shouldUseSsl = (process.env.DATABASE_SSL === 'true')
-    || process.env.NODE_ENV === 'production'
-    || (process.env.DATABASE_URL && !/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL));
+// Enable SSL by default, only disable for localhost or if explicitly set to false
+const isLocalhost = process.env.DATABASE_URL && /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
+const shouldUseSsl = process.env.DATABASE_SSL === 'false' ? false : !isLocalhost;
 
-// Allow strict certificate verification if DB_STRICT_SSL=true. Default is false to
-// accommodate managed DBs where providing CA certs is not practical.
+// Allow strict certificate verification if DB_STRICT_SSL=true. Default is false.
 const rejectUnauthorized = process.env.DB_STRICT_SSL === 'true';
+
+console.log(`[DB Config] SSL enabled: ${shouldUseSsl}, rejectUnauthorized: ${rejectUnauthorized}`);
+console.log(`[DB Config] NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+console.log(`[DB Config] Is localhost: ${isLocalhost}`);
 
 export const AppDataSource = new DataSource({
     type: 'postgres',
@@ -51,39 +51,20 @@ export const AppDataSource = new DataSource({
     ],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
-    // SSL configuration - top-level and driver-level. We set both to maximize
-    // compatibility with hosting providers that require TLS (Render, Heroku).
-    ssl: shouldUseSsl ? { rejectUnauthorized } : false,
-    extra: shouldUseSsl ? { ssl: { rejectUnauthorized } } : undefined,
+    ssl: shouldUseSsl,
+    extra: shouldUseSsl ? {
+        ssl: {
+            rejectUnauthorized
+        }
+    } : {},
 });
 
 export const connectDB = async (): Promise<void> => {
     try {
-        console.log(`Database SSL: ${shouldUseSsl ? 'enabled' : 'disabled'}; rejectUnauthorized=${rejectUnauthorized}`);
         await AppDataSource.initialize();
-        console.log('PostgreSQL Connected successfully');
+        console.log('✅ PostgreSQL Connected successfully');
     } catch (error) {
-        // If connection fails due to TLS being required, retry with TLS forced on.
-        console.error('Database connection failed:', error);
-
-        const msg = (error && (error as any).message) ? (error as any).message : '';
-        const sslRequired = /SSL|TLS required|sslmode=require|28000/i.test(msg);
-
-        if (sslRequired) {
-            console.log('Detected SSL/TLS requirement from server. Retrying with TLS forced (rejectUnauthorized=false)...');
-            try {
-                // Mutate the DataSource options to force SSL for the retry
-                (AppDataSource.options as any).ssl = { rejectUnauthorized: false };
-                (AppDataSource.options as any).extra = { ssl: { rejectUnauthorized: false } };
-
-                await AppDataSource.initialize();
-                console.log('PostgreSQL Connected successfully (retry with TLS)');
-                return;
-            } catch (retryErr) {
-                console.error('Retry with TLS forced also failed:', retryErr);
-            }
-        }
-
+        console.error('❌ Database connection failed:', error);
         process.exit(1);
     }
 };
