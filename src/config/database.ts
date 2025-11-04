@@ -17,16 +17,9 @@ import { SplitPaymentExecutionResult } from '../entities/SplitPaymentExecutionRe
 import { Fee } from '../entities/Fee';
 import ProviderOrder from '../entities/ProviderOrder';
 
-// Enable SSL by default, only disable for localhost or if explicitly set to false
+// ALWAYS use SSL unless explicitly on localhost
 const isLocalhost = process.env.DATABASE_URL && /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
-const shouldUseSsl = process.env.DATABASE_SSL === 'false' ? false : !isLocalhost;
-
-// Allow strict certificate verification if DB_STRICT_SSL=true. Default is false.
-const rejectUnauthorized = process.env.DB_STRICT_SSL === 'true';
-
-console.log(`[DB Config] SSL enabled: ${shouldUseSsl}, rejectUnauthorized: ${rejectUnauthorized}`);
-console.log(`[DB Config] NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
-console.log(`[DB Config] Is localhost: ${isLocalhost}`);
+const shouldUseSsl = !isLocalhost;
 
 export const AppDataSource = new DataSource({
     type: 'postgres',
@@ -54,7 +47,7 @@ export const AppDataSource = new DataSource({
     ssl: shouldUseSsl,
     extra: shouldUseSsl ? {
         ssl: {
-            rejectUnauthorized
+            rejectUnauthorized: false
         }
     } : {},
 });
