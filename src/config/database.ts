@@ -12,17 +12,15 @@ import { Conversion } from '../entities/Conversion';
 import { MerchantPayment } from '../entities/MerchantPayment'; 
 import { SplitPayment } from '../entities/SplitPayment';
 import { SplitPaymentRecipient } from '../entities/SplitPaymentRecipient';
-import { SplitPaymentExecution } from '../entities/SplitPaymentExecution'; // Missing import!
+import { SplitPaymentExecution } from '../entities/SplitPaymentExecution';
 import { SplitPaymentExecutionResult } from '../entities/SplitPaymentExecutionResult';
 import { Fee } from '../entities/Fee';
 import ProviderOrder from '../entities/ProviderOrder';
-
 
 export const AppDataSource = new DataSource({
     type: 'postgres',
     url: process.env.DATABASE_URL,
     synchronize: process.env.NODE_ENV === 'development',
-    // Keep errors logged but hide debug queries by default.
     logging: process.env.TYPEORM_LOGGING === 'true' ? ['query', 'error'] : ['error'],
     entities: [
         User,
@@ -37,18 +35,21 @@ export const AppDataSource = new DataSource({
         SplitPaymentExecution,
         SplitPaymentRecipient,
         SplitPaymentExecutionResult,
-    ProviderOrder,
+        ProviderOrder,
         Fee
     ],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
-    // Enable SSL in production environments (Render, Heroku, etc.).
-    // When running in production we set ssl to an object so the PG driver negotiates TLS.
-    // For some hosting providers the pg driver only respects ssl when passed under `extra.ssl`.
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    // Ensure the underlying pg driver receives the ssl option as well.
-    extra: process.env.NODE_ENV === 'production' ? { ssl: { rejectUnauthorized: false } } : undefined,
+    // SSL configuration - this applies at the top level for TypeORM
+    ssl: process.env.NODE_ENV === 'production',
+    // Extra options passed directly to the pg driver
+    extra: {
+        ssl: process.env.NODE_ENV === 'production' 
+            ? { rejectUnauthorized: false }
+            : false
+    },
 });
+
 export const connectDB = async (): Promise<void> => {
     try {
         await AppDataSource.initialize();
@@ -57,5 +58,4 @@ export const connectDB = async (): Promise<void> => {
         console.error('Database connection failed:', error);
         process.exit(1);
     }
-};//    // ssl: false,
-    //ssl: { rejectUnauthorized: false },
+};
