@@ -16,6 +16,6 @@
         "experimentalDecorators": true,
         "emitDecoratorMetadata": true
     },
-    "include": ["src/**/*"],
+    "include": ["src/**/*", "src/test-airtime.ts"],
     "exclude": ["node_modules", "dist"]
 }

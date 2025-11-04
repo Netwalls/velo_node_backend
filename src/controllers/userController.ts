@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AppDataSource } from '../config/database';
+import { AppDataSource } from '../config/database_migration';
 import { User } from '../entities/User';
 import { UserAddress } from '../entities/UserAddress';
 import { KYCDocument } from '../entities/KYCDocument';

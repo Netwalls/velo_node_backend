@@ -20,7 +20,7 @@ const ECPair = ECPairFactory(ecc);
 import axios from 'axios';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types/index';
-import { AppDataSource } from '../config/database';
+import { AppDataSource } from '../config/database_migration';
 import { decrypt } from '../utils/keygen';
 import { deployStrkWallet, checkBalance } from '../utils/keygen';
 

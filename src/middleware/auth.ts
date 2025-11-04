@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../utils/jwt';
-import { AppDataSource } from '../config/database';
+import { AppDataSource } from '../config/database_migration';
 import { User } from '../entities/User';
 import { AuthRequest } from '../types';
 

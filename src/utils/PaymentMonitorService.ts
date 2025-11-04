@@ -1,5 +1,5 @@
 // services/PaymentMonitorService.ts
-import { AppDataSource } from '../config/database';
+import { AppDataSource } from '../config/database_migration';
 import { MerchantPayment, MerchantPaymentStatus } from '../entities/MerchantPayment';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types/index';

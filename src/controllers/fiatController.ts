@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AppDataSource } from '../config/database';
+import { AppDataSource } from '../config/database_migration';
 import { User } from '../entities/User';
 import { Request, Response } from 'express';
 import { UserAddress } from '../entities/UserAddress';

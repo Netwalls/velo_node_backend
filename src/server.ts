@@ -1,13 +1,13 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import { connectDB } from './config/database';
+import { connectDB } from './config/database_migration';
 import authRouter from './routes/authRoute';
 import userRouter from './routes/userRoute';
 import walletRouter from './routes/walletRoute';
 import notificationRouter from './routes/notificationRoute';
 import historyRouter from './routes/historyRoute';
-import paymentRouter from './routes/payment';
+// import paymentRouter from './routes/payment';
 import fiatRoutes from './routes/fiatRoute';
 import transactionRoutes from './routes/transactionRoute';
 import splitPaymentRoutes from './routes/splitPaymentRoute';
@@ -46,8 +46,8 @@ app.use('/wallet', walletRouter);
 app.use('/notification', notificationRouter);
 app.use('/history', historyRouter);
 // Mount payments routes (both /payments and /api/payments for compatibility)
-app.use('/payments', paymentRouter);
-app.use('/api/payments', paymentRouter);
+// app.use('/payments', paymentRouter);
+// app.use('/api/payments', paymentRouter);
 app.use('/transactions', transactionRoutes);
 app.use('/merchant', qrpaymentRoute);
 app.use('/split-payment', splitPaymentRoutes);

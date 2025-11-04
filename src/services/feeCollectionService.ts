@@ -3,7 +3,7 @@
  * Handles sending collected fees to VELO treasury wallets
  */
 
-import { AppDataSource } from '../config/database';
+import { AppDataSource } from '../config/database_migration';
 import { Fee } from '../entities/Fee';
 import { Transaction } from '../entities/Transaction';
 import TreasuryConfig from '../config/treasury';
