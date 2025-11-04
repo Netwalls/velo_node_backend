@@ -81,7 +81,8 @@ class ChangellyServiceImpl {
     async getOffers(params) {
         try {
             console.log('Fetching offers with params:', params);
-            const result = await this.client.getOfferList(params);
+            // Correct method name is getOffers (not getOfferList)
+            const result = await this.client.getOffers(params);
             console.log('✓ Offers fetched:', result?.length || 0);
             return result;
         } catch (error) {
@@ -92,7 +93,8 @@ class ChangellyServiceImpl {
     async getSellOffers(params) {
         try {
             console.log('Fetching sell offers with params:', params);
-            const result = await this.client.getSellOfferList(params);
+            // Correct method name is getSellOffers (not getSellOfferList)
+            const result = await this.client.getSellOffers(params);
             console.log('✓ Sell offers fetched:', result?.length || 0);
             return result;
         } catch (error) {
@@ -134,6 +136,7 @@ class ChangellyServiceImpl {
 
     async getOrders(params) {
         try {
+            // Correct method name is getOrderList
             const result = await this.client.getOrderList(params || {});
             console.log('✓ Orders fetched:', result?.length || 0);
             return result;
