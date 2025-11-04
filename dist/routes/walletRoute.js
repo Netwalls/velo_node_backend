@@ -23,5 +23,9 @@ router.post('/check-deposits', async (req, res) => {
 router.post('/send', auth_1.authMiddleware, async (req, res) => {
     await walletController_1.WalletController.sendTransaction(req, res);
 });
+// Debug probe for Alchemy endpoints (requires auth)
+router.get('/debug/alchemy-probe', auth_1.authMiddleware, async (req, res) => {
+    await walletController_1.WalletController.alchemyProbe(req, res);
+});
 exports.default = router;
 //# sourceMappingURL=walletRoute.js.map

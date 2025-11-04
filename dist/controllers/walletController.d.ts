@@ -8,6 +8,11 @@ export declare class WalletController {
      */
     static getBalancesByUserId(req: Request, res: Response): Promise<void>;
     /**
+     * Debug endpoint: probe Alchemy URLs and return quick connectivity checks.
+     * GET /wallet/debug/alchemy-probe
+     */
+    static alchemyProbe(req: AuthRequest, res: Response): Promise<void>;
+    /**
      * Controller for wallet-related actions.
      * Provides endpoints to fetch balances for all supported blockchains (ETH, BTC, SOL, STRK) for the authenticated user.
      */

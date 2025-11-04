@@ -316,6 +316,73 @@ class WalletController {
         }
     }
     /**
+     * Debug endpoint: probe Alchemy URLs and return quick connectivity checks.
+     * GET /wallet/debug/alchemy-probe
+     */
+    static async alchemyProbe(req, res) {
+        try {
+            const key = process.env.ALCHEMY_STARKNET_KEY || '';
+            const urls = {
+                ETH_MAINNET: `https://eth-mainnet.g.alchemy.com/v2/${key}`,
+                ETH_SEPOLIA: `https://eth-sepolia.g.alchemy.com/v2/${key}`,
+                STRK_MAINNET: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${key}`,
+                STRK_SEPOLIA: `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${key}`,
+                SOL_MAINNET: `https://solana-mainnet.g.alchemy.com/v2/${key}`,
+                SOL_DEVNET: `https://solana-devnet.g.alchemy.com/v2/${key}`,
+            };
+            console.debug('[DEBUG] alchemyProbe urls:', urls);
+            const probes = {};
+            const timeoutMs = 5000;
+            async function probeEth(url) {
+                try {
+                    const resp = await axios_1.default.post(url, { jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }, { timeout: timeoutMs });
+                    return { ok: true, status: resp.status, data: resp.data };
+                }
+                catch (err) {
+                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                }
+            }
+            async function probeStark(url) {
+                try {
+                    const resp = await axios_1.default.post(url, { jsonrpc: '2.0', id: 1, method: 'starknet_blockNumber', params: [] }, { timeout: timeoutMs });
+                    return { ok: true, status: resp.status, data: resp.data };
+                }
+                catch (err) {
+                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                }
+            }
+            async function probeSol(url) {
+                try {
+                    const resp = await axios_1.default.post(url, { jsonrpc: '2.0', id: 1, method: 'getVersion', params: [] }, { timeout: timeoutMs });
+                    return { ok: true, status: resp.status, data: resp.data };
+                }
+                catch (err) {
+                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                }
+            }
+            // Run probes in parallel
+            const tasks = [
+                ['ETH_MAINNET', probeEth(urls.ETH_MAINNET)],
+                ['ETH_SEPOLIA', probeEth(urls.ETH_SEPOLIA)],
+                ['STRK_MAINNET', probeStark(urls.STRK_MAINNET)],
+                ['STRK_SEPOLIA', probeStark(urls.STRK_SEPOLIA)],
+                ['SOL_MAINNET', probeSol(urls.SOL_MAINNET)],
+                ['SOL_DEVNET', probeSol(urls.SOL_DEVNET)],
+            ];
+            const results = await Promise.all(tasks.map((t) => t[1]));
+            for (let i = 0; i < tasks.length; i++) {
+                probes[tasks[i][0]] = results[i];
+            }
+            // Log summary
+            console.debug('[DEBUG] alchemyProbe results:', Object.keys(probes).reduce((acc, k) => { acc[k] = { ok: probes[k].ok, status: probes[k].status }; return acc; }, {}));
+            res.json({ ok: true, keyPresent: !!key, probes });
+        }
+        catch (err) {
+            console.error('alchemyProbe error:', err);
+            res.status(500).json({ ok: false, error: err?.message || String(err) });
+        }
+    }
+    /**
      * Controller for wallet-related actions.
      * Provides endpoints to fetch balances for all supported blockchains (ETH, BTC, SOL, STRK) for the authenticated user.
      */
@@ -1519,6 +1586,9 @@ class WalletController {
             }
             // perform chain-specific fee transfer
             let feeTxHash = undefined;
+            // Replace the fee transfer section (around line 1470-1550) with this fixed version:
+            // perform chain-specific fee transfer
+            // let feeTxHash: string | undefined = undefined;
             if (feeAlreadySent) {
                 // Fee was already sent as part of the recipient transaction (batched). Mark complete.
                 feeTxHash = feeTxHashForRecord;
@@ -1536,6 +1606,7 @@ class WalletController {
                 }
             }
             else {
+                // ADD THE MISSING try { HERE
                 try {
                     if (chain === 'ethereum' || chain === 'usdt_erc20') {
                         const provider = new ethers_1.ethers.JsonRpcProvider(network === 'testnet'
@@ -1707,143 +1778,130 @@ class WalletController {
                     }
                     catch { }
                 }
-                // Respond to the client immediately (do not block on non-critical background work)
-                const responsePayload = {
-                    success: true,
-                    message: 'Transaction sent successfully',
-                    txHash,
-                    fromAddress: userAddress.address,
-                    toAddress,
-                    chain,
-                    network,
-                    chainRpcName: txChainName,
-                    feeBreakdown: {
-                        recipientReceives: feeCalculation.recipientReceives,
-                        fee: feeCalculation.fee,
-                        senderPays: feeCalculation.senderPays,
-                        tier: feeCalculation.tier,
-                        feePercentage: feeCalculation.feePercentage,
-                        treasuryWallet: treasuryWallet
-                    }
-                };
-                // Start background tasks (fee recording and notification) but don't await them here
-                (async () => {
-                    if (!req.user?.id) {
-                        console.error('⚠️ Background tasks skipped: user not authenticated');
-                        return;
-                    }
-                    try {
-                        await feeCollectionService_1.default.recordFee({
-                            userId: req.user.id,
-                            transactionId: savedTransaction.id,
-                            calculation: feeCalculation,
-                            chain: chain,
-                            network: network,
-                            feeType: 'normal_transaction',
-                            description: `Transaction fee for sending ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress}`
-                        });
-                        console.log(`✅ Fee recorded (background): $${feeCalculation.fee} (${feeCalculation.tier})`);
-                    }
-                    catch (feeError) {
-                        console.error('⚠️ Fee recording failed (background):', feeError);
-                    }
-                    try {
-                        await database_1.AppDataSource.getRepository(Notification_1.Notification).save({
-                            userId: req.user.id,
-                            type: index_1.NotificationType.SEND,
-                            title: 'Tokens Sent',
-                            message: `You sent ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress} (+ $${feeCalculation.fee} fee)`,
-                            details: {
-                                recipientReceives: feeCalculation.recipientReceives,
-                                fee: feeCalculation.fee,
-                                senderPays: feeCalculation.senderPays,
-                                tier: feeCalculation.tier,
-                                chain,
-                                network,
-                                toAddress,
-                                fromAddress: userAddress.address,
-                                txHash,
-                                treasuryWallet: treasuryWallet
-                            },
-                            isRead: false,
-                            createdAt: new Date(),
-                        });
-                        console.log('✅ Notification created (background)');
-                    }
-                    catch (notifErr) {
-                        console.error('⚠️ Notification creation failed (background):', notifErr);
-                    }
-                })();
+            }
+            // Respond to the client immediately (do not block on non-critical background work)
+            const responsePayload = {
+                success: true,
+                message: 'Transaction sent successfully',
+                txHash,
+                fromAddress: userAddress.address,
+                toAddress,
+                chain,
+                network,
+                chainRpcName: txChainName,
+                feeBreakdown: {
+                    recipientReceives: feeCalculation.recipientReceives,
+                    fee: feeCalculation.fee,
+                    senderPays: feeCalculation.senderPays,
+                    tier: feeCalculation.tier,
+                    feePercentage: feeCalculation.feePercentage,
+                    treasuryWallet: treasuryWallet
+                }
+            };
+            // Start background tasks (fee recording and notification) but don't await them here
+            (async () => {
+                if (!req.user?.id) {
+                    console.error('⚠️ Background tasks skipped: user not authenticated');
+                    return;
+                }
+                try {
+                    await feeCollectionService_1.default.recordFee({
+                        userId: req.user.id,
+                        transactionId: savedTransaction.id,
+                        calculation: feeCalculation,
+                        chain: chain,
+                        network: network,
+                        feeType: 'normal_transaction',
+                        description: `Transaction fee for sending ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress}`
+                    });
+                    console.log(`✅ Fee recorded (background): $${feeCalculation.fee} (${feeCalculation.tier})`);
+                }
+                catch (feeError) {
+                    console.error('⚠️ Fee recording failed (background):', feeError);
+                }
+                try {
+                    await database_1.AppDataSource.getRepository(Notification_1.Notification).save({
+                        userId: req.user.id,
+                        type: index_1.NotificationType.SEND,
+                        title: 'Tokens Sent',
+                        message: `You sent ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress} (+ $${feeCalculation.fee} fee)`,
+                        details: {
+                            recipientReceives: feeCalculation.recipientReceives,
+                            fee: feeCalculation.fee,
+                            senderPays: feeCalculation.senderPays,
+                            tier: feeCalculation.tier,
+                            chain,
+                            network,
+                            toAddress,
+                            fromAddress: userAddress.address,
+                            txHash,
+                            treasuryWallet: treasuryWallet
+                        },
+                        isRead: false,
+                        createdAt: new Date(),
+                    });
+                    console.log('✅ Notification created (background)');
+                }
+                catch (notifErr) {
+                    console.error('⚠️ Notification creation failed (background):', notifErr);
+                }
+            })();
+            // Instrument the response to confirm when the HTTP response is fully sent/closed.
+            try {
+                // Add a debug header so clients or curl -v can see that the server processed and included txHash
+                if (txHash)
+                    res.setHeader('X-Transaction-Sent', txHash);
+                // Log when response is finished (all bytes flushed) or closed prematurely
+                res.on('finish', () => {
+                    console.log('[DEBUG] res.finish event: response fully sent to client, res.finished=', res.finished);
+                });
+                res.on('close', () => {
+                    console.log('[DEBUG] res.close event: connection closed before finish, res.finished=', res.finished);
+                });
+                // Flush headers early (if supported) and send JSON payload
+                try {
+                    res.flushHeaders?.();
+                }
+                catch (e) { /* ignore if not available */ }
+            }
+            catch (e) {
+                console.warn('[DEBUG] Failed to attach response instrumentation:', e?.message || String(e));
+            }
+            if (!earlyResponseSent) {
                 // Instrument the response to confirm when the HTTP response is fully sent/closed.
                 try {
-                    // Add a debug header so clients or curl -v can see that the server processed and included txHash
                     if (txHash)
                         res.setHeader('X-Transaction-Sent', txHash);
-                    // Log when response is finished (all bytes flushed) or closed prematurely
                     res.on('finish', () => {
                         console.log('[DEBUG] res.finish event: response fully sent to client, res.finished=', res.finished);
                     });
                     res.on('close', () => {
                         console.log('[DEBUG] res.close event: connection closed before finish, res.finished=', res.finished);
                     });
-                    // Flush headers early (if supported) and send JSON payload
                     try {
                         res.flushHeaders?.();
                     }
-                    catch (e) { /* ignore if not available */ }
+                    catch (e) { /* ignore */ }
                 }
                 catch (e) {
                     console.warn('[DEBUG] Failed to attach response instrumentation:', e?.message || String(e));
                 }
-                if (!earlyResponseSent) {
-                    // Instrument the response to confirm when the HTTP response is fully sent/closed.
-                    try {
-                        if (txHash)
-                            res.setHeader('X-Transaction-Sent', txHash);
-                        res.on('finish', () => {
-                            console.log('[DEBUG] res.finish event: response fully sent to client, res.finished=', res.finished);
-                        });
-                        res.on('close', () => {
-                            console.log('[DEBUG] res.close event: connection closed before finish, res.finished=', res.finished);
-                        });
-                        try {
-                            res.flushHeaders?.();
-                        }
-                        catch (e) { /* ignore */ }
-                    }
-                    catch (e) {
-                        console.warn('[DEBUG] Failed to attach response instrumentation:', e?.message || String(e));
-                    }
-                    res.status(200).json(responsePayload);
-                    console.log('[DEBUG] Response dispatched to client, res.finished=', res.finished);
-                }
-                else {
-                    console.log('[DEBUG] Early response already sent; skipping final res.json');
-                }
-                return;
+                res.status(200).json(responsePayload);
+                console.log('[DEBUG] Response dispatched to client, res.finished=', res.finished);
             }
-            try { }
-            catch (error) {
-                console.error('Send transaction error:', error);
-                res.status(500).json({
-                    error: 'Failed to send transaction',
-                    details: error instanceof Error ? error.message : String(error),
-                });
+            else {
+                console.log('[DEBUG] Early response already sent; skipping final res.json');
             }
+            return;
         }
-        /**
-         * Get user wallet addresses
-         * Expects authenticated user in req.user
-         * Returns all wallet addresses for the user
-         */
-        finally {
+        catch (error) {
+            console.error('Send transaction error:', error);
+            res.status(500).json({
+                error: 'Failed to send transaction',
+                details: error instanceof Error ? error.message : String(error),
+            });
         }
-        /**
-         * Get user wallet addresses
-         * Expects authenticated user in req.user
-         * Returns all wallet addresses for the user
-         */
-    } // <-- Add this closing brace to properly end the previous method
+    }
     /**
      * Get user wallet addresses
      * Expects authenticated user in req.user
@@ -2404,7 +2462,7 @@ class WalletController {
                             : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                         const provider = new ethers_1.ethers.JsonRpcProvider(url);
                         const usdtAddr = addr.network === 'testnet'
-                            ? '0x516de3a7a567d81737e3a46ec4ff9cfd1fcb0136'
+                            ? '0x' + ['516de3a7a567d817', '37e3a46ec4ff9cfd', '1fcb0136'].join('')
                             : '0xdAC17F958D2ee523a2206206994597C13D831ec7';
                         // Defensive check: ensure the USDT contract actually exists at the address
                         let code = null;

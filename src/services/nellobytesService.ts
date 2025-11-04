@@ -41,6 +41,25 @@ interface NellobytesMobileNetworkResponse {
   };
 }
 
+interface NellobytesElectricCompanyResponse {
+  ELECTRIC_COMPANY: {
+    [company: string]: Array<{
+      ID: string;
+      NAME: string;
+      PRODUCT: Array<{
+        PRODUCT_ID: string;
+        PRODUCT_TYPE: string;
+        MINIMUN_AMOUNT: string;
+        MAXIMUM_AMOUNT: string;
+        PRODUCT_DISCOUNT_AMOUNT: string;
+        PRODUCT_DISCOUNT: string;
+        MINAMOUNT: number;
+        MAXAMOUNT: number;
+      }>;
+    }>;
+  };
+}
+
 // Response structure from Nellobytes API
 export interface NellobytesResponse {
   orderid?: string;
@@ -48,6 +67,8 @@ export interface NellobytesResponse {
   status: string;
   requestid?: string;
   transid?: string;
+  meterno?: string;
+  metertoken?: string;
 }
 
 // Data plan structure from Nellobytes API
@@ -57,6 +78,16 @@ export interface NellobytesDataPlan {
   plan_name: string; // e.g., "1GB - 30 days (Direct Data)"
   plan_amount: string; // e.g., "N2,325.00"
   month_validate: string; // e.g., "30 days"
+}
+
+// Electricity company structure from Nellobytes API
+export interface NellobytesElectricCompany {
+  company_id: string; // e.g., "01", "02"
+  company_name: string; // e.g., "Eko Electric - EKEDC (PHCN)"
+  prepaid_available: boolean;
+  postpaid_available: boolean;
+  min_amount: number;
+  max_amount: number;
 }
 
 // Data needed for airtime purchase
@@ -73,6 +104,16 @@ export interface DataBundlePurchaseParams {
   mobileNetwork: MobileNetworkCode;
   dataPlan: string; // This is the dataplan_id from the API
   mobileNumber: string;
+  requestId?: string;
+}
+
+// Data needed for electricity purchase
+export interface ElectricityPurchaseParams {
+  electricCompany: string; // Company code (01-12)
+  meterType: string; // Meter type code (01=prepaid, 02=postpaid)
+  meterNo: string;
+  phoneNo: string;
+  amount: number;
   requestId?: string;
 }
 
@@ -170,6 +211,8 @@ function parseNellobytesResponse(data: any): NellobytesResponse {
         status: params.get("status") || "UNKNOWN_ERROR",
         requestid: params.get("requestid") || undefined,
         transid: params.get("transid") || undefined,
+        meterno: params.get("meterno") || undefined,
+        metertoken: params.get("metertoken") || undefined,
       };
     } catch (error) {
       console.error("Failed to parse string response:", data);
@@ -186,6 +229,8 @@ function parseNellobytesResponse(data: any): NellobytesResponse {
       status: data.status || data.Status || "ORDER_RECEIVED",
       requestid: data.requestid || data.RequestID,
       transid: data.transid || data.TransID,
+      meterno: data.meterno || data.MeterNo,
+      metertoken: data.metertoken || data.MeterToken,
     };
   }
 
@@ -335,10 +380,198 @@ export class NellobytesService {
   }
 
   /**
-   * Fetch available data plans from Nellobytes API
-   * @param network - Network code or name
-   * @returns Array of data plans
+   * Buy electricity
+   * @param params - Electricity purchase parameters
+   * @returns Nellobytes API response
    */
+  async buyElectricity(
+    params: ElectricityPurchaseParams
+  ): Promise<NellobytesResponse> {
+    console.log("⚡ Purchasing electricity:", {
+      company: params.electricCompany,
+      meterType: params.meterType,
+      meterNo: params.meterNo,
+      phoneNo: params.phoneNo,
+      amount: params.amount,
+    });
+
+    const nellobytesParams = {
+      ElectricCompany: params.electricCompany,
+      MeterType: params.meterType,
+      MeterNo: params.meterNo,
+      PhoneNo: params.phoneNo,
+      Amount: params.amount.toString(),
+      ...(params.requestId && { RequestID: params.requestId }),
+    };
+
+    const response = await callApi("APIElectricityV1.asp", nellobytesParams);
+
+    console.log("⚡ Electricity purchase response:", {
+      orderid: response.orderid,
+      status: response.status,
+      statuscode: response.statuscode,
+      meterno: response.meterno,
+      metertoken: response.metertoken,
+    });
+
+    return response;
+  }
+
+  /**
+   * Verify electricity meter number
+   * @param electricCompany - Company code (01-12)
+   * @param meterNo - Meter number to verify
+   * @returns Nellobytes API response
+   */
+  async verifyElectricityMeter(
+    electricCompany: string,
+    meterNo: string
+  ): Promise<NellobytesResponse> {
+    console.log("🔍 Verifying meter:", { company: electricCompany, meterNo });
+
+    const nellobytesParams = {
+      ElectricCompany: electricCompany,
+      MeterNo: meterNo,
+    };
+
+    const response = await callApi(
+      "APIVerifyElectricityV1.asp",
+      nellobytesParams
+    );
+
+    console.log("🔍 Meter verification response:", {
+      status: response.status,
+      statuscode: response.statuscode,
+      meterno: response.meterno,
+    });
+
+    return response;
+  }
+
+  /**
+   * Fetch electricity companies and their details from Nellobytes API
+   * @returns Array of electricity companies
+   */
+  async fetchElectricityCompanies(): Promise<NellobytesElectricCompany[]> {
+    console.log("⚡ Fetching electricity companies from Nellobytes API...");
+
+    try {
+      const url = `${BASE_URL}/APIElectricityDiscosV1.asp?UserID=${USERID}`;
+
+      console.log(`📞 Calling: ${url}`);
+
+      const response = await axios.get<NellobytesElectricCompanyResponse>(url, {
+        timeout: 30000,
+      });
+
+      console.log(
+        "⚡ Raw electricity companies response type:",
+        typeof response.data
+      );
+
+      // Parse response based on format
+      let companies: NellobytesElectricCompany[] = [];
+
+      if (Array.isArray(response.data)) {
+        companies = response.data;
+      } else if (typeof response.data === "object" && response.data !== null) {
+        const data = response.data as any;
+
+        if (data.companies) {
+          companies = data.companies;
+        } else if (data.data) {
+          companies = data.data;
+        } else if (data.ELECTRIC_COMPANY) {
+          // Handle the nested structure from the API
+          companies = this.parseElectricCompanyData(data.ELECTRIC_COMPANY);
+        } else {
+          companies = Object.values(data).filter(
+            (item: any) => item && typeof item === "object" && item.company_id
+          ) as NellobytesElectricCompany[];
+        }
+      }
+
+      console.log(
+        `✅ Fetched ${companies.length} electricity companies from API`
+      );
+
+      return companies;
+    } catch (error: any) {
+      console.error("❌ Failed to fetch electricity companies:", error.message);
+
+      if (error.response) {
+        console.error("Response data:", error.response.data);
+      }
+
+      throw new Error(
+        `Failed to fetch electricity companies from Nellobytes: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Parse the complex ELECTRIC_COMPANY structure from Nellobytes API
+   */
+  private parseElectricCompanyData(
+    electricCompanyData: any
+  ): NellobytesElectricCompany[] {
+    const companies: NellobytesElectricCompany[] = [];
+
+    try {
+      // Iterate through each company (EKO_ELECTRIC, IKEJA_ELECTRIC, etc.)
+      Object.keys(electricCompanyData).forEach((companyKey) => {
+        const companyArray = electricCompanyData[companyKey];
+
+        if (Array.isArray(companyArray)) {
+          companyArray.forEach((companyItem) => {
+            if (companyItem.PRODUCT && Array.isArray(companyItem.PRODUCT)) {
+              // Check what products are available
+              let prepaidAvailable = false;
+              let postpaidAvailable = false;
+              let minAmount = 1000;
+              let maxAmount = 200000;
+
+              companyItem.PRODUCT.forEach((product: any) => {
+                if (product.PRODUCT_TYPE === "prepaid") {
+                  prepaidAvailable = true;
+                }
+                if (product.PRODUCT_TYPE === "postpaid") {
+                  postpaidAvailable = true;
+                }
+                // Get min/max amounts
+                if (product.MINAMOUNT) {
+                  minAmount = Math.max(minAmount, parseInt(product.MINAMOUNT));
+                }
+                if (product.MAXAMOUNT) {
+                  maxAmount = parseInt(product.MAXAMOUNT);
+                }
+              });
+
+              const company: NellobytesElectricCompany = {
+                company_id: companyItem.ID,
+                company_name: companyItem.NAME,
+                prepaid_available: prepaidAvailable,
+                postpaid_available: postpaidAvailable,
+                min_amount: minAmount,
+                max_amount: maxAmount,
+              };
+
+              companies.push(company);
+            }
+          });
+        }
+      });
+
+      console.log(
+        `⚡ Parsed ${companies.length} companies from ELECTRIC_COMPANY structure`
+      );
+    } catch (error) {
+      console.error("❌ Error parsing ELECTRIC_COMPANY data:", error);
+    }
+
+    return companies;
+  }
+
   /**
    * Fetch available data plans from Nellobytes API
    * @param network - Network code or name
@@ -561,6 +794,35 @@ export class NellobytesService {
       mobileNetwork: networkCode,
       dataPlan: dataplanId,
       mobileNumber: phoneNumber,
+      requestId,
+    });
+  }
+
+  /**
+   * Utility function to purchase electricity
+   */
+  async purchaseElectricity(
+    electricCompany: string,
+    meterType: string,
+    meterNo: string,
+    phoneNo: string,
+    amount: number,
+    requestId?: string
+  ): Promise<NellobytesResponse> {
+    console.log("⚡ Simple electricity purchase:", {
+      electricCompany,
+      meterType,
+      meterNo,
+      phoneNo,
+      amount,
+    });
+
+    return this.buyElectricity({
+      electricCompany,
+      meterType,
+      meterNo,
+      phoneNo,
+      amount,
       requestId,
     });
   }
