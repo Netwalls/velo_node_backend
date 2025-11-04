@@ -63,7 +63,27 @@ export const connectDB = async (): Promise<void> => {
         await AppDataSource.initialize();
         console.log('PostgreSQL Connected successfully');
     } catch (error) {
+        // If connection fails due to TLS being required, retry with TLS forced on.
         console.error('Database connection failed:', error);
+
+        const msg = (error && (error as any).message) ? (error as any).message : '';
+        const sslRequired = /SSL|TLS required|sslmode=require|28000/i.test(msg);
+
+        if (sslRequired) {
+            console.log('Detected SSL/TLS requirement from server. Retrying with TLS forced (rejectUnauthorized=false)...');
+            try {
+                // Mutate the DataSource options to force SSL for the retry
+                (AppDataSource.options as any).ssl = { rejectUnauthorized: false };
+                (AppDataSource.options as any).extra = { ssl: { rejectUnauthorized: false } };
+
+                await AppDataSource.initialize();
+                console.log('PostgreSQL Connected successfully (retry with TLS)');
+                return;
+            } catch (retryErr) {
+                console.error('Retry with TLS forced also failed:', retryErr);
+            }
+        }
+
         process.exit(1);
     }
 };
