@@ -21,6 +21,12 @@ import ProviderOrder from '../entities/ProviderOrder';
 const isLocalhost = process.env.DATABASE_URL && /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
 const shouldUseSsl = !isLocalhost;
 
+console.log('=== DATABASE SSL CONFIGURATION ===');
+console.log('DATABASE_URL (first 50 chars):', process.env.DATABASE_URL?.substring(0, 50));
+console.log('isLocalhost:', isLocalhost);
+console.log('shouldUseSsl:', shouldUseSsl);
+console.log('==================================');
+
 export const AppDataSource = new DataSource({
     type: 'postgres',
     url: process.env.DATABASE_URL,
@@ -52,8 +58,12 @@ export const AppDataSource = new DataSource({
     } : {},
 });
 
+console.log('DataSource SSL config:', (AppDataSource.options as any).ssl);
+console.log('DataSource extra.ssl config:', (AppDataSource.options as any).extra?.ssl);
+
 export const connectDB = async (): Promise<void> => {
     try {
+        console.log('Attempting database connection with SSL:', shouldUseSsl);
         await AppDataSource.initialize();
         console.log('✅ PostgreSQL Connected successfully');
     } catch (error) {
