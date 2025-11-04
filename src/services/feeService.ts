@@ -3,7 +3,8 @@
  * Implements the Normal Transaction Model
  * 
  * Fee Tiers:
- * - $0 - $50: $0.10
+ * - $0 - $10: $0.00 (no VELO fee)
+ * - $10.01 - $50: $0.10
  * - $51 - $100: $0.25
  * - $101 - $500: $1.00
  * - $501 - $1,000: $2.00
@@ -31,8 +32,16 @@ export interface FeeTier {
 export class FeeService {
     // Fee tiers based on VELO business model
     private static readonly FEE_TIERS: FeeTier[] = [
+        // Waive VELO fee for very small transactions: $0.00 - $10.00
         {
             min: 0,
+            max: 10,
+            fee: 0.00,
+            percentage: null,
+            description: 'No VELO fee for micro transactions up to $10'
+        },
+        {
+            min: 10.01,
             max: 50,
             fee: 0.10,
             percentage: null,
@@ -255,7 +264,7 @@ export class FeeService {
      * @returns minimum transaction amount
      */
     static getMinimumTransactionAmount(): number {
-        return 0.10; // Minimum practical amount is $0.10 (matches lowest fee)
+        return 0.01; // Minimum practical amount (allow small micro payments); fee waived under $10
     }
 
     /**

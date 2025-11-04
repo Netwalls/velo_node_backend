@@ -10,13 +10,14 @@ The VELO fee system implements a **sender-pays-fee** model where:
 
 ## Fee Structure
 
-| Amount Range  | Fee   | Percentage | Description        |
-| ------------- | ----- | ---------- | ------------------ |
-| $0 - $50      | $0.10 | ~0.2%-0.5% | Micro transactions |
-| $51 - $100    | $0.25 | ~0.25%     | Entry-level        |
-| $101 - $500   | $1.00 | ~0.2%      | Retail             |
-| $501 - $1,000 | $2.00 | ~0.2%      | SME/Merchant       |
-| $1,001+       | 0.5%  | 0.5%       | Enterprise         |
+| Amount Range  | Fee   | Percentage | Description                      |
+| ------------- | ----- | ---------- | -------------------------------- |
+| $0 - $10      | $0.00 | 0%         | Micro transactions (no VELO fee) |
+| $10.01 - $50  | $0.10 | ~0.2%-0.5% | Micro transactions               |
+| $51 - $100    | $0.25 | ~0.25%     | Entry-level                      |
+| $101 - $500   | $1.00 | ~0.2%      | Retail                           |
+| $501 - $1,000 | $2.00 | ~0.2%      | SME/Merchant                     |
+| $1,001+       | 0.5%  | 0.5%       | Enterprise                       |
 
 ## Example Transaction Flow
 

@@ -15,7 +15,8 @@ exports.AppDataSource = new typeorm_1.DataSource({
     entities: ['src/entities/**/*.ts'], // This automatically includes ALL entities
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
-    ssl: false, // Set to false for local development
+    // ssl: false,
+    ssl: { rejectUnauthorized: false },
 });
 const connectDB = async () => {
     try {

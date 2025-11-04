@@ -670,8 +670,26 @@ export const PaymentController = {
 	},
 
 	// Nellobytes endpoints — these are likely implemented elsewhere; provide stubs
-	buyAirtime: async (_req: Request, res: Response) => {
-		res.status(501).json({ error: 'buyAirtime not implemented here' });
+	buyAirtime: async (req: AuthRequest, res: Response) => {
+		try {
+			const userId = req.user?.id || null;
+			const { MobileNetwork, Amount, MobileNumber, RequestID } = req.body as any;
+
+			if (!MobileNetwork || !Amount || !MobileNumber) {
+				return res.status(400).json({ error: 'MobileNetwork, Amount and MobileNumber are required' });
+			}
+
+			// Optionally attach RequestID else generate one
+			const requestId = RequestID || `nb_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+
+			const providerResp = await NellobytesService.buyAirtime({ MobileNetwork, Amount, MobileNumber, RequestID: requestId });
+
+			// Return provider response to caller
+			return res.json({ success: true, provider: providerResp, requestId });
+		} catch (error: any) {
+			console.error('buyAirtime error', error);
+			return res.status(500).json({ error: error instanceof Error ? error.message : 'Nellobytes buy airtime failed' });
+		}
 	},
 	buyDatabundle: async (_req: Request, res: Response) => {
 		res.status(501).json({ error: 'buyDatabundle not implemented here' });
@@ -681,7 +699,8 @@ export const PaymentController = {
 	},
 
 	createCryptoAirtimeOrder: async (_req: Request, res: Response) => {
-		res.status(501).json({ error: 'createCryptoAirtimeOrder not implemented here' });
+		// Support legacy route /airtime/crypto by delegating to the instantBuy flow
+		return CryptoAirtimeController.instantBuy(_req as any, res as any);
 	},
 	attachTxToOrder: async (_req: Request, res: Response) => {
 		res.status(501).json({ error: 'attachTxToOrder not implemented here' });

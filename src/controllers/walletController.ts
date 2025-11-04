@@ -408,44 +408,55 @@ export class WalletController {
             // Loop through each address and fetch its balance based on chain type
             for (const addr of addresses) {
                 if (addr.chain === 'starknet') {
-                    // STRK (Starknet) balance using starknet.js
+                    // STRK (Starknet) balance using RpcProvider.callContract for more robust parsing
                     try {
-                        // Create a Starknet RPC provider
+                        // Use Alchemy Starknet v0_9 mainnet endpoint (more current)
                         const provider = new RpcProvider({
-                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
+                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
                         });
-                        // STRK token contract address
-                        const tokenAddress =
-                            '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-                        // Minimal ERC20 ABI for balanceOf
-                        const erc20Abi = [
-                            {
-                                name: 'balanceOf',
-                                type: 'function',
-                                inputs: [{ name: 'account', type: 'felt' }],
-                                outputs: [{ name: 'balance', type: 'felt' }],
-                            },
-                        ];
-                        // Import Contract class from starknet.js
-                        // @ts-ignore
-                        const { Contract } = require('starknet');
-                        // Create contract instance for STRK token
-                        const contract = new Contract(
-                            erc20Abi,
-                            tokenAddress,
-                            provider
-                        );
-                        // Call balanceOf to get the user's STRK balance
-                        const balanceResult = await contract.balanceOf(
-                            addr.address
-                        );
+                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+
+                        // Call the contract entrypoint directly to avoid ABI/Contract class mismatches.
+                        // balanceOf usually returns a uint256 (low, high) pair or a single felt depending on the token.
+                        const callResult: any = await provider.callContract({
+                            contractAddress: strkTokenAddress,
+                            entrypoint: 'balanceOf',
+                            calldata: [padStarknetAddress(addr.address as string)],
+                        });
+
+                        // Normalize various shapes returned by different providers
+                        let raw: any = callResult;
+                        if (raw && typeof raw === 'object' && 'result' in raw) raw = raw.result;
+
+                        let balanceBig = BigInt(0);
+                        if (Array.isArray(raw)) {
+                            if (raw.length === 1) {
+                                // single felt string
+                                balanceBig = BigInt(raw[0]);
+                            } else if (raw.length >= 2) {
+                                // uint256: [low, high]
+                                const low = BigInt(raw[0]);
+                                const high = BigInt(raw[1]);
+                                balanceBig = (high << BigInt(128)) + low;
+                            }
+                        } else if (typeof raw === 'string') {
+                            balanceBig = BigInt(raw);
+                        }
+
+                        // Convert to STRK decimal (18 decimals)
+                        const balanceInSTRK = Number(balanceBig) / 1e18;
+
+                        // Save last known balance asynchronously (best-effort)
+                        try { addr.lastKnownBalance = balanceInSTRK; addressRepo.save(addr).catch(() => {}); } catch {}
+
                         balances.push({
                             chain: addr.chain,
                             address: addr.address,
-                            balance: balanceResult.balance.toString(),
+                            balance: String(balanceInSTRK),
                         });
                     } catch (err) {
                         // Handle errors for STRK balance fetch
+                        console.warn('Starknet balance fetch failed for', addr.address, ((err as any)?.message || String(err)));
                         balances.push({
                             chain: addr.chain,
                             address: addr.address,
@@ -1189,6 +1200,51 @@ else if (chain === 'polkadot') {
         }
 
         const tx = transfer(toAddress, planck.toString());
+
+        // --- Polkadot preflight fee + existential deposit check ---
+        try {
+            // Estimate fee for this extrinsic using the sender keypair
+            let estimatedFeePlanck = BigInt(0);
+            try {
+                const paymentInfo: any = await tx.paymentInfo(sender);
+                estimatedFeePlanck = BigInt((paymentInfo && paymentInfo.partialFee) ? paymentInfo.partialFee.toString() : '0');
+                console.log('[DEBUG] Polkadot estimated partialFee (planck):', estimatedFeePlanck.toString());
+            } catch (pfErr) {
+                console.warn('[WARN] Could not estimate Polkadot paymentInfo:', ((pfErr as any)?.message || String(pfErr)));
+            }
+
+            // Existential deposit (planck)
+            let existentialDepositPlanck = BigInt(0);
+            try {
+                existentialDepositPlanck = BigInt((api.consts.balances.existentialDeposit as any).toString());
+                console.log('[DEBUG] Polkadot existentialDeposit (planck):', existentialDepositPlanck.toString());
+            } catch (edErr) {
+                console.warn('[WARN] Could not read existentialDeposit from chain constants:', ((edErr as any)?.message || String(edErr)));
+            }
+
+            // Re-check account free balance (planck)
+            const freshAccount = await api.query.system.account(userAddress.address);
+            const freePlanck = BigInt(freshAccount.data.free.toString());
+            console.log('[DEBUG] Polkadot fresh free balance (planck):', freePlanck.toString());
+
+            // small safety buffer: 0.01 DOT (in planck)
+            const safetyBufferPlanck = BigInt(Math.round(0.01 * 1e10));
+
+            const requiredPlanck = planck + estimatedFeePlanck + existentialDepositPlanck + safetyBufferPlanck;
+            if (freePlanck < requiredPlanck) {
+                const toDot = (p: bigint) => (Number(p) / 1e10).toFixed(8);
+                try { await api.disconnect(); } catch {}
+                throw new Error(
+                    `Insufficient balance for Polkadot transfer. ` +
+                    `Have: ${toDot(freePlanck)} DOT, ` +
+                    `Required: ${toDot(requiredPlanck)} DOT (amount ${toDot(planck)} + estFee ${toDot(estimatedFeePlanck)} + existentialDeposit ${toDot(existentialDepositPlanck)} + buffer 0.01). ` +
+                    `Reduce the amount or top up the account.`
+                );
+            }
+        } catch (preflightErr) {
+            console.error('Polkadot preflight check failed:', (preflightErr as any)?.message || String(preflightErr));
+            throw preflightErr;
+        }
 
         // Sign and send
         try {
