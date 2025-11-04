@@ -12,26 +12,17 @@ import { Conversion } from '../entities/Conversion';
 import { MerchantPayment } from '../entities/MerchantPayment'; 
 import { SplitPayment } from '../entities/SplitPayment';
 import { SplitPaymentRecipient } from '../entities/SplitPaymentRecipient';
-import { SplitPaymentExecution } from '../entities/SplitPaymentExecution';
+import { SplitPaymentExecution } from '../entities/SplitPaymentExecution'; // Missing import!
 import { SplitPaymentExecutionResult } from '../entities/SplitPaymentExecutionResult';
 import { Fee } from '../entities/Fee';
 import ProviderOrder from '../entities/ProviderOrder';
 
-// ALWAYS use SSL unless explicitly on localhost
-const isLocalhost = process.env.DATABASE_URL && /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
-const shouldUseSsl = !isLocalhost;
-
-console.log('=== DATABASE SSL CONFIGURATION ===');
-console.log('DATABASE_URL (first 50 chars):', process.env.DATABASE_URL?.substring(0, 50));
-console.log('isLocalhost:', isLocalhost);
-console.log('shouldUseSsl:', shouldUseSsl);
-console.log('==================================');
 
 export const AppDataSource = new DataSource({
     type: 'postgres',
     url: process.env.DATABASE_URL,
     synchronize: process.env.NODE_ENV === 'development',
-    logging: process.env.TYPEORM_LOGGING === 'true' ? ['query', 'error'] : ['error'],
+    logging: ['error'],
     entities: [
         User,
         UserAddress,
@@ -45,29 +36,20 @@ export const AppDataSource = new DataSource({
         SplitPaymentExecution,
         SplitPaymentRecipient,
         SplitPaymentExecutionResult,
-        ProviderOrder,
+    ProviderOrder,
         Fee
     ],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
-    ssl: shouldUseSsl,
-    extra: shouldUseSsl ? {
-        ssl: {
-            rejectUnauthorized: false
-        }
-    } : {},
+    // ssl: false,
+    ssl: { rejectUnauthorized: false },
 });
-
-console.log('DataSource SSL config:', (AppDataSource.options as any).ssl);
-console.log('DataSource extra.ssl config:', (AppDataSource.options as any).extra?.ssl);
-
 export const connectDB = async (): Promise<void> => {
     try {
-        console.log('Attempting database connection with SSL:', shouldUseSsl);
         await AppDataSource.initialize();
-        console.log('✅ PostgreSQL Connected successfully');
+        console.log('PostgreSQL Connected successfully');
     } catch (error) {
-        console.error('❌ Database connection failed:', error);
+        console.error('Database connection failed:', error);
         process.exit(1);
     }
 };

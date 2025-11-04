@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import { connectDB } from './config/database_migration';
+import { connectDB } from './config/database';
 import authRouter from './routes/authRoute';
 import userRouter from './routes/userRoute';
 import walletRouter from './routes/walletRoute';
