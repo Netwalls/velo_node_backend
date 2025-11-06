@@ -4,49 +4,99 @@ import { ChangellyFiatClient } from "@changelly/fiat-api-sdk-node";
 class ChangellyServiceImpl {
     private client: any;
 
+    // constructor() {
+    //     const privateKeyBase64 = process.env.CHANGELLY_API_SECRET || process.env.CHANGELLY_PRIVATE_KEY;
+    //     const publicKey = process.env.CHANGELLY_API_KEY || process.env.CHANGELLY_PUBLIC_KEY;
+
+    //     if (!privateKeyBase64 || !publicKey) {
+    //         throw new Error('CHANGELLY_API_KEY and CHANGELLY_API_SECRET must be set in environment variables');
+    //     }
+
+    //     // Decode the Base64 private key
+    //     let privateKey: string;
+    //     try {
+    //         // If value looks like PEM already, use it as-is
+    //         if (privateKeyBase64.trim().startsWith('-----BEGIN')) {
+    //             privateKey = privateKeyBase64.trim();
+    //         } else {
+    //             privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8').trim();
+    //         }
+            
+    //         // Debug logging (REMOVE IN PRODUCTION!)
+    //         console.log('=== Changelly Configuration ===');
+    //         console.log('Public Key:', publicKey);
+    //         console.log('Private Key Preview:', privateKey.substring(0, 50) + '...');
+    //         console.log('Private Key Length:', privateKey.length);
+    //         console.log('===============================');
+            
+    //     } catch (error) {
+    //         console.error('Failed to decode private key:', error);
+    //         throw new Error('Invalid private key format');
+    //     }
+
+    //     try {
+    //         this.client = new ChangellyFiatClient({
+    //             privateKey: privateKey,
+    //             publicKey: publicKey.trim(),
+    //             // Uncomment to use sandbox environment
+    //             // apiUrl: 'https://fiat-api-sandbox.changelly.com'
+    //         });
+    //         console.log('✓ Changelly client initialized successfully');
+    //     } catch (err) {
+    //         console.error('Failed to initialize Changelly client:', (err as any)?.message || err);
+    //         throw err;
+    //     }
+    // }
+
     constructor() {
-        const privateKeyBase64 = process.env.CHANGELLY_API_SECRET || process.env.CHANGELLY_PRIVATE_KEY;
-        const publicKey = process.env.CHANGELLY_API_KEY || process.env.CHANGELLY_PUBLIC_KEY;
+    const privateKeyBase64 = process.env.CHANGELLY_API_SECRET || process.env.CHANGELLY_PRIVATE_KEY;
+    const publicKey = process.env.CHANGELLY_API_KEY || process.env.CHANGELLY_PUBLIC_KEY;
 
-        if (!privateKeyBase64 || !publicKey) {
-            throw new Error('CHANGELLY_API_KEY and CHANGELLY_API_SECRET must be set in environment variables');
-        }
-
-        // Decode the Base64 private key
-        let privateKey: string;
-        try {
-            // If value looks like PEM already, use it as-is
-            if (privateKeyBase64.trim().startsWith('-----BEGIN')) {
-                privateKey = privateKeyBase64.trim();
-            } else {
-                privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8').trim();
-            }
-            
-            // Debug logging (REMOVE IN PRODUCTION!)
-            console.log('=== Changelly Configuration ===');
-            console.log('Public Key:', publicKey);
-            console.log('Private Key Preview:', privateKey.substring(0, 50) + '...');
-            console.log('Private Key Length:', privateKey.length);
-            console.log('===============================');
-            
-        } catch (error) {
-            console.error('Failed to decode private key:', error);
-            throw new Error('Invalid private key format');
-        }
-
-        try {
-            this.client = new ChangellyFiatClient({
-                privateKey: privateKey,
-                publicKey: publicKey.trim(),
-                // Uncomment to use sandbox environment
-                // apiUrl: 'https://fiat-api-sandbox.changelly.com'
-            });
-            console.log('✓ Changelly client initialized successfully');
-        } catch (err) {
-            console.error('Failed to initialize Changelly client:', (err as any)?.message || err);
-            throw err;
-        }
+    if (!privateKeyBase64 || !publicKey) {
+        throw new Error('CHANGELLY_API_KEY and CHANGELLY_API_SECRET must be set');
     }
+
+    let privateKey: string;
+    try {
+        if (privateKeyBase64.trim().startsWith('-----BEGIN')) {
+            // Already in PEM format
+            privateKey = privateKeyBase64.trim();
+        } else {
+            // Decode from base64
+            privateKey = Buffer.from(privateKeyBase64.trim(), 'base64').toString('utf-8');
+        }
+        
+        // Validate PEM format
+        if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+            throw new Error('Private key must contain BEGIN PRIVATE KEY header');
+        }
+        if (!privateKey.includes('-----END PRIVATE KEY-----')) {
+            throw new Error('Private key must contain END PRIVATE KEY footer');
+        }
+        
+        // Log for debugging (REMOVE IN PRODUCTION)
+        console.log('Private key validation:');
+        console.log('- Has BEGIN header:', privateKey.includes('-----BEGIN'));
+        console.log('- Has END footer:', privateKey.includes('-----END'));
+        console.log('- Length:', privateKey.length);
+        console.log('- First 50 chars:', privateKey.substring(0, 50));
+        
+    } catch (error) {
+        console.error('Private key decode error:', error);
+        throw error;
+    }
+
+    try {
+        this.client = new ChangellyFiatClient({
+            privateKey: privateKey,
+            publicKey: publicKey.trim()
+        });
+        console.log('✓ Changelly client initialized');
+    } catch (err: any) {
+        console.error('Client init error:', err.message);
+        throw err;
+    }
+}
 
     async getProviders() {
         try {
