@@ -23,6 +23,7 @@ import axios from 'axios';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types/index';
 import { NotificationService } from '../services/notificationService';
+import { User } from '../entities/User';
 import { AppDataSource } from '../config/database';
 import { decrypt } from '../utils/keygen';
 import { checkBalance, deployStrkWallet } from '../utils/keygen';
@@ -2126,6 +2127,112 @@ else if (chain === 'stellar') {
         }
     }
     
+    /**
+     * Send funds to a Velo user identified by username.
+     * This resolves the recipient's address for the given chain/network and delegates
+     * to the existing sendTransaction method to perform the actual send (including PIN checks).
+     * POST /wallet/send/by-username
+     * Body: { username, chain, network, amount, fromAddress?, transactionPin }
+     */
+    static async sendByUsername(
+        req: AuthRequest,
+        res: Response
+    ): Promise<void> {
+        try {
+            const { username, chain, network, amount } = req.body;
+
+            if (!req.user || !req.user.id) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+
+            if (!username || !chain || !network || !amount) {
+                res.status(400).json({ error: 'Missing required fields: username, chain, network, amount' });
+                return;
+            }
+
+            // Resolve username -> user
+            const userRepo = AppDataSource.getRepository(User);
+            const recipient = await userRepo.findOne({ where: { username } });
+            if (!recipient) {
+                res.status(404).json({ error: 'Recipient username not found' });
+                return;
+            }
+
+            // Prevent sending to self
+            if (recipient.id === req.user.id) {
+                res.status(400).json({ error: 'Cannot send to your own username' });
+                return;
+            }
+
+            // Resolve recipient address for chain/network
+            const addressRepo = AppDataSource.getRepository(UserAddress);
+            const recipientAddr = await addressRepo.findOne({ where: { userId: recipient.id, chain, network } });
+            if (!recipientAddr || !recipientAddr.address) {
+                res.status(404).json({ error: 'Recipient does not have a wallet for the requested chain/network' });
+                return;
+            }
+
+            // Inject resolved toAddress into request body and delegate to existing sendTransaction
+            req.body.toAddress = recipientAddr.address;
+
+            // Reuse existing sendTransaction which performs PIN checks, fee handling, DB writes, notifications etc.
+            await WalletController.sendTransaction(req as any, res as any);
+
+            // After sendTransaction completes, create a receive notification for the recipient (best-effort).
+            (async () => {
+                try {
+                    // Determine sender address for this chain/network (may have been provided by client)
+                    const addressRepo = AppDataSource.getRepository(UserAddress);
+                    let senderAddress = req.body?.fromAddress;
+                    if (!senderAddress) {
+                        const senderAddrRec = await addressRepo.findOne({ where: { userId: req.user!.id, chain, network } });
+                        if (senderAddrRec) senderAddress = senderAddrRec.address;
+                    }
+
+                    // Currency label -- simple mapping similar to sendTransaction
+                    const currency = ((): string => {
+                        const map: Record<string, string> = {
+                            starknet: 'STRK',
+                            ethereum: 'ETH',
+                            usdt_erc20: 'USDT',
+                            solana: 'SOL',
+                            bitcoin: 'BTC',
+                            stellar: 'XLM',
+                            polkadot: 'DOT',
+                        };
+                        return map[chain] || chain.toUpperCase();
+                    })();
+
+                    // Best-effort notify recipient that they will receive / have received funds
+                    try {
+                        if (!recipient || !recipient.id) {
+                            console.warn('Recipient record missing id; skipping receive notification');
+                        } else {
+                            await NotificationService.notifyReceiveMoney(
+                                recipient.id as string,
+                                String(amount),
+                                currency,
+                                senderAddress || 'unknown',
+                                undefined,
+                                { chain, network, toAddress: recipientAddr.address, fromUserId: req.user!.id }
+                            );
+                        }
+                    } catch (notifyErr) {
+                        console.warn('Failed to notify recipient after sendByUsername:', (notifyErr as any)?.message || String(notifyErr));
+                    }
+                } catch (bgErr) {
+                    console.warn('Background recipient notification failed (sendByUsername):', (bgErr as any)?.message || String(bgErr));
+                }
+            })();
+
+            return;
+        } catch (err: any) {
+            console.error('sendByUsername error:', err);
+            res.status(500).json({ error: 'Failed to send by username', details: err?.message || String(err) });
+        }
+    }
+
     /**
      * Get user wallet addresses
      * Expects authenticated user in req.user
