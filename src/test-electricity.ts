@@ -1,6 +1,6 @@
 // test-electricity-console.ts
 import 'dotenv/config';
-import { connectDB, AppDataSource } from './config/database_migration';
+import { connectDB, AppDataSource } from './config/database';
 import { electricityService } from './services/electricityService';
 import { ElectricityCompany, MeterType, Blockchain } from './entities/ElectricityPurchase';
 import { User } from './entities/User';

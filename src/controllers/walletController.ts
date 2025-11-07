@@ -23,7 +23,7 @@ import axios from 'axios';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types/index';
 import { NotificationService } from '../services/notificationService';
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { decrypt } from '../utils/keygen';
 import { checkBalance, deployStrkWallet } from '../utils/keygen';
 import bcrypt from 'bcryptjs';

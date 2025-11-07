@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthRequest } from '../types';
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { SplitPayment, SplitPaymentStatus } from '../entities/SplitPayment';
 import { SplitPaymentRecipient } from '../entities/SplitPaymentRecipient';
 import {

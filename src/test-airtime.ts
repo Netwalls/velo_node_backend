@@ -1,6 +1,6 @@
 // test-airtime-console.ts
 import 'dotenv/config';
-import { connectDB, AppDataSource } from './config/database_migration';
+import { connectDB, AppDataSource } from './config/database';
 import { airtimeService } from './services/airtimeService';
 import { MobileNetwork, Blockchain } from './entities/AirtimePurchase';
 import { User } from './entities/User';

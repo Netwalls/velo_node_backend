@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { UserAddress } from '../entities/UserAddress';
 import { ChainType, NetworkType, AuthRequest } from '../types';
 import { ethers } from 'ethers';

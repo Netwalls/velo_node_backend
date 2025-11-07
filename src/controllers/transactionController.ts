@@ -1,4 +1,4 @@
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { Transaction } from '../entities/Transaction';
 import { AuthRequest } from '../types';
 import { Response } from 'express';

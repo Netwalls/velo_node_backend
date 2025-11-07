@@ -1,6 +1,8 @@
 // src/services/airtimeservice.ts - FIXED VERSION
 import { Repository } from "typeorm";
-import { AppDataSource } from "../config/database_migration";
+import { AppDataSource } from "../config/database";
+import { NotificationService } from "./notificationService";
+import { NotificationType } from "../types";
 import {
   AirtimePurchase,
   AirtimePurchaseStatus,
@@ -118,7 +120,7 @@ export class AirtimeService {
       );
 
       // 8. Mark as completed ONLY if provider succeeded
-      airtimePurchase.status = AirtimePurchaseStatus.COMPLETED;
+  airtimePurchase.status = AirtimePurchaseStatus.COMPLETED;
       airtimePurchase.provider_reference = providerResult.orderid;
       airtimePurchase.metadata = {
         providerResponse: providerResult,
@@ -129,6 +131,20 @@ export class AirtimeService {
         },
       };
       await this.getRepository().save(airtimePurchase);
+
+      // Notify user of successful airtime purchase
+      try {
+        await NotificationService.notifyAirtimePurchase(
+          airtimePurchase.user_id,
+          airtimePurchase.fiat_amount.toString(),
+          airtimePurchase.crypto_currency,
+          airtimePurchase.phone_number,
+          airtimePurchase.network,
+          { purchaseId: airtimePurchase.id }
+        );
+      } catch (notifyErr) {
+        console.warn('Failed to send airtime notification:', notifyErr);
+      }
 
       console.log(
         `🎉 Airtime delivered! ${purchaseData.amount} NGN to ${purchaseData.phoneNumber}`
@@ -522,6 +538,19 @@ export class AirtimeService {
     };
     await this.getRepository().save(purchase);
 
+    // Notify user about failure
+    try {
+      await NotificationService.notifyPurchaseFailed(
+        purchase.user_id,
+        // include the original purchase type so UI can display context
+        (NotificationType as any).AIRTIME_PURCHASE || ('' as any),
+        reason,
+        { purchaseId: purchase.id }
+      );
+    } catch (err) {
+      console.warn('Failed to send purchase failed notification:', err);
+    }
+
     this.logSecurityEvent("PURCHASE_FAILED", {
       purchaseId: purchase.id,
       reason,
@@ -536,7 +565,7 @@ export class AirtimeService {
    * SECURITY: Log security events
    */
   private async logSecurityEvent(event: string, details: any) {
-    console.warn(`🔒 SECURITY EVENT: ${event}`, {
+    console.warn(`SECURITY EVENT: ${event}`, {
       timestamp: new Date().toISOString(),
       event,
       details,

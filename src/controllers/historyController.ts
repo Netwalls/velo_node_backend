@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { Transaction } from '../entities/Transaction';
 import { AuthRequest } from '../types';
 

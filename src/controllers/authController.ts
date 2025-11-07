@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
 import { RefreshToken } from '../entities/RefreshToken';
 import { AuthRequest } from '../types';

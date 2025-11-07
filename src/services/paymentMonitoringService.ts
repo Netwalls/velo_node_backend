@@ -1,5 +1,5 @@
 import { ConversionService } from './conversionService';
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
 import { MerchantPayment } from '../entities/MerchantPayment';
 import { MerchantPaymentStatus } from '../entities/MerchantPayment';

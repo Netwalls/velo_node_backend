@@ -1,6 +1,18 @@
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types';
+import { User } from '../entities/User';
+import { sendMailtrapMail } from '../utils/mailtrap';
+import { registrationTemplate } from '../utils/templates/registrationTemplate';
+import { depositTemplate } from '../utils/templates/depositTemplate';
+import { withdrawalTemplate } from '../utils/templates/withdrawalTemplate';
+import { purchaseTemplate } from '../utils/templates/purchaseTemplate';
+import { purchaseFailedTemplate } from '../utils/templates/purchaseFailedTemplate';
+import { loginTemplate } from '../utils/templates/loginTemplate';
+import { qrPaymentTemplate } from '../utils/templates/qrPaymentTemplate';
+import { logoutNotificationTemplate } from '../utils/logoutNotificationTemplate';
+
+const MAIL_NOTIFICATIONS_ENABLED = process.env.MAIL_NOTIFICATIONS_ENABLED !== 'false';
 
 export class NotificationService {
     /**
@@ -22,7 +34,73 @@ export class NotificationService {
             details,
             isRead: false,
         });
-        return await notificationRepo.save(notification);
+        const saved = await notificationRepo.save(notification);
+
+        // Send an email copy for important notification types if enabled and user has email
+        if (MAIL_NOTIFICATIONS_ENABLED) {
+            try {
+                const userRepo = AppDataSource.getRepository(User);
+                const user = await userRepo.findOne({ where: { id: userId } });
+                if (user && user.email) {
+                    // Select template by notification type
+                    let html = `<p>${message}</p>`;
+                    let text = typeof message === 'string' ? message : JSON.stringify(message);
+
+                    try {
+                        switch (type) {
+                            case NotificationType.REGISTRATION:
+                                html = registrationTemplate(user.email || '');
+                                break;
+                            case NotificationType.DEPOSIT:
+                                html = depositTemplate(details?.amount || '', details?.currency || '', details);
+                                break;
+                            case NotificationType.WITHDRAWAL:
+                                html = withdrawalTemplate(details?.amount || '', details?.currency || '', details);
+                                break;
+                            case NotificationType.AIRTIME_PURCHASE:
+                            case NotificationType.DATA_PURCHASE:
+                            case NotificationType.UTILITY_PAYMENT:
+                                html = purchaseTemplate(title, message, details);
+                                break;
+                            case NotificationType.PURCHASE_FAILED:
+                                html = purchaseFailedTemplate(details?.purchaseType || 'Purchase', details?.reason || message, details);
+                                break;
+                            case NotificationType.LOGIN:
+                                html = loginTemplate(user.email || '');
+                                break;
+                            case NotificationType.LOGOUT:
+                                html = logoutNotificationTemplate(user.email || '');
+                                break;
+                            case NotificationType.QR_PAYMENT_CREATED:
+                            case NotificationType.QR_PAYMENT_RECEIVED:
+                            case (NotificationType as any).QR_PAYMENT_COMPLETED:
+                                html = qrPaymentTemplate(title, details?.amount || details?.value || '', details?.currency || details?.currencyCode || '');
+                                break;
+                            default:
+                                // leave default simple html
+                                break;
+                        }
+                    } catch (tplErr) {
+                        console.error('Error rendering notification template', tplErr);
+                    }
+
+                    // Send email asynchronously but do not block the response path.
+                    sendMailtrapMail({
+                        to: user.email,
+                        subject: title,
+                        text,
+                        html,
+                    }).catch((err) => {
+                        console.error('Failed to send Mailtrap email for notification', err);
+                    });
+                }
+            } catch (err) {
+                // Fail silently - notification was already persisted
+                console.error('Error while attempting to send notification email:', err);
+            }
+        }
+
+        return saved;
     }
 
     /**
@@ -227,6 +305,71 @@ export class NotificationService {
             title,
             message,
             { amount, currency, mobileNumber, network, ...details }
+        );
+    }
+
+    /**
+     * Create data purchase notification
+     */
+    static async notifyDataPurchase(
+        userId: string,
+        planName: string,
+        amount: string,
+        currency: string,
+        mobileNumber: string,
+        network?: string,
+        details?: any
+    ): Promise<Notification> {
+        const title = 'Data Purchase Successful';
+        const message = `Your data purchase (${planName}) of ${amount} ${currency} for ${mobileNumber}${network ? ` on ${network}` : ''} was successful.`;
+        return this.createNotification(
+            userId,
+            NotificationType.DATA_PURCHASE,
+            title,
+            message,
+            { planName, amount, currency, mobileNumber, network, ...details }
+        );
+    }
+
+    /**
+     * Create utility (electricity) purchase notification
+     */
+    static async notifyUtilityPurchase(
+        userId: string,
+        amount: string,
+        currency: string,
+        meterNumber: string,
+        company?: string,
+        details?: any
+    ): Promise<Notification> {
+        const title = 'Utility Payment Successful';
+        const message = `Your utility payment of ${amount} ${currency} for meter ${meterNumber}${company ? ` (${company})` : ''} was successful.`;
+        return this.createNotification(
+            userId,
+            NotificationType.UTILITY_PAYMENT,
+            title,
+            message,
+            { amount, currency, meterNumber, company, ...details }
+        );
+    }
+
+    /**
+     * Generic purchase failed notification
+     */
+    static async notifyPurchaseFailed(
+        userId: string,
+        purchaseType: NotificationType,
+        reason: string,
+        details?: any
+    ): Promise<Notification> {
+        const title = 'Purchase Failed';
+        const message = `Your ${purchaseType} purchase failed: ${reason}`;
+        return this.createNotification(
+            userId,
+            NotificationType.PURCHASE_FAILED,
+            title,
+            message,
+            { reason, ...details }
         );
     }
 }

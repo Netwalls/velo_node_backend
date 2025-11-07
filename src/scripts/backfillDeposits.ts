@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { UserAddress } from '../entities/UserAddress';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types';

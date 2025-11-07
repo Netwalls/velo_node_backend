@@ -1,6 +1,8 @@
 // src/services/electricityService.ts
 import { Repository } from "typeorm";
-import { AppDataSource } from "../config/database_migration";
+import { AppDataSource } from "../config/database";
+import { NotificationService } from "./notificationService";
+import { NotificationType } from "../types";
 import {
   ElectricityPurchase,
   ElectricityPurchaseStatus,
@@ -233,6 +235,20 @@ export class ElectricityService {
         },
       };
       await this.getRepository().save(electricityPurchase);
+
+      // Notify user of successful electricity payment
+      try {
+        await NotificationService.notifyUtilityPurchase(
+          electricityPurchase.user_id,
+          electricityPurchase.fiat_amount.toString(),
+          electricityPurchase.crypto_currency,
+          electricityPurchase.meter_number,
+          companyConfig.name,
+          { purchaseId: electricityPurchase.id }
+        );
+      } catch (notifyErr) {
+        console.warn('Failed to send utility purchase notification:', notifyErr);
+      }
 
       console.log(`🎉 Electricity payment successful! Token: ${providerResult.metertoken}`);
 
@@ -542,6 +558,18 @@ export class ElectricityService {
       reason,
       userId: purchase.user_id,
     });
+
+    // Notify user about failure
+    try {
+      await NotificationService.notifyPurchaseFailed(
+        purchase.user_id,
+        NotificationType.UTILITY_PAYMENT,
+        reason,
+        { purchaseId: purchase.id }
+      );
+    } catch (err) {
+      console.warn('Failed to send purchase failed notification:', err);
+    }
   }
 
   /**

@@ -1,6 +1,8 @@
 // src/services/dataService.ts
 import { Repository } from "typeorm";
-import { AppDataSource } from "../config/database_migration";
+import { AppDataSource } from "../config/database";
+import { NotificationService } from "./notificationService";
+import { NotificationType } from "../types";
 import {
   DataPurchase,
   DataPurchaseStatus,
@@ -183,7 +185,7 @@ export class DataService {
       const providerResult = await this.processDataWithNellobytes(dataPurchase);
 
       // 12. Mark as completed ONLY if provider succeeded
-      dataPurchase.status = DataPurchaseStatus.COMPLETED;
+  dataPurchase.status = DataPurchaseStatus.COMPLETED;
       dataPurchase.provider_reference = providerResult.orderid;
       dataPurchase.metadata = {
         providerResponse: providerResult,
@@ -199,6 +201,21 @@ export class DataService {
         },
       };
       await this.getRepository().save(dataPurchase);
+
+      // Notify user of successful data purchase
+      try {
+        await NotificationService.notifyDataPurchase(
+          dataPurchase.user_id,
+          dataPurchase.plan_name,
+          dataPurchase.fiat_amount.toString(),
+          dataPurchase.crypto_currency,
+          dataPurchase.phone_number,
+          dataPurchase.network,
+          { purchaseId: dataPurchase.id }
+        );
+      } catch (notifyErr) {
+        console.warn('Failed to send data purchase notification:', notifyErr);
+      }
 
       console.log(`🎉 Data delivered! ${plan.plan_name} to ${purchaseData.phoneNumber}`);
 
@@ -475,6 +492,18 @@ export class DataService {
       reason,
       userId: purchase.user_id,
     });
+
+    // Notify user about failure
+    try {
+      await NotificationService.notifyPurchaseFailed(
+        purchase.user_id,
+        NotificationType.DATA_PURCHASE,
+        reason,
+        { purchaseId: purchase.id }
+      );
+    } catch (err) {
+      console.warn('Failed to send purchase failed notification:', err);
+    }
   }
 
   /**

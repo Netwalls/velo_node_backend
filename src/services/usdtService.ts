@@ -1,4 +1,4 @@
-import { AppDataSource } from '../config/database_migration';
+import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
 import { UserAddress } from '../entities/UserAddress';
 import { ChainType, NetworkType } from '../types';

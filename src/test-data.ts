@@ -1,6 +1,6 @@
 // test-data-console.ts
 import 'dotenv/config';
-import { connectDB, AppDataSource } from './config/database_migration';
+import { connectDB, AppDataSource } from './config/database';
 import { dataService } from './services/dataService';
 import { MobileNetwork, Blockchain } from './entities/DataPurchase';
 import { User } from './entities/User';

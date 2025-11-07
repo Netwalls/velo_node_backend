@@ -45,9 +45,7 @@ app.use('/user', userRouter);
 app.use('/wallet', walletRouter);
 app.use('/notification', notificationRouter);
 app.use('/history', historyRouter);
-// Mount payments routes (both /payments and /api/payments for compatibility)
-// app.use('/payments', paymentRouter);
-// app.use('/api/payments', paymentRouter);
+
 app.use('/transactions', transactionRoutes);
 app.use('/merchant', qrpaymentRoute);
 app.use('/split-payment', splitPaymentRoutes);
