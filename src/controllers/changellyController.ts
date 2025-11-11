@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { Request, Response } from 'express';
 import ChangellyService from '../services/changellyService_impl';
+import { AppDataSource } from '../config/database';
+import FiatOrder from '../entities/FiatOrder';
 
 export class ChangellyRampController {
     static async deposit(req: Request, res: Response) {
@@ -25,6 +27,7 @@ export class ChangellyRampController {
 
             const currencyToUpper = String(currencyTo).toUpperCase();
 
+            // Step 1: Get offers from Changelly
             const offersQuery = {
                 currencyFrom: 'NGN',
                 currencyTo: currencyToUpper,
@@ -47,12 +50,14 @@ export class ChangellyRampController {
                 });
             }
 
+            // Step 2: Select best offer
             const bestOffer = offers.reduce((best, current) => {
                 const bestAmount = parseFloat(best.amountExpectedTo || '0');
                 const currentAmount = parseFloat(current.amountExpectedTo || '0');
                 return currentAmount > bestAmount ? current : best;
             }, offers[0]);
 
+            // Step 3: Select best payment method
             let selectedPaymentMethod = null;
             if (bestOffer.paymentMethodOffer && bestOffer.paymentMethodOffer.length > 0) {
                 selectedPaymentMethod = bestOffer.paymentMethodOffer.reduce((best, current) => {
@@ -62,11 +67,15 @@ export class ChangellyRampController {
                 }, bestOffer.paymentMethodOffer[0]);
             }
 
+            // Step 4: Generate unique IDs
             const timestamp = Date.now();
             const randomId = Math.random().toString(36).substring(2, 10);
             const externalOrderId = `dep_${timestamp}_${randomId}`;
-            const externalUserId = `user_${timestamp}_${randomId}`;
+            const externalUserId = `user_${req.user?.id || timestamp}_${randomId}`;
 
+            // Step 5: Build Changelly's COMPLETE required payload
+            const BASE_URL = process.env.BASE_URL || 'https://yourdomain.com';
+            
             const orderPayload = {
                 externalOrderId,
                 externalUserId,
@@ -76,16 +85,43 @@ export class ChangellyRampController {
                 amountFrom: String(amount),
                 country,
                 walletAddress,
-                paymentMethod: selectedPaymentMethod?.method || undefined,
-                ip: req.ip || req.headers['x-forwarded-for'] || undefined,
+                paymentMethod: selectedPaymentMethod?.method || 'card', // Default to 'card' if not available
+                // REQUIRED: Return URLs for redirect after payment
+                returnSuccessUrl: `${BASE_URL}/buy/success`,
+                returnFailedUrl: `${BASE_URL}/buy/failure`,
+                // Optional but recommended
+                ip: req.ip || req.headers['x-forwarded-for'] as string || undefined,
                 userAgent: req.get('User-Agent') || undefined
             };
 
+            console.log('Creating order with payload:', {
+                ...orderPayload,
+                walletAddress: '***HIDDEN***'
+            });
+
+            // Step 6: Create order with Changelly
             const order = await ChangellyService.createOrder(orderPayload);
 
+            // Step 7: Persist order for tracking
+            try {
+                await AppDataSource.getRepository(FiatOrder).save({
+                    orderId: order.orderId,
+                    externalOrderId: order.externalOrderId || externalOrderId,
+                    providerCode: order.providerCode || bestOffer.providerCode,
+                    currencyFrom: order.currencyFrom || 'NGN',
+                    currencyTo: order.currencyTo || currencyToUpper,
+                    amountFrom: Number(order.amountFrom || amount) || amount,
+                    status: (order.status as string) || 'created',
+                    rawResponse: order
+                });
+            } catch (saveErr) {
+                console.error('Failed to persist FiatOrder:', saveErr);
+            }
+
+            // Step 8: Return simplified response to your users
             return res.json({
                 success: true,
-                redirectUrl: order.redirectUrl,
+                redirectUrl: order.redirectUrl, // User should be redirected here to complete payment
                 order: {
                     orderId: order.orderId,
                     externalOrderId: order.externalOrderId,
@@ -96,7 +132,7 @@ export class ChangellyRampController {
                     expectedAmount: bestOffer.amountExpectedTo,
                     rate: bestOffer.rate,
                     fee: bestOffer.fee,
-                    paymentMethod: selectedPaymentMethod?.methodName || 'N/A'
+                    paymentMethod: selectedPaymentMethod?.methodName || 'Card Payment'
                 }
             });
 
@@ -172,7 +208,9 @@ export class ChangellyRampController {
             const timestamp = Date.now();
             const randomId = Math.random().toString(36).substring(2, 10);
             const externalOrderId = `wdr_${timestamp}_${randomId}`;
-            const externalUserId = `user_${timestamp}_${randomId}`;
+            const externalUserId = `user_${req.user?.id || timestamp}_${randomId}`;
+
+            const BASE_URL = process.env.BASE_URL || 'https://yourdomain.com';
 
             const orderPayload = {
                 externalOrderId,
@@ -183,11 +221,29 @@ export class ChangellyRampController {
                 amountFrom: String(amount),
                 country,
                 refundAddress,
-                ip: req.ip || req.headers['x-forwarded-for'] || undefined,
+                // REQUIRED: Return URLs
+                returnSuccessUrl: `${BASE_URL}/api/v1/ramp/callback/success`,
+                returnFailedUrl: `${BASE_URL}/api/v1/ramp/callback/failed`,
+                ip: req.ip || req.headers['x-forwarded-for'] as string || undefined,
                 userAgent: req.get('User-Agent') || undefined
             };
 
             const order = await ChangellyService.createSellOrder(orderPayload);
+
+            try {
+                await AppDataSource.getRepository(FiatOrder).save({
+                    orderId: order.orderId,
+                    externalOrderId: order.externalOrderId || externalOrderId,
+                    providerCode: order.providerCode || bestOffer.providerCode,
+                    currencyFrom: order.currencyFrom || currencyFromUpper,
+                    currencyTo: order.currencyTo || 'NGN',
+                    amountFrom: Number(order.amountFrom || amount) || amount,
+                    status: (order.status as string) || 'created',
+                    rawResponse: order
+                });
+            } catch (saveErr) {
+                console.error('Failed to persist FiatOrder:', saveErr);
+            }
 
             return res.json({
                 success: true,
@@ -341,6 +397,57 @@ export class ChangellyRampController {
                 success: false,
                 error: err.message || 'Failed to get quote'
             });
+        }
+    }
+
+    // NEW: Callback handlers for success/failed redirects
+    static async handleSuccessCallback(req: Request, res: Response) {
+        try {
+            const { orderId, externalOrderId } = req.query;
+            
+            // Update order status in your database
+            if (orderId) {
+                const orderRepo = AppDataSource.getRepository(FiatOrder);
+                const order = await orderRepo.findOne({ 
+                    where: { orderId: orderId as string } 
+                });
+                
+                if (order) {
+                    order.status = 'completed';
+                    await orderRepo.save(order);
+                }
+            }
+
+            // Redirect to your frontend success page
+            return res.redirect(`${process.env.FRONTEND_URL}/payment/success?orderId=${orderId}`);
+        } catch (err) {
+            console.error('Success callback error:', err);
+            return res.redirect(`${process.env.FRONTEND_URL}/payment/error`);
+        }
+    }
+
+    static async handleFailedCallback(req: Request, res: Response) {
+        try {
+            const { orderId, externalOrderId } = req.query;
+            
+            // Update order status in your database
+            if (orderId) {
+                const orderRepo = AppDataSource.getRepository(FiatOrder);
+                const order = await orderRepo.findOne({ 
+                    where: { orderId: orderId as string } 
+                });
+                
+                if (order) {
+                    order.status = 'failed';
+                    await orderRepo.save(order);
+                }
+            }
+
+            // Redirect to your frontend failed page
+            return res.redirect(`${process.env.FRONTEND_URL}/payment/failed?orderId=${orderId}`);
+        } catch (err) {
+            console.error('Failed callback error:', err);
+            return res.redirect(`${process.env.FRONTEND_URL}/payment/error`);
         }
     }
 }
