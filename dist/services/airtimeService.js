@@ -393,13 +393,13 @@ class AirtimeService {
      */
     getBlockchainWallet(blockchain) {
         const walletMap = {
-            [AirtimePurchase_1.Blockchain.ETHEREUM]: process.env.ETH_WALLET,
-            [AirtimePurchase_1.Blockchain.BITCOIN]: process.env.BTC_WALLET,
-            [AirtimePurchase_1.Blockchain.SOLANA]: process.env.SOL_WALLET,
-            [AirtimePurchase_1.Blockchain.STELLAR]: process.env.XLM_WALLET,
-            [AirtimePurchase_1.Blockchain.POLKADOT]: process.env.DOT_WALLET,
-            [AirtimePurchase_1.Blockchain.STARKNET]: process.env.STRK_WALLET,
-            [AirtimePurchase_1.Blockchain.USDT_ERC20]: process.env.USDT_WALLET,
+            [AirtimePurchase_1.Blockchain.ETHEREUM]: process.env.ETHEREUM_TESTNET_TREASURY,
+            [AirtimePurchase_1.Blockchain.BITCOIN]: process.env.BITCOIN_TESTNET_TREASURY,
+            [AirtimePurchase_1.Blockchain.SOLANA]: process.env.SOLANA_TESTNET_TREASURY,
+            [AirtimePurchase_1.Blockchain.STELLAR]: process.env.STELLAR_TESTNET_TREASURY,
+            [AirtimePurchase_1.Blockchain.POLKADOT]: process.env.POLKADOT_TESTNET_TREASURY,
+            [AirtimePurchase_1.Blockchain.STARKNET]: process.env.STARKNET_TESTNET_TREASURY,
+            [AirtimePurchase_1.Blockchain.USDT_ERC20]: process.env.USDT_TESTNET_TREASURY,
         };
         const walletAddress = walletMap[blockchain];
         if (!walletAddress) {
