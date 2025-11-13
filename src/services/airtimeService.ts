@@ -1,6 +1,8 @@
 // src/services/airtimeService.ts - REFACTORED
 import { Repository } from "typeorm";
 import { AppDataSource } from "../config/database";
+import { NotificationService } from "./notificationService";
+import { NotificationType } from "../types";
 import {
   AirtimePurchase,
   AirtimePurchaseStatus,

@@ -47,6 +47,11 @@ router.post('/send', authMiddleware, async (req, res) => {
     await WalletController.sendTransaction(req, res);
 });
 
+// Send by username (resolve username -> address, then delegate to sendTransaction)
+router.post('/send/by-username', authMiddleware, async (req, res) => {
+    await WalletController.sendByUsername(req as any, res as any);
+});
+
 // Debug probe for Alchemy endpoints (requires auth)
 router.get('/debug/alchemy-probe', authMiddleware, async (req, res) => {
     await WalletController.alchemyProbe(req as any, res as any);

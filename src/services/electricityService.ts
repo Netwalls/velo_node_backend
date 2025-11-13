@@ -1,6 +1,8 @@
 // src/services/electricityService.ts - REFACTORED
 import { Repository } from "typeorm";
 import { AppDataSource } from "../config/database";
+import { NotificationService } from "./notificationService";
+import { NotificationType } from "../types";
 import {
   ElectricityPurchase,
   ElectricityPurchaseStatus,
@@ -486,6 +488,18 @@ export class ElectricityService {
       reason,
       userId: purchase.user_id,
     });
+
+    // Notify user about failure
+    try {
+      await NotificationService.notifyPurchaseFailed(
+        purchase.user_id,
+        NotificationType.UTILITY_PAYMENT,
+        reason,
+        { purchaseId: purchase.id }
+      );
+    } catch (err) {
+      console.warn('Failed to send purchase failed notification:', err);
+    }
   }
 
   // ========== PUBLIC UTILITY METHODS ==========

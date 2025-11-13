@@ -7,7 +7,7 @@ import userRouter from './routes/userRoute';
 import walletRouter from './routes/walletRoute';
 import notificationRouter from './routes/notificationRoute';
 import historyRouter from './routes/historyRoute';
-import paymentRouter from './routes/payment';
+// import paymentRouter from './routes/payment';
 import fiatRoutes from './routes/fiatRoute';
 import transactionRoutes from './routes/transactionRoute';
 import splitPaymentRoutes from './routes/splitPaymentRoute';
@@ -15,7 +15,7 @@ import strkRoute from "./routes/strkDeploymentRoute";
 import qrpaymentRoute from './routes/qrpaymentRoute';
 import adminRoute from './routes/adminRoute';
 import publicRoute from './routes/publicRoute';
-import swapRoute from './routes/swapRoute';
+// import swapRoute from './routes/swapRoute';
 import feeRoute from './routes/feeRoute';
 import changellyRoute from './routes/changellyRoute';
 import airtimeRoutes from "./routes/airtime";
@@ -49,9 +49,7 @@ app.use('/user', userRouter);
 app.use('/wallet', walletRouter);
 app.use('/notification', notificationRouter);
 app.use('/history', historyRouter);
-// Mount payments routes (both /payments and /api/payments for compatibility)
-app.use('/payments', paymentRouter);
-app.use('/api/payments', paymentRouter);
+
 app.use('/transactions', transactionRoutes);
 app.use('/merchant', qrpaymentRoute);
 app.use('/split-payment', splitPaymentRoutes);
@@ -60,7 +58,7 @@ app.use('/admin', adminRoute);
 app.use('/fees', feeRoute);
 // Public routes should be mounted last for clarity, but ensure no conflicts
 app.use('/', publicRoute);
-app.use('/swap', swapRoute);
+// app.use('/swap', swapRoute);
 
 // utility route
 app.use("/airtime", airtimeRoutes);
