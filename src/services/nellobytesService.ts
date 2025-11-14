@@ -1,4 +1,4 @@
-// src/services/nellobytesService.ts
+// src/services/nellobytesService.ts - FIXED
 import axios from "axios";
 
 const BASE_URL = "https://www.nellobytesystems.com";
@@ -9,10 +9,8 @@ function getEnv(key: string, fallback = ""): string {
 }
 
 // Support both legacy and new environment variable names
-const USERID =
-  process.env.NELLOBYTES_USERID || process.env.CLUB_KONNECT_ID || "";
-const APIKEY =
-  process.env.NELLOBYTES_APIKEY || process.env.CLUB_KONNECT_APIKEY || "";
+const USERID = "CK101265322";
+const APIKEY = "BI4HSJA5821F0N95B85F52L329551U5OMGDQ2C70EW81GCRLFD84678KGR252LAO";
 const CALLBACK =
   process.env.NELLOBYTES_CALLBACK_URL ||
   process.env.CLUB_KONNECT_CALLBACK_URL ||
@@ -63,21 +61,22 @@ interface NellobytesElectricCompanyResponse {
 // Response structure from Nellobytes API
 export interface NellobytesResponse {
   orderid?: string;
-  statuscode: string;
-  status: string;
+  statuscode?: string;
+  status?: string;
   requestid?: string;
   transid?: string;
   meterno?: string;
   metertoken?: string;
+  customer_name?: string;
 }
 
 // Data plan structure from Nellobytes API
 export interface NellobytesDataPlan {
-  dataplan_id: string; // e.g., "1000.01", "2500.01"
-  plan_network: string; // e.g., "01" for MTN
-  plan_name: string; // e.g., "1GB - 30 days (Direct Data)"
-  plan_amount: string; // e.g., "N2,325.00"
-  month_validate: string; // e.g., "30 days"
+  dataplan_id: string;
+  plan_network: string;
+  plan_name: string;
+  plan_amount: string;
+  month_validate: string;
 }
 
 // Electricity company structure from Nellobytes API
@@ -114,7 +113,7 @@ export interface ElectricityPurchaseParams {
   meterNo: string;
   phoneNo: string;
   amount: number;
-  requestId?: string;
+  CallBackURL?: string;
 }
 
 /**
@@ -128,9 +127,6 @@ function buildQuery(params: Record<string, any>): string {
     .join("&");
 }
 
-/**
- * Make API call to Nellobytesystems
- */
 async function callApi(
   path: string,
   params: Record<string, any>
@@ -144,54 +140,57 @@ async function callApi(
   }
 
   // Add required parameters
-  const fullParams = {
-    ...params,
+  const fullParams: Record<string, any> = {
     UserID: USERID,
     APIKey: APIKEY,
-    CallBackURL: CALLBACK,
+    ...params,
   };
 
-  // Add callback URL if provided
-  if (CALLBACK) {
+  // Add callback URL if provided and not empty
+  if (CALLBACK && CALLBACK.trim() !== "") {
     fullParams.CallBackURL = CALLBACK;
   }
 
-  const url = `${BASE_URL}/${path}?${buildQuery(fullParams)}`;
+  // For Nellobytes, build the URL with parameters directly in the path
+  const queryString = buildQuery(fullParams);
+
+  const url = `${BASE_URL}/${path}?${queryString}`;
 
   try {
     console.log(`📞 Calling Nellobytes API: ${path}`);
-    console.log(`📋 Parameters:`, { ...fullParams, APIKey: "***" }); // Hide API key in logs
+    console.log(`📋 Parameters:`, { ...fullParams, APIKey: "***" });
+    console.log(`🔗 Full URL: ${url.replace(APIKEY, "***")}`);
 
     const response = await axios.get(url, { timeout: 15000 });
 
     console.log(`✅ Nellobytes raw response:`, response.data);
+    console.log(
+      `🔐 Using Credentials - UserID: ${USERID}, APIKey: ${
+        APIKEY ? "***" + APIKEY.slice(-4) : "MISSING"
+      }`
+    );
 
-    // Parse the response based on its format
     return parseNellobytesResponse(response.data);
   } catch (error: any) {
     console.error(`❌ Nellobytes API error (${path}):`, error.message);
 
     if (error.response) {
-      // API returned an error status code
       console.error(`Response status: ${error.response.status}`);
       console.error(`Response data:`, error.response.data);
 
-      // Try to parse error response
       try {
         const errorResponse = parseNellobytesResponse(error.response.data);
-        return errorResponse; // Return the error response for proper handling
+        return errorResponse;
       } catch (parseError) {
         throw new Error(
           `Nellobytes API error: ${error.response.status} - ${error.response.statusText}`
         );
       }
     } else if (error.request) {
-      // No response received
       throw new Error(
         "No response from Nellobytes API - check your internet connection"
       );
     } else {
-      // Other errors
       throw new Error(`Nellobytes API call failed: ${error.message}`);
     }
   }
@@ -202,40 +201,47 @@ async function callApi(
  */
 function parseNellobytesResponse(data: any): NellobytesResponse {
   if (typeof data === "string") {
-    // Handle query string format: "orderid=123&statuscode=100&status=ORDER_RECEIVED"
-    try {
-      const params = new URLSearchParams(data);
-      return {
-        orderid: params.get("orderid") || undefined,
-        statuscode: params.get("statuscode") || "500",
-        status: params.get("status") || "UNKNOWN_ERROR",
-        requestid: params.get("requestid") || undefined,
-        transid: params.get("transid") || undefined,
-        meterno: params.get("meterno") || undefined,
-        metertoken: params.get("metertoken") || undefined,
-      };
-    } catch (error) {
-      console.error("Failed to parse string response:", data);
-      throw new Error(`Failed to parse Nellobytes response: ${data}`);
-    }
+    const params = new URLSearchParams(data);
+    return {
+      orderid: params.get("orderid") || undefined,
+      statuscode: params.get("statuscode") || undefined,
+      status: params.get("status") || undefined,
+      requestid: params.get("requestid") || undefined,
+      transid: params.get("transid") || undefined,
+      meterno: params.get("meterno") || undefined,
+      metertoken: params.get("metertoken") || undefined,
+      // ADD CUSTOMER NAME FIELD
+      customer_name:
+        params.get("customer_name") || params.get("name") || undefined,
+    };
   }
 
-  // If response is already JSON
   if (typeof data === "object" && data !== null) {
+    const status = data.status || data.Status || undefined;
+    const statuscode =
+      data.statuscode?.toString() ||
+      data.StatusCode?.toString() ||
+      (status === "00" ? "00" : undefined);
+
     return {
       orderid: data.orderid || data.OrderID,
-      statuscode:
-        data.statuscode?.toString() || data.StatusCode?.toString() || "100",
-      status: data.status || data.Status || "ORDER_RECEIVED",
+      statuscode,
+      status,
       requestid: data.requestid || data.RequestID,
       transid: data.transid || data.TransID,
       meterno: data.meterno || data.MeterNo,
       metertoken: data.metertoken || data.MeterToken,
+      // ADD CUSTOMER NAME FIELD - check multiple possible field names
+      customer_name:
+        data.customer_name ||
+        data.name ||
+        data.CustomerName ||
+        data.customerName ||
+        undefined,
     };
   }
 
-  console.error("Unexpected response type:", typeof data);
-  throw new Error(`Unexpected response format from Nellobytes: ${typeof data}`);
+  throw new Error(`Unexpected response format from Nellobytes`);
 }
 
 /**
@@ -264,12 +270,30 @@ export function convertNetworkToCode(network: string): MobileNetworkCode {
  * Check if a Nellobytes response indicates success
  */
 export function isSuccessfulResponse(response: NellobytesResponse): boolean {
-  // Status code 100 typically means success, also check for ORDER_RECEIVED status
-  return (
-    response.statuscode === "100" ||
-    response.statuscode === "200" ||
-    response.status === "ORDER_RECEIVED"
-  );
+  const successStatusCodes = ["00", "100", "200", "201"];
+  const successStatusMessages = [
+    "ORDER_RECEIVED",
+    "ORDER_COMPLETED",
+    "SUCCESS",
+    "COMPLETED",
+  ];
+
+  // Check if status code indicates success
+  if (response.statuscode && successStatusCodes.includes(response.statuscode)) {
+    return true;
+  }
+
+  // Check if status message indicates success
+  if (response.status && successStatusMessages.includes(response.status)) {
+    return true;
+  }
+
+  // For electricity purchases, status "00" usually means success
+  if (response.status === "00" || response.statuscode === "00") {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -294,9 +318,9 @@ export function getStatusMessage(response: NellobytesResponse): string {
   };
 
   return (
-    statusMessages[response.status] ||
-    statusMessages[response.statuscode] ||
-    `Transaction status: ${response.status}`
+    statusMessages[response.status ?? ""] ||
+    statusMessages[response.statuscode ?? ""] ||
+    `Transaction status: ${response.status ?? "unknown"}`
   );
 }
 
@@ -380,7 +404,7 @@ export class NellobytesService {
   }
 
   /**
-   * Buy electricity
+   * Buy electricity - FIXED VERSION
    * @param params - Electricity purchase parameters
    * @returns Nellobytes API response
    */
@@ -395,14 +419,23 @@ export class NellobytesService {
       amount: params.amount,
     });
 
-    const nellobytesParams = {
+    // Build parameters in the EXACT order and format that Nellobytes expects
+    const nellobytesParams: Record<string, any> = {
       ElectricCompany: params.electricCompany,
       MeterType: params.meterType,
       MeterNo: params.meterNo,
-      PhoneNo: params.phoneNo,
       Amount: params.amount.toString(),
-      ...(params.requestId && { RequestID: params.requestId }),
+      PhoneNo: params.phoneNo,
+      // ADD REQUIRED REQUESTID PARAMETER:
+      RequestID: `VELO_ELECTRICITY_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 9)}`,
     };
+
+    // Add callback URL if provided
+    if (CALLBACK && CALLBACK.trim() !== "") {
+      nellobytesParams.CallBackURL = CALLBACK;
+    }
 
     const response = await callApi("APIElectricityV1.asp", nellobytesParams);
 
@@ -427,7 +460,7 @@ export class NellobytesService {
     electricCompany: string,
     meterNo: string
   ): Promise<NellobytesResponse> {
-    console.log("🔍 Verifying meter:", { company: electricCompany, meterNo });
+    console.log(" Verifying meter:", { company: electricCompany, meterNo });
 
     const nellobytesParams = {
       ElectricCompany: electricCompany,
@@ -439,7 +472,7 @@ export class NellobytesService {
       nellobytesParams
     );
 
-    console.log("🔍 Meter verification response:", {
+    console.log(" Meter verification response:", {
       status: response.status,
       statuscode: response.statuscode,
       meterno: response.meterno,
@@ -715,7 +748,7 @@ export class NellobytesService {
       throw new Error("Either requestId or orderId must be provided");
     }
 
-    console.log("🔍 Querying transaction status:", { requestId, orderId });
+    console.log(" Querying transaction status:", { requestId, orderId });
 
     const params: any = {};
     if (requestId) params.RequestID = requestId;
@@ -723,7 +756,7 @@ export class NellobytesService {
 
     const response = await callApi("APIQueryV1.asp", params);
 
-    console.log("🔍 Query status response:", {
+    console.log(" Query status response:", {
       orderid: response.orderid,
       status: response.status,
       statuscode: response.statuscode,
@@ -799,7 +832,7 @@ export class NellobytesService {
   }
 
   /**
-   * Utility function to purchase electricity
+   * Utility function to purchase electricity - FIXED VERSION
    */
   async purchaseElectricity(
     electricCompany: string,
@@ -807,7 +840,7 @@ export class NellobytesService {
     meterNo: string,
     phoneNo: string,
     amount: number,
-    requestId?: string
+    requestId?: string // Keep this for your internal tracking, but don't send to Nellobytes
   ): Promise<NellobytesResponse> {
     console.log("⚡ Simple electricity purchase:", {
       electricCompany,
@@ -817,13 +850,14 @@ export class NellobytesService {
       amount,
     });
 
+    // Don't include requestId in the parameters sent to Nellobytes
+    // The RequestID will be generated automatically in buyElectricity method
     return this.buyElectricity({
       electricCompany,
       meterType,
       meterNo,
       phoneNo,
       amount,
-      requestId,
     });
   }
 

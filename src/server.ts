@@ -18,6 +18,10 @@ import publicRoute from './routes/publicRoute';
 // import swapRoute from './routes/swapRoute';
 import feeRoute from './routes/feeRoute';
 import changellyRoute from './routes/changellyRoute';
+import airtimeRoutes from "./routes/airtime";
+import dataRoutes from "./routes/data";
+import electricityRoutes from "./routes/electricity";
+
 
 // Load environment variables
 dotenv.config();
@@ -55,6 +59,12 @@ app.use('/fees', feeRoute);
 // Public routes should be mounted last for clarity, but ensure no conflicts
 app.use('/', publicRoute);
 // app.use('/swap', swapRoute);
+
+// utility route
+app.use("/airtime", airtimeRoutes);
+app.use("/data", dataRoutes);
+app.use("/electricity", electricityRoutes);
+
 
 connectDB().then(() => {
     app.listen(PORT, () => {

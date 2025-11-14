@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { airtimeController } from '../controllers/airtimeController';
 import { purchaseRateLimiter } from '../controllers/airtimeController';
 import { authMiddleware } from '../middleware/auth';
+import { dataController } from '../controllers/dataController';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.use(authMiddleware);
 // Airtime purchase routes
 router.post('/purchase', purchaseRateLimiter, airtimeController.processAirtimePurchase);
 router.get('/history', airtimeController.getUserAirtimeHistory);
-router.get('/supported-options', airtimeController.getSupportedOptions);
+router.get('/supported-options', dataController.getSupportedOptions.bind(dataController));
 router.get('/purchase/:purchaseId', airtimeController.getAirtimePurchase);
 router.get('/expected-amount', airtimeController.getExpectedAmount);
 

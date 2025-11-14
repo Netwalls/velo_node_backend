@@ -15,7 +15,7 @@
         MTN = 'mtn',
         GLO = 'glo', 
         AIRTEL = 'airtel',
-        ETISALAT = 'etisalat'
+        ETISALAT = '9mobile'
     }
 
     // Define supported blockchains

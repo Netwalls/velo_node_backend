@@ -47,7 +47,6 @@ export interface ElectricityPurchaseParams {
     meterNo: string;
     phoneNo: string;
     amount: number;
-    requestId?: string;
 }
 /**
  * Parse Nellobytes API response which can be in different formats

@@ -64,52 +64,54 @@ export class ElectricityController {
     /**
      * Verify meter number before payment
      */
-    async verifyMeterNumber(req: Request, res: Response) {
-        try {
-            const { company, meterNumber } = req.query;
-            const userId = (req as any).user?.id;
+   /**
+ * Verify meter number before payment
+ */
+async verifyMeterNumber(req: Request, res: Response) {
+  try {
+    const { company, meterNumber } = req.query;
+    const userId = (req as any).user?.id;
 
-            if (!userId) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'Authentication required'
-                });
-            }
-
-            if (!company || !meterNumber) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Missing required parameters: company, meterNumber'
-                });
-            }
-
-            // Validate company
-            if (!Object.values(ElectricityCompany).includes(company as ElectricityCompany)) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Invalid company. Supported: ${Object.values(ElectricityCompany).join(', ')}`
-                });
-            }
-
-            const result = await electricityService.verifyMeterNumber(
-                company as ElectricityCompany,
-                meterNumber as string
-            );
-
-            res.json({
-                success: true,
-                message: result.valid ? 'Meter number verified successfully' : 'Meter verification failed',
-                data: result
-            });
-
-        } catch (error: any) {
-            console.error('Meter verification error:', error);
-            res.status(400).json({
-                success: false,
-                message: error.message || 'Failed to verify meter number'
-            });
-        }
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
     }
+
+    if (!company || !meterNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required parameters: company, meterNumber'
+      });
+    }
+
+    // Validate company
+    if (!Object.values(ElectricityCompany).includes(company as ElectricityCompany)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid company. Supported: ${Object.values(ElectricityCompany).join(', ')}`
+      });
+    }
+
+    const result = await electricityService.verifyMeterNumber(
+      company as ElectricityCompany,
+      meterNumber as string
+      
+    );
+ const customerName = result.customer_name || "Customer information not available";
+    
+    // FIXED: Return the service result directly instead of wrapping it
+    res.json(result);
+
+  } catch (error: any) {
+    console.error('Meter verification error:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to verify meter number'
+    });
+  }
+}
 
     /**
      * Get expected crypto amount for display
