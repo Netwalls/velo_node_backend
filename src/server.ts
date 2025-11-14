@@ -8,7 +8,7 @@ import walletRouter from './routes/walletRoute';
 import notificationRouter from './routes/notificationRoute';
 import historyRouter from './routes/historyRoute';
 // import paymentRouter from './routes/payment';
-import fiatRoutes from './routes/fiatRoute';
+// import fiatRoutes from './routes/fiatRoute';
 import transactionRoutes from './routes/transactionRoute';
 import splitPaymentRoutes from './routes/splitPaymentRoute';
 import strkRoute from "./routes/strkDeploymentRoute";
@@ -43,7 +43,7 @@ app.get('/', (req, res) => {
 });
 
 // app.use('/fiat', changellyRoute);
-app.use('/fiat', fiatRoutes);
+// app.use('/fiat', fiatRoutes);
 app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/wallet', walletRouter);
