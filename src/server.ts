@@ -17,7 +17,7 @@ import adminRoute from './routes/adminRoute';
 import publicRoute from './routes/publicRoute';
 // import swapRoute from './routes/swapRoute';
 import feeRoute from './routes/feeRoute';
-import changellyRoute from './routes/changellyRoute';
+// import changellyRoute from './routes/changellyRoute';
 import airtimeRoutes from "./routes/airtime";
 import dataRoutes from "./routes/data";
 import electricityRoutes from "./routes/electricity";
@@ -42,7 +42,7 @@ app.get('/', (req, res) => {
     res.send('Velo Backend Server is running!');
 });
 
-app.use('/fiat', changellyRoute);
+// app.use('/fiat', changellyRoute);
 app.use('/fiat', fiatRoutes);
 app.use('/auth', authRouter);
 app.use('/user', userRouter);

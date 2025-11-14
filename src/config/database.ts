@@ -12,11 +12,13 @@ import { Conversion } from '../entities/Conversion';
 import { MerchantPayment } from '../entities/MerchantPayment'; 
 import { SplitPayment } from '../entities/SplitPayment';
 import { SplitPaymentRecipient } from '../entities/SplitPaymentRecipient';
-import { SplitPaymentExecution } from '../entities/SplitPaymentExecution'; // Missing import!
+import { SplitPaymentExecution } from '../entities/SplitPaymentExecution';
 import { SplitPaymentExecutionResult } from '../entities/SplitPaymentExecutionResult';
 import { Fee } from '../entities/Fee';
 import ProviderOrder from '../entities/ProviderOrder';
-
+import { AirtimePurchase } from '../entities/AirtimePurchase'; // ADD THIS IMPORT
+import { DataPurchase } from '../entities/DataPurchase';
+import { ElectricityPurchase } from '../entities/ElectricityPurchase';
 
 export const AppDataSource = new DataSource({
     type: 'postgres',
@@ -36,18 +38,25 @@ export const AppDataSource = new DataSource({
         SplitPaymentExecution,
         SplitPaymentRecipient,
         SplitPaymentExecutionResult,
-    ProviderOrder,
-        Fee
+        ProviderOrder,
+        Fee,
+        AirtimePurchase, // ADD THIS LINE
+        DataPurchase,
+        ElectricityPurchase,
     ],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
-    // ssl: false,
     ssl: { rejectUnauthorized: false },
 });
+
 export const connectDB = async (): Promise<void> => {
     try {
         await AppDataSource.initialize();
         console.log('PostgreSQL Connected successfully');
+        
+        // Debug: Check if AirtimePurchase is registered
+        const entityNames = AppDataSource.entityMetadatas.map(meta => meta.name);
+        console.log('Registered entities:', entityNames);
     } catch (error) {
         console.error('Database connection failed:', error);
         process.exit(1);
