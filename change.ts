@@ -1,0 +1,43 @@
+import * as crypto from 'crypto';
+const API_PUBLIC_KEY="MIIBCgKCAQEA5oYKJPnEuhyQ0EQ+7Xv7eQUSm0Zz7mV2d2p7K5+eD9l2pUnLL49NQ3VHkAnEuK5R7Edmvfjuc89FCByCJpHfMbsxg+56rwtMDXILQ/uoZAztPTACvIZEehLX6rQow02WnWPUPhe6HTDCfobq12/e2adHbvLUOCT2cUPhSYe38t8q/ONJyfJAAVdVIiKwkdVIMhYwOCkRlbWcauNf/BDpAZw3bWIOCQImzTqKIf5opliUV5FlRpEG52DEf9WPBz7qiLWvK3qL5NGNKmeY8OsTXbhJxhBi/Ey/+dqkO+BAQw9+gjkI5Uy/r/EXaYrWzvcKCMwtxetwt/tZF/m4kpSvawIDAQAB"
+const API_PRIVATE_KEY="LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQ2xNdnBzYUNkNnJBUFkKYXFXNjQwdHloV2lYV0FNS0g5RS9Yczhad0kzWXkyVStOWUpwRWNJVnlrZnlBNDJDRkY2a0wyQ0Q4K1hxeDRuSwo3UStsZUFKbWZSUWtVNjZMNG1IbEdBaW52a3VpQStwcEM0TjQwNnlZRmhLa1ZYd096dUNHcm44Z3Q2YTByN2hjCkxXanNiUk1tRE4zY245MXgveFc4SjJ2YTNwSDBUd1p6cEJKRHM5OHNuRm9CTlYwclVLL2pKSDBHTEVZOE9ZTDEKQisrUUtJTWU5dFJ2UmhTbnV1RjFnbEVNd1dnT0tVWHoxWnFSZDJnWllCMjEwVTN3ZWlXbDU3bWJRMENYTTVhcwoxR0duclkrZmtNOW12YTF5a2RnUVBKbTY3Rkx4aFZ4aXhmS1JHdXFBeTJFVnFvK3A2UDhzZVVBdlFpWUc2QWNZClYxQXVhN1Z2QWdNQkFBRUNnZ0VBQWlNK21DT3FtdXpkR05QR2pxb2Riek1JalFRS3Jzb0wyWTIrTDNXTlVScWUKQThUZnJtdTJ2VjlBOWFac1QwRHZ2NkRQeXc1M3Rmd3V2SjFadmZVRjdmbmVYczY3S255RE5aZVFXNVdiNWw0WApkZ0h5MlBVdEE2dGUrWWJYTGtSWm40ZVZHQitmSE1QcjBRdEFuMnZxZXY1Z3JWZkJBSEdoOUFrQ0xKMU15U2M1CnlNZnhFQTgyWmJqNzE5THk5T25wR0M0bWhENlBaUFlWMk5QTm02WjJxTTFHczhiQk5VM0xZdjI0VEljcXVqTXgKQ0FTTmY5ZktVOXRoWVNCbUwyc0tpeGV1Rk1HMEkwazNUbTdGWVpQc1ZGT2hLcytlQ0NPNE1pRC9SdXZadGV3SgpUSk5kTmpWRmVaWDZkZVY2dTlqQVUzTVcxa3hOQ0N6TnduWGxQNU1uaVFLQmdRRFRoT2I2WDFPN3BRc3hKVXpMCjd6ZDBGQzQvVmpmR2lkeTFTdzJSVmRBczVYTHdGUHVXRFdLdE5uYmlPcmFGU0Z1UkhwMGIrYzZnNG5jK3kxU2MKS3FJTWhNTVJVTjFiUU4rYnFvMFIwNUIrK0pPT3I4RmswcGRFWUtNZGxwU25ScTM4WEVFeTI0RUdvV1I4VmxLVQppZTFhZmxBeGMrTzFNd0ZMVktEZllFeVFrd0tCZ1FESDhISWFzZUZVbitPWnZwYlhWcmV5emRMLzFCejQ0R3NNCmxITVpmcVdNLzZYRHpvZnpoaHFrNkpBTmxqQnRiNUNzV0pvazZ4TWtuUFU3eTkwa0l0TFZraVhJb2FHclR6aUIKQjdlMDYrbWFTWHJBNEdEQTBGTUdMdmsybDc5bEdUY1dXMk5jN1FPQ3lSbG1UVUZIcE5pZURPaU94OExyMk5MdQpMdWlmNGw1OU5RS0JnSERxb0F2RTNBUnVSUjFGVmt3QU5sQkhmYkRlTEFSWEVIWFB6VHhxM1NrNmpETlNZRVJvCmZPY1BEa1FUSitEYkVkYlV5dlptVTBKYjQyQ29WMURQQ1pjNVFKRjc0OCtWUUVudnNFTjE5OHR3bEFVMkdqM2kKbGxJd2JLT2RBVnFUUnNwVHpaS0N6OHhrV0Nwd1FzRjlLREtJLy9LR2RXY0VCWXJiY000T3NKRDFBb0dBSTExYwpVV3gxTnNxeEwxaU94YmdJOWcrQjZzNVI4Wk9BVzlGR0twUkVKQlJ6OVpacVphQ3F4ZEI4Nm1wT1ZvME5RZTdLCkZRMmZiVEoyRGdXWkwvTVk1NzNhQVFyVjFiOUZkMDB1S1VveEg2RXZuVDRTM3dmNkozWFhqdGg0ZWlGanBRaTEKSXBLcHRGQnR0YktrZ1UrZklSV1hiT25ZaUc3cG9FZWJ6ZXYwV3FFQ2dZQXkvR2ttYjVwK21DdEEyR3NEQW1VTApjdGtRM3pNSG55UytNeHVZdjBoTGJCU01EdW8xZFhKQnd3UXp3UkdNblBHSVAvaGpQV2J0bCs1UGViUkY0STUwCnJ3M25zYkdlNnEyb20rZS9pajZnN3pCU1JrTVNXWVVwVXZsYmk3TkNWcnh6SzRjNHF3VFZPazVaYnlUY3QyZVoKTjZUc2lTSEw2K05nWllFTStTRmxSdz09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K";
+
+
+const privateKeyObject = crypto.createPrivateKey({
+  key: API_PRIVATE_KEY,
+  type: 'pkcs1',
+  format: 'pem',
+  encoding: 'base64',
+});
+
+const path = 'https://fiat-api.changelly.com/v1/validate-address';
+const message = {
+  "currency": "SOL",
+  "walletAddress": "EXrvr9QuytkkefGdBrQ3txkGBBBug8g3ezdi9n3AhYuG",
+};   
+
+const payload = path + JSON.stringify(message);
+
+const signature = crypto.sign('sha256', Buffer.from(payload), privateKeyObject).toString('base64');
+
+
+const options = {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Api-Key': API_PUBLIC_KEY,
+    'X-Api-Signature': signature,
+  },
+  body: JSON.stringify(message),
+};
+
+fetch(path, options).then(response => {
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(`Request error: ${response.status} ${response.statusText}`);
+}).then((response) => {
+  console.log('Successful response: ', response);
+}).catch(error => {
+  console.error(error);
+});
