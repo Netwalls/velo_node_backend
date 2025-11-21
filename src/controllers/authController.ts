@@ -502,8 +502,31 @@ export class AuthController {
             }
 
             // If Google verified the email but our DB flag isn't set, mark it verified
+            // If Google verified the email but our DB flag isn't set, mark it verified
             if (emailVerified && !user.isEmailVerified) {
                 user.isEmailVerified = true;
+            }
+
+            // Only populate firstName/lastName from Google if the user hasn't set them previously.
+            // This prevents overwriting user-updated profile fields with Google token values.
+            if (name) {
+                const parts = name.split(' ');
+                const gFirst = parts.shift();
+                const gLast = parts.join(' ');
+                let shouldSave = false;
+                if (!user.firstName && gFirst) {
+                    user.firstName = gFirst;
+                    shouldSave = true;
+                }
+                if (!user.lastName && gLast) {
+                    user.lastName = gLast;
+                    shouldSave = true;
+                }
+                if (shouldSave || (emailVerified && !user.isEmailVerified)) {
+                    await userRepository.save(user);
+                }
+            } else if (emailVerified && !user.isEmailVerified) {
+                // No name to set but still need to persist email verification
                 await userRepository.save(user);
             }
 
