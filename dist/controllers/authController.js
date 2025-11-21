@@ -1,4 +1,7 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const database_1 = require("../config/database");
@@ -10,6 +13,7 @@ const mailtrap_1 = require("../utils/mailtrap");
 const resendOtpTemplate_1 = require("../utils/resendOtpTemplate");
 const passwordResetTemplates_1 = require("../utils/passwordResetTemplates");
 const keygen_1 = require("../utils/keygen");
+const axios_1 = __importDefault(require("axios"));
 const userService_1 = require("../services/userService");
 const emailService_1 = require("../services/emailService");
 const notificationService_1 = require("../services/notificationService");
@@ -364,6 +368,172 @@ class AuthController {
         }
     }
     /**
+     * Google Sign-in / Sign-up check
+     * Expects either { idToken } (Google ID token) or { email } in the body.
+     * If user exists -> issue JWTs and return user + tokens.
+     * If user does NOT exist -> return { exists: false, email, name } so frontend can route to account creation.
+     */
+    static async googleSignIn(req, res) {
+        try {
+            const { idToken } = req.body;
+            const code = req.body.code;
+            // Minimal masking helper for logging
+            const mask = (s) => {
+                if (!s)
+                    return '';
+                if (s.length <= 12)
+                    return '***' + s.slice(-4);
+                return `${s.slice(0, 8)}...${s.slice(-4)}`;
+            };
+            // Log incoming request for debugging (do not log full tokens in production)
+            console.log('[AUTH][Google] Incoming request:', {
+                time: new Date().toISOString(),
+                ip: req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress,
+                userAgent: req.get('User-Agent'),
+                hasIdToken: !!idToken,
+                idTokenPreview: mask(idToken),
+                hasCode: !!code,
+                codePreview: mask(code),
+                bodyEmail: req.body.email,
+            });
+            let email = req.body.email;
+            let emailVerified = false;
+            let name;
+            if (idToken) {
+                // Verify ID token with Google
+                try {
+                    const resp = await axios_1.default.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+                    const data = resp.data;
+                    email = data.email;
+                    // Google returns email_verified as string 'true' or boolean depending on endpoint
+                    emailVerified = data.email_verified === true || data.email_verified === 'true';
+                    name = data.name;
+                    // Verify audience matches our client id
+                    const aud = data.aud || data.audience || data.client_id;
+                    const issuer = data.iss || data.issuer;
+                    const expectedAud = process.env.GOOGLE_CLIENT_ID;
+                    if (expectedAud && aud && expectedAud !== String(aud)) {
+                        console.error('[AUTH][Google] Token audience mismatch', { expectedAud, aud });
+                        return res.status(400).json({ error: 'Invalid Google ID token (audience mismatch)' });
+                    }
+                    if (issuer && issuer !== 'accounts.google.com' && issuer !== 'https://accounts.google.com') {
+                        console.error('[AUTH][Google] Token issuer unexpected', issuer);
+                        return res.status(400).json({ error: 'Invalid Google ID token (issuer mismatch)' });
+                    }
+                }
+                catch (err) {
+                    console.error('Failed to verify Google id_token:', err?.response?.data || err);
+                    return res.status(400).json({ error: 'Invalid Google ID token' });
+                }
+            }
+            if (!email) {
+                return res.status(400).json({ error: 'Email is required' });
+            }
+            const userRepository = database_1.AppDataSource.getRepository(User_1.User);
+            const refreshTokenRepository = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
+            let user = await userRepository.findOne({ where: { email } });
+            if (!user) {
+                // Auto-create user since Google verified email
+                const randomPwd = Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
+                const created = await (0, userService_1.createUserIfNotExists)(email, randomPwd);
+                if (!created) {
+                    // Race: user was created between checks, re-fetch
+                    const reUser = await userRepository.findOne({ where: { email } });
+                    if (!reUser) {
+                        return res.status(500).json({ error: 'Failed to create user' });
+                    }
+                    // continue with reUser below
+                    // assign to user variable so following logic proceeds
+                    user = reUser;
+                }
+                else {
+                    // mark email verified and set name if present
+                    created.isEmailVerified = true;
+                    if (name) {
+                        const parts = name.split(' ');
+                        created.firstName = parts.shift();
+                        created.lastName = parts.join(' ');
+                    }
+                    await database_1.AppDataSource.getRepository(User_1.User).save(created);
+                    // Generate wallets and addresses (same as register)
+                    try {
+                        const eth = (0, keygen_1.generateEthWallet)();
+                        const btc = (0, keygen_1.generateBtcWallet)();
+                        const sol = (0, keygen_1.generateSolWallet)();
+                        const stellar = (0, keygen_1.generateStellarWallet)();
+                        const polkadot = await (0, keygen_1.generatePolkadotWallet)();
+                        const strk = (0, keygen_1.generateStrkWallet)();
+                        const tron = (0, keygen_1.generateEthWallet)();
+                        const addresses = [
+                            { chain: 'ethereum', network: 'mainnet', address: eth.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey) },
+                            { chain: 'ethereum', network: 'testnet', address: eth.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey) },
+                            { chain: 'bitcoin', network: 'mainnet', address: btc.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(btc.mainnet.privateKey) },
+                            { chain: 'bitcoin', network: 'testnet', address: btc.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(btc.testnet.privateKey) },
+                            { chain: 'solana', network: 'mainnet', address: sol.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(sol.mainnet.privateKey) },
+                            { chain: 'solana', network: 'testnet', address: sol.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(sol.testnet.privateKey) },
+                            { chain: 'starknet', network: 'mainnet', address: strk.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(strk.mainnet.privateKey) },
+                            { chain: 'starknet', network: 'testnet', address: strk.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(strk.testnet.privateKey) },
+                            { chain: 'usdt_erc20', network: 'mainnet', address: eth.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey) },
+                            { chain: 'usdt_erc20', network: 'testnet', address: eth.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey) },
+                            { chain: 'usdt_trc20', network: 'mainnet', address: tron.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(tron.mainnet.privateKey) },
+                            { chain: 'usdt_trc20', network: 'testnet', address: tron.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(tron.testnet.privateKey) },
+                            { chain: 'stellar', network: 'mainnet', address: stellar.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.mainnet.privateKey) },
+                            { chain: 'stellar', network: 'testnet', address: stellar.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.testnet.privateKey) },
+                            { chain: 'polkadot', network: 'mainnet', address: polkadot.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.mainnet.privateKey) },
+                            { chain: 'polkadot', network: 'testnet', address: polkadot.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.testnet.privateKey) },
+                        ];
+                        await (0, userService_1.saveUserAddresses)(created, addresses);
+                        await notificationService_1.NotificationService.notifyRegistration(created.id, { email: created.email, registrationDate: new Date(), addressCount: addresses.length }).catch(err => console.error('notify reg failed', err));
+                        // set user variable to the created user for downstream token issuance
+                        user = created;
+                    }
+                    catch (addrErr) {
+                        console.error('Failed to generate wallets for google-created user', addrErr);
+                    }
+                }
+            }
+            // Ensure user is available for downstream operations
+            if (!user) {
+                return res.status(500).json({ error: 'Failed to retrieve or create user' });
+            }
+            // If Google verified the email but our DB flag isn't set, mark it verified
+            if (emailVerified && !user.isEmailVerified) {
+                user.isEmailVerified = true;
+                await userRepository.save(user);
+            }
+            // Issue tokens (same as login)
+            if (!user.id || !user.email) {
+                return res.status(500).json({ error: 'User data incomplete' });
+            }
+            const payload = { userId: user.id, email: user.email };
+            const accessToken = (0, jwt_1.generateAccessToken)(payload);
+            const refreshToken = (0, jwt_1.generateRefreshToken)(payload);
+            // Save refresh token
+            const refreshTokenEntity = refreshTokenRepository.create({
+                token: refreshToken,
+                userId: user.id,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            });
+            await refreshTokenRepository.save(refreshTokenEntity);
+            return res.json({
+                exists: true,
+                accessToken,
+                refreshToken,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    isEmailVerified: user.isEmailVerified,
+                },
+            });
+        }
+        catch (error) {
+            console.error('Google sign-in error:', error);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+    /**
      * Verify OTP for email verification.
      * - Looks up user by email.
      * - Checks OTP and expiry.
@@ -404,21 +574,52 @@ class AuthController {
             user.emailOTP = undefined;
             user.emailOTPExpiry = undefined;
             await userRepository.save(user);
-            // Create OTP verification notification
+            // Fire-and-forget: notify the notification service (don't block the response)
+            // Capture non-null values to satisfy TypeScript
+            const userId = user.id;
+            const userEmail = user.email;
+            notificationService_1.NotificationService.notifyOTPVerified(userId, {
+                verificationTime: new Date(),
+                email: userEmail,
+            })
+                .then(() => console.log('[DEBUG] OTP verification notification created for user:', userId))
+                .catch((notificationError) => console.error('[DEBUG] Failed to create OTP verification notification:', notificationError));
+            // After successful verification, issue tokens so frontend can redirect to dashboard without logging in
             try {
-                if (user.id) {
-                    await notificationService_1.NotificationService.notifyOTPVerified(user.id, {
-                        verificationTime: new Date(),
-                        email: user.email,
-                    });
-                    console.log('[DEBUG] OTP verification notification created for user:', user.id);
+                if (!userId || !userEmail) {
+                    res.status(500).json({ error: 'User data incomplete' });
+                    return;
                 }
+                const payload = { userId: userId, email: userEmail };
+                const accessToken = (0, jwt_1.generateAccessToken)(payload);
+                const refreshToken = (0, jwt_1.generateRefreshToken)(payload);
+                // Save refresh token to DB
+                const refreshTokenRepository = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
+                const refreshTokenEntity = refreshTokenRepository.create({
+                    token: refreshToken,
+                    userId: userId,
+                    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                });
+                await refreshTokenRepository.save(refreshTokenEntity);
+                // Return tokens and user info so frontend can proceed to dashboard
+                return res.json({
+                    message: 'Email verified successfully',
+                    accessToken,
+                    refreshToken,
+                    user: {
+                        id: userId,
+                        email: userEmail,
+                        firstName: user.firstName,
+                        lastName: user.lastName,
+                        isEmailVerified: user.isEmailVerified,
+                    },
+                });
             }
-            catch (notificationError) {
-                console.error('[DEBUG] Failed to create OTP verification notification:', notificationError);
-                // Don't fail verification if notification fails
+            catch (tokenErr) {
+                console.error('Post-verify token issue:', tokenErr);
+                // If token issuance fails, still return success of verification
+                return res.json({ message: 'Email verified successfully' });
             }
-            res.json({ message: 'Email verified successfully' });
         }
         catch (error) {
             console.error('OTP verification error:', error);

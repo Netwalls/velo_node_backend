@@ -25,6 +25,11 @@ router.post(
     AuthController.login
 );
 
+// Google Sign-in check: returns tokens if user exists, otherwise { exists: false }
+router.post('/google', AuthController.googleSignIn);
+// Google Sign-up: create account using Google id_token
+router.post('/google/signup', AuthController.googleSignup);
+
 // Verify OTP
 router.post('/verify-otp', AuthController.verifyOTP);
 

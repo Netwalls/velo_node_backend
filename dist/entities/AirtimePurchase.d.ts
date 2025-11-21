@@ -9,7 +9,7 @@ export declare enum MobileNetwork {
     MTN = "mtn",
     GLO = "glo",
     AIRTEL = "airtel",
-    ETISALAT = "etisalat"
+    ETISALAT = "9mobile"
 }
 export declare enum Blockchain {
     ETHEREUM = "ethereum",

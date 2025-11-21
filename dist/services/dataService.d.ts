@@ -1,11 +1,8 @@
-import { DataPurchase, MobileNetwork, Blockchain } from "../entities/DataPurchase";
+import { DataPurchase } from "../entities/DataPurchase";
 import { NellobytesDataPlan } from "./nellobytesService";
+import { Blockchain, MobileNetwork } from "../utils/purchaseUtils";
 export declare class DataService {
     private dataPurchaseRepo;
-    private readonly MIN_DATA_AMOUNT;
-    private readonly MAX_DATA_AMOUNT;
-    private readonly AMOUNT_TOLERANCE_PERCENT;
-    private readonly PURCHASE_EXPIRY_MS;
     private dataPlansCache;
     private plansCacheTimestamp;
     private readonly CACHE_DURATION_MS;
@@ -16,7 +13,7 @@ export declare class DataService {
      */
     private refreshDataPlans;
     /**
-     * SECURE: Process data purchase with comprehensive validation
+     * Process data purchase with comprehensive validation
      */
     processDataPurchase(userId: string, purchaseData: {
         type: "data";
@@ -43,66 +40,24 @@ export declare class DataService {
         };
     }>;
     /**
-     * Process data with Nellobytesystems with proper error handling
-     * NOTE: We send dataplan_id, NOT amount
+     * Process data with Nellobytesystems
      */
     private processDataWithNellobytes;
-    /**
-     * Map Nellobytes error codes to user-friendly messages
-     */
-    private mapNellobytesError;
-    /**
-     * Initiate refund when data delivery fails
-     */
-    private initiateRefund;
     /**
      * Get data plan by ID
      */
     private getDataPlanById;
     /**
-     * SECURITY: Comprehensive input validation
+     * Validate purchase data
      */
     private validatePurchaseData;
     /**
-     * SECURITY: Check transaction hash uniqueness
-     */
-    private checkTransactionHashUniqueness;
-    /**
-     * SECURITY: Enhanced blockchain validation with amount tolerance
-     */
-    private validateBlockchainTransaction;
-    /**
-     * SECURITY: Mark purchase as failed
+     * Mark purchase as failed
      */
     private markPurchaseFailed;
-    /**
-     * SECURITY: Log security events
-     */
-    private logSecurityEvent;
-    /**
-     * Get company's wallet address
-     */
-    private getBlockchainWallet;
-    /**
-     * Convert fiat to crypto
-     */
-    private convertFiatToCrypto;
-    private getMockCryptoAmount;
-    /**
-     * Get available data plans for a network (from cache or API)
-     */
     getDataPlans(network: MobileNetwork): Promise<NellobytesDataPlan[]>;
-    /**
-     * Force refresh data plans from API
-     */
     forceRefreshDataPlans(): Promise<void>;
-    /**
-     * Get user's data purchase history
-     */
     getUserDataHistory(userId: string, limit?: number): Promise<DataPurchase[]>;
-    /**
-     * Get expected crypto amount for a data plan
-     */
     getExpectedCryptoAmount(dataplanId: string, network: MobileNetwork, chain: Blockchain): Promise<{
         cryptoAmount: number;
         cryptoCurrency: string;
@@ -128,10 +83,8 @@ export declare class DataService {
         name: string;
     }[];
     getSecurityLimits(): {
-        minDataAmount: number;
-        maxDataAmount: number;
-        amountTolerancePercent: number;
-        purchaseExpiryMinutes: number;
+        minAmount: number;
+        maxAmount: number;
     };
     getUserPurchaseStats(userId: string): Promise<{
         totalPurchases: number;

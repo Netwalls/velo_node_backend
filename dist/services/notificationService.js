@@ -4,6 +4,17 @@ exports.NotificationService = void 0;
 const database_1 = require("../config/database");
 const Notification_1 = require("../entities/Notification");
 const types_1 = require("../types");
+const User_1 = require("../entities/User");
+const mailtrap_1 = require("../utils/mailtrap");
+const registrationTemplate_1 = require("../utils/templates/registrationTemplate");
+const depositTemplate_1 = require("../utils/templates/depositTemplate");
+const withdrawalTemplate_1 = require("../utils/templates/withdrawalTemplate");
+const purchaseTemplate_1 = require("../utils/templates/purchaseTemplate");
+const purchaseFailedTemplate_1 = require("../utils/templates/purchaseFailedTemplate");
+const loginTemplate_1 = require("../utils/templates/loginTemplate");
+const qrPaymentTemplate_1 = require("../utils/templates/qrPaymentTemplate");
+const logoutNotificationTemplate_1 = require("../utils/logoutNotificationTemplate");
+const MAIL_NOTIFICATIONS_ENABLED = process.env.MAIL_NOTIFICATIONS_ENABLED !== 'false';
 class NotificationService {
     /**
      * Create a notification for a user
@@ -18,7 +29,71 @@ class NotificationService {
             details,
             isRead: false,
         });
-        return await notificationRepo.save(notification);
+        const saved = await notificationRepo.save(notification);
+        // Send an email copy for important notification types if enabled and user has email
+        if (MAIL_NOTIFICATIONS_ENABLED) {
+            try {
+                const userRepo = database_1.AppDataSource.getRepository(User_1.User);
+                const user = await userRepo.findOne({ where: { id: userId } });
+                if (user && user.email) {
+                    // Select template by notification type
+                    let html = `<p>${message}</p>`;
+                    let text = typeof message === 'string' ? message : JSON.stringify(message);
+                    try {
+                        switch (type) {
+                            case types_1.NotificationType.REGISTRATION:
+                                html = (0, registrationTemplate_1.registrationTemplate)(user.email || '');
+                                break;
+                            case types_1.NotificationType.DEPOSIT:
+                                html = (0, depositTemplate_1.depositTemplate)(details?.amount || '', details?.currency || '', details);
+                                break;
+                            case types_1.NotificationType.WITHDRAWAL:
+                                html = (0, withdrawalTemplate_1.withdrawalTemplate)(details?.amount || '', details?.currency || '', details);
+                                break;
+                            case types_1.NotificationType.AIRTIME_PURCHASE:
+                            case types_1.NotificationType.DATA_PURCHASE:
+                            case types_1.NotificationType.UTILITY_PAYMENT:
+                                html = (0, purchaseTemplate_1.purchaseTemplate)(title, message, details);
+                                break;
+                            case types_1.NotificationType.PURCHASE_FAILED:
+                                html = (0, purchaseFailedTemplate_1.purchaseFailedTemplate)(details?.purchaseType || 'Purchase', details?.reason || message, details);
+                                break;
+                            case types_1.NotificationType.LOGIN:
+                                html = (0, loginTemplate_1.loginTemplate)(user.email || '');
+                                break;
+                            case types_1.NotificationType.LOGOUT:
+                                html = (0, logoutNotificationTemplate_1.logoutNotificationTemplate)(user.email || '');
+                                break;
+                            case types_1.NotificationType.QR_PAYMENT_CREATED:
+                            case types_1.NotificationType.QR_PAYMENT_RECEIVED:
+                            case types_1.NotificationType.QR_PAYMENT_COMPLETED:
+                                html = (0, qrPaymentTemplate_1.qrPaymentTemplate)(title, details?.amount || details?.value || '', details?.currency || details?.currencyCode || '');
+                                break;
+                            default:
+                                // leave default simple html
+                                break;
+                        }
+                    }
+                    catch (tplErr) {
+                        console.error('Error rendering notification template', tplErr);
+                    }
+                    // Send email asynchronously but do not block the response path.
+                    (0, mailtrap_1.sendMailtrapMail)({
+                        to: user.email,
+                        subject: title,
+                        text,
+                        html,
+                    }).catch((err) => {
+                        console.error('Failed to send Mailtrap email for notification', err);
+                    });
+                }
+            }
+            catch (err) {
+                // Fail silently - notification was already persisted
+                console.error('Error while attempting to send notification email:', err);
+            }
+        }
+        return saved;
     }
     /**
      * Create login notification
@@ -87,6 +162,30 @@ class NotificationService {
         const title = 'Airtime Purchase Successful';
         const message = `Your airtime purchase of ${amount} ${currency} for ${mobileNumber}${network ? ` on ${network}` : ''} was successful.`;
         return this.createNotification(userId, types_1.NotificationType.AIRTIME_PURCHASE, title, message, { amount, currency, mobileNumber, network, ...details });
+    }
+    /**
+     * Create data purchase notification
+     */
+    static async notifyDataPurchase(userId, planName, amount, currency, mobileNumber, network, details) {
+        const title = 'Data Purchase Successful';
+        const message = `Your data purchase (${planName}) of ${amount} ${currency} for ${mobileNumber}${network ? ` on ${network}` : ''} was successful.`;
+        return this.createNotification(userId, types_1.NotificationType.DATA_PURCHASE, title, message, { planName, amount, currency, mobileNumber, network, ...details });
+    }
+    /**
+     * Create utility (electricity) purchase notification
+     */
+    static async notifyUtilityPurchase(userId, amount, currency, meterNumber, company, details) {
+        const title = 'Utility Payment Successful';
+        const message = `Your utility payment of ${amount} ${currency} for meter ${meterNumber}${company ? ` (${company})` : ''} was successful.`;
+        return this.createNotification(userId, types_1.NotificationType.UTILITY_PAYMENT, title, message, { amount, currency, meterNumber, company, ...details });
+    }
+    /**
+     * Generic purchase failed notification
+     */
+    static async notifyPurchaseFailed(userId, purchaseType, reason, details) {
+        const title = 'Purchase Failed';
+        const message = `Your ${purchaseType} purchase failed: ${reason}`;
+        return this.createNotification(userId, types_1.NotificationType.PURCHASE_FAILED, title, message, { reason, ...details });
     }
 }
 exports.NotificationService = NotificationService;

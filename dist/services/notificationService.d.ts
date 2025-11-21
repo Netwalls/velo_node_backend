@@ -49,5 +49,17 @@ export declare class NotificationService {
      * Create airtime purchase notification
      */
     static notifyAirtimePurchase(userId: string, amount: string, currency: string, mobileNumber: string, network?: string, details?: any): Promise<Notification>;
+    /**
+     * Create data purchase notification
+     */
+    static notifyDataPurchase(userId: string, planName: string, amount: string, currency: string, mobileNumber: string, network?: string, details?: any): Promise<Notification>;
+    /**
+     * Create utility (electricity) purchase notification
+     */
+    static notifyUtilityPurchase(userId: string, amount: string, currency: string, meterNumber: string, company?: string, details?: any): Promise<Notification>;
+    /**
+     * Generic purchase failed notification
+     */
+    static notifyPurchaseFailed(userId: string, purchaseType: NotificationType, reason: string, details?: any): Promise<Notification>;
 }
 //# sourceMappingURL=notificationService.d.ts.map

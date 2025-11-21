@@ -8,6 +8,9 @@ export declare class ElectricityController {
     /**
      * Verify meter number before payment
      */
+    /**
+  * Verify meter number before payment
+  */
     verifyMeterNumber(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
     /**
      * Get expected crypto amount for display

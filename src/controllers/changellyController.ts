@@ -1,453 +1,162 @@
-// // @ts-nocheck
-// import { Request, Response } from 'express';
-// import ChangellyService from '../services/changellyService_impl';
-// import { AppDataSource } from '../config/database';
-// import FiatOrder from '../entities/FiatOrder';
+// src/controllers/changelly.controller.ts
+import { Router } from 'express';
+import { createPrivateKey, sign } from 'crypto';
 
-// export class ChangellyRampController {
-//     static async deposit(req: Request, res: Response) {
-//         try {
-//             const { amountNGN, currencyTo, walletAddress, country = 'NG' } = req.body;
+const router = Router();
 
-//             if (!amountNGN || !currencyTo || !walletAddress) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: 'Missing required fields',
-//                     required: ['amountNGN', 'currencyTo', 'walletAddress']
-//                 });
-//             }
+// ===================================================================
+// CONFIG – Put these in .env in production!
+// ===================================================================
+const API_PUBLIC_KEY = "1fc5ebda92bce8350b973f6718f99aeb871319f2f21fd2d90a6cc12b382883ea";
+const API_PRIVATE_KEY_PEM = "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktrd2dnU2xBZ0VBQW9JQkFRRGlWRi9hTEY0ZWpPM0IKMHJxTk9tOStKTEFGZU9LYTUyby85ZkE3TFNXV2JBSkNncnVoVWhoQ3VCbmpaMXlEOWtVdjd6TFRDK0puandnQgp4Yi9YK2JxUUJzaEo3SXhObHhjZEhVOEVSOXJpcTQ1SEFJYnR6RXllRkViYndmdVB2emIveG5LY1ZSSndJODkyClIrNUJESEtvTmgxbTVGaHUwTFZ1c01TeXZNVlVHTlEzQUdtQVBQeERyTC9ML2hVQVJaTjZLYlhGYTBpY2F3cG8KVEJVbjBCQ2IwZUJ6OHdZaVZxam9wQmdvb0plSTlWT3hUMGN3OXUwb1htL0VKS3djQTBxN2ZFcWxTNENhRXcwTApqcDQ0L3JqZmF3NjJWNUpZZTFiZU9UTjJYQjhGVHhBcWk2cFJpbWZOQ1hJajJqZFNIUEh4Vzh6UmQvMTViZk0wCjNIWFNWV0t0QWdNQkFBRUNnZ0VBQlQ2aDlLaFA0TEt3cW12UkJESWZ5MGlHVzY5d0c0UXBUaVRMZ0ZPTTFNT0QKK2VQcS9TaXQyZWljNWt3Z05MUDI2U1FkMnJqTkhQYVBpa1drS3hrUHN3UUtqWGFuSkZVbFQvaThrQU4vbGFrVwp1WnZRTDBxQXJBUEVSZXRrMTV2b0VRZnU0cU13czRYZzZpNFlpS0ZyakNpcU14YmFNR3lJWFJ4STNVREtseWJyCnBQZHhZUWpUNWlnQmp4bVVvVjZlUjJiUFNWMXlkV08yMG1jNnpGRUJCV2R6VWY0Y1F2eFM0andRb0JGQXdHSmwKYlhuSll5dE8rUHlUUTgwSXNuamN4eVhZUVpJMDR1YXkxZW5yb1dERVdlQ0JBVk1WMldhR1J3Vk8zdHR3UFNZdgpuMExEY2pVSU5GK0RTcE9BaVJwNTBENzIxRnBxRjVMTHB3MzlncC9VOFFLQmdRRG9VSUNTSEhGdEF6STVxRTdICldNcG14aTZvMG45OUx6aVFqMFkzVWQ3bk1YL25iTHIvWUhJTFlsU0pUYTY1cDBESzhuWmI2ZGsyMVdZTnFrenUKajdibjFDNXlDN2l2QmhqUWlHdXkvZjJPdlJUQy9KVHJoYXBreUR6TkpiODIrVmNzN1Z1RDREdzBsdzNTTVg5Twp3c2tNU0UrazIwQTRLaXZKKzNKdnlWa3M1d0tCZ1FENVo2b21iS05sS3lSOVRMeGlna3hDWTQ3d0puM3EzVFhQCnpGQzd2N2xyd3o2L0JhRU80NElVcWpsL3hpelhGbkZBSzRuRlczT29rR2ZTTVNyUkwyOVpyOHZQdFVEUktxSzgKdndUOWpkK2IzYVJBTGZIOWY1ZXZ2eE1CbUY4R2c4NHRZK1RaYVZ1NmdPQUpPeWZRTHhLc3lZR2l5NGRmWWphYQpvK1hGTTNhTlN3S0JnUURQVFc2OWN4WWdFZGNTcmtiR0NreHFrM1IxZjRqMk8xbjlYV3hwMXV2U1lGQmpRWnBJCllsYkNJOWVOd2owbE84Tk1sam5aNFAzTXVYWmN3VmZ2RlYxQTJBMHVCWm1pelF6OW9JNkNaYldLVnQyYzlXa3EKRmRlc0lTWm9aY09RbWNVWnVTQ051RjNoQzkzd2Irekxhbk9mT3pPZXgyc3g4eWVxRUcvWW90S3Bod0tCZ1FDWApQSnA4TkhLY3ZaMmg4YTltMlBaZlo3bmN2S3FzaWpuQWFYZ25jYXFCdzJMQU9TeWlONm5BMkR5SDArZUxBa3ZvCmlyNC9sQ1k5ZUZ2TXBRMyt6WkhyUStRR2J6WC80S2ZRWnRFaTVDNU5lUWpKOWxLQTB5ZHJaaVdqV1A5K2x0eW0KdjZXZGhQc2Z6RmlPb0hXVEU0aHlpTHI0dWd5NzlYV0JMcFA5a2loNG93S0JnUUNXb1VxWVY1ZG02MmRTc0JwMwpqalFwdXorZ0lmb3Bwa25vSUhGUmpXMXdYeTZrd3AyUk5xenplVS9TWDNpRWlXUTM2MTBmYXZxV1NWdEttTFBDClVwb2N1cEtTZUpzekM1K3pZaHB4QWZ2T080QWY1Y2xEZXk3aGt6TlVIMUpGSjZ1anI3SHpieFFUU1c2ZkhnOXgKelJBaEMyUjgwdjVRaUJHRnA1UHpEalZ3K3c9PQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg"
 
-//             const amount = parseFloat(amountNGN);
-//             if (isNaN(amount) || amount <= 0) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: 'Invalid amount. Must be a positive number'
-//                 });
-//             }
+const privateKey = createPrivateKey({
+  key: API_PRIVATE_KEY_PEM,
+  type: 'pkcs1',
+  format: 'pem',
+  encoding: 'base64',
+});
 
-//             const currencyToUpper = String(currencyTo).toUpperCase();
+const BASE_URL = 'https://fiat-api.changelly.com';
 
-//             // Step 1: Get offers from Changelly
-//             const offersQuery = {
-//                 currencyFrom: 'NGN',
-//                 currencyTo: currencyToUpper,
-//                 amountFrom: String(amount),
-//                 country
-//             };
+// Helper: Generate signature exactly like your working script
+const generateSignature = (payload: string): string => {
+  return sign('sha256', Buffer.from(payload), privateKey).toString('base64');
+};
 
-//             const offers = await ChangellyService.getOffers(offersQuery);
+// ===================================================================
+// GET /api/fiat/changelly/offers
+// ===================================================================
+router.get('/offers', async (req, res) => {
+  const {
+    currencyFrom,
+    currencyTo,
+    amountFrom,
+    country,
+    providerCode,
+    externalUserId,
+    state,
+    ip,
+  } = req.query;
 
-//             if (!offers || !Array.isArray(offers) || offers.length === 0) {
-//                 return res.status(404).json({
-//                     success: false,
-//                     error: 'No providers available for this transaction',
-//                     details: {
-//                         currencyFrom: 'NGN',
-//                         currencyTo: currencyToUpper,
-//                         amount: amountNGN,
-//                         country
-//                     }
-//                 });
-//             }
+  // Required params
+  if (!currencyFrom || !currencyTo || !amountFrom || !country) {
+    return res.status(400).json({
+      error: 'Missing required query params: currencyFrom, currencyTo, amountFrom, country',
+    });
+  }
 
-//             // Step 2: Select best offer
-//             const bestOffer = offers.reduce((best, current) => {
-//                 const bestAmount = parseFloat(best.amountExpectedTo || '0');
-//                 const currentAmount = parseFloat(current.amountExpectedTo || '0');
-//                 return currentAmount > bestAmount ? current : best;
-//             }, offers[0]);
+  const queryParams = new URLSearchParams({
+    currencyFrom: String(currencyFrom).toUpperCase(),
+    currencyTo: String(currencyTo).toUpperCase(),
+    amountFrom: String(amountFrom),
+    country: String(country).toUpperCase(),
+    ...(providerCode && { providerCode: String(providerCode) }),
+    ...(externalUserId && { externalUserId: String(externalUserId) }),
+    ...(state && { state: String(state) }),
+    ...(ip && { ip: String(ip) }),
+  });
 
-//             // Step 3: Select best payment method
-//             let selectedPaymentMethod = null;
-//             if (bestOffer.paymentMethodOffer && bestOffer.paymentMethodOffer.length > 0) {
-//                 selectedPaymentMethod = bestOffer.paymentMethodOffer.reduce((best, current) => {
-//                     const bestAmount = parseFloat(best.amountExpectedTo || '0');
-//                     const currentAmount = parseFloat(current.amountExpectedTo || '0');
-//                     return currentAmount > bestAmount ? current : best;
-//                 }, bestOffer.paymentMethodOffer[0]);
-//             }
+  const path = `/v1/offers?${queryParams.toString()}`;
+  const fullUrl = BASE_URL + path;
 
-//             // Step 4: Generate unique IDs
-//             const timestamp = Date.now();
-//             const randomId = Math.random().toString(36).substring(2, 10);
-//             const externalOrderId = `dep_${timestamp}_${randomId}`;
-//             const externalUserId = `user_${req.user?.id || timestamp}_${randomId}`;
+  try {
+    const signature = generateSignature(fullUrl); // GET → sign full URL
 
-//             // Step 5: Build Changelly's COMPLETE required payload
-//             const BASE_URL = process.env.BASE_URL || 'https://yourdomain.com';
-            
-//             const orderPayload = {
-//                 externalOrderId,
-//                 externalUserId,
-//                 providerCode: bestOffer.providerCode,
-//                 currencyFrom: 'NGN',
-//                 currencyTo: currencyToUpper,
-//                 amountFrom: String(amount),
-//                 country,
-//                 walletAddress,
-//                 paymentMethod: selectedPaymentMethod?.method || 'card', // Default to 'card' if not available
-//                 // REQUIRED: Return URLs for redirect after payment
-//                 returnSuccessUrl: `${BASE_URL}/buy/success`,
-//                 returnFailedUrl: `${BASE_URL}/buy/failure`,
-//                 // Optional but recommended
-//                 ip: req.ip || req.headers['x-forwarded-for'] as string || undefined,
-//                 userAgent: req.get('User-Agent') || undefined
-//             };
+    const apiRes = await fetch(fullUrl, {
+      method: 'GET',
+      headers: {
+        'X-Api-Key': API_PUBLIC_KEY,
+        'X-Api-Signature': signature,
+        'Content-Type': 'application/json',
+      },
+    });
 
-//             console.log('Creating order with payload:', {
-//                 ...orderPayload,
-//                 walletAddress: '***HIDDEN***'
-//             });
+    const text = await apiRes.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
 
-//             // Step 6: Create order with Changelly
-//             const order = await ChangellyService.createOrder(orderPayload);
+    if (!apiRes.ok) {
+      return res.status(apiRes.status).json({ error: 'Changelly API error', details: data });
+    }
 
-//             // Step 7: Persist order for tracking
-//             try {
-//                 await AppDataSource.getRepository(FiatOrder).save({
-//                     orderId: order.orderId,
-//                     externalOrderId: order.externalOrderId || externalOrderId,
-//                     providerCode: order.providerCode || bestOffer.providerCode,
-//                     currencyFrom: order.currencyFrom || 'NGN',
-//                     currencyTo: order.currencyTo || currencyToUpper,
-//                     amountFrom: Number(order.amountFrom || amount) || amount,
-//                     status: (order.status as string) || 'created',
-//                     rawResponse: order
-//                 });
-//             } catch (saveErr) {
-//                 console.error('Failed to persist FiatOrder:', saveErr);
-//             }
+    return res.json(data.result || data);
+  } catch (err: any) {
+    console.error('Changelly offers error:', err);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
 
-//             // Step 8: Return simplified response to your users
-//             return res.json({
-//                 success: true,
-//                 redirectUrl: order.redirectUrl, // User should be redirected here to complete payment
-//                 order: {
-//                     orderId: order.orderId,
-//                     externalOrderId: order.externalOrderId,
-//                     provider: order.providerCode,
-//                     amountFrom: order.amountFrom,
-//                     currencyFrom: order.currencyFrom,
-//                     currencyTo: order.currencyTo,
-//                     expectedAmount: bestOffer.amountExpectedTo,
-//                     rate: bestOffer.rate,
-//                     fee: bestOffer.fee,
-//                     paymentMethod: selectedPaymentMethod?.methodName || 'Card Payment'
-//                 }
-//             });
+// ===================================================================
+// POST /api/fiat/changelly/orders
+// ===================================================================
+router.post('/orders', async (req, res) => {
+  const body = req.body;
 
-//         } catch (err: any) {
-//             console.error('Deposit error:', err);
-            
-//             if (err.errorType) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: err.errorMessage || 'Provider error',
-//                     errorType: err.errorType,
-//                     details: err.errorDetails || []
-//                 });
-//             }
+  const required = [
+    'externalOrderId',
+    'externalUserId',
+    'providerCode',
+    'currencyFrom',
+    'currencyTo',
+    'amountFrom',
+    'country',
+    'walletAddress',
+  ];
 
-//             return res.status(err.status || 500).json({
-//                 success: false,
-//                 error: err.message || 'Failed to process deposit'
-//             });
-//         }
-//     }
+  const missing = required.filter((field) => !body[field]);
+  if (missing.length > 0) {
+    return res.status(400).json({
+      error: 'Missing required fields',
+      missing,
+    });
+  }
 
-//     static async withdraw(req: Request, res: Response) {
-//         try {
-//             const { amountCrypto, currencyFrom, refundAddress, country = 'NG' } = req.body;
+  const path = '/v1/orders';
+  const fullUrl = BASE_URL + path;
+  const jsonBody = JSON.stringify({
+    ...body,
+    currencyFrom: body.currencyFrom.toUpperCase(),
+    currencyTo: body.currencyTo.toUpperCase(),
+    country: body.country.toUpperCase(),
+  });
 
-//             if (!amountCrypto || !currencyFrom || !refundAddress) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: 'Missing required fields',
-//                     required: ['amountCrypto', 'currencyFrom', 'refundAddress']
-//                 });
-//             }
+  try {
+    const payloadToSign = fullUrl + jsonBody; // POST → full URL + JSON body
+    const signature = generateSignature(payloadToSign);
 
-//             const amount = parseFloat(amountCrypto);
-//             if (isNaN(amount) || amount <= 0) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: 'Invalid amount. Must be a positive number'
-//                 });
-//             }
+    const apiRes = await fetch(fullUrl, {
+      method: 'POST',
+      headers: {
+        'X-Api-Key': API_PUBLIC_KEY,
+        'X-Api-Signature': signature,
+        'Content-Type': 'application/json',
+      },
+      body: jsonBody,
+    });
 
-//             const currencyFromUpper = String(currencyFrom).toUpperCase();
+    const text = await apiRes.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
 
-//             const offersQuery = {
-//                 currencyFrom: currencyFromUpper,
-//                 currencyTo: 'NGN',
-//                 amountFrom: String(amount),
-//                 country
-//             };
+    if (!apiRes.ok) {
+      return res.status(apiRes.status).json({ error: 'Changelly create order failed', details: data });
+    }
 
-//             const offers = await ChangellyService.getSellOffers(offersQuery);
+    const result = data.result || data;
+    return res.status(201).json(result);
+  } catch (err: any) {
+    console.error('Changelly create order error:', err);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
 
-//             if (!offers || !Array.isArray(offers) || offers.length === 0) {
-//                 return res.status(404).json({
-//                     success: false,
-//                     error: 'No providers available for this withdrawal',
-//                     details: {
-//                         currencyFrom: currencyFromUpper,
-//                         currencyTo: 'NGN',
-//                         amount: amountCrypto,
-//                         country
-//                     }
-//                 });
-//             }
-
-//             const bestOffer = offers.reduce((best, current) => {
-//                 const bestAmount = parseFloat(best.amountExpectedTo || '0');
-//                 const currentAmount = parseFloat(current.amountExpectedTo || '0');
-//                 return currentAmount > bestAmount ? current : best;
-//             }, offers[0]);
-
-//             const timestamp = Date.now();
-//             const randomId = Math.random().toString(36).substring(2, 10);
-//             const externalOrderId = `wdr_${timestamp}_${randomId}`;
-//             const externalUserId = `user_${req.user?.id || timestamp}_${randomId}`;
-
-//             const BASE_URL = process.env.BASE_URL || 'https://yourdomain.com';
-
-//             const orderPayload = {
-//                 externalOrderId,
-//                 externalUserId,
-//                 providerCode: bestOffer.providerCode,
-//                 currencyFrom: currencyFromUpper,
-//                 currencyTo: 'NGN',
-//                 amountFrom: String(amount),
-//                 country,
-//                 refundAddress,
-//                 // REQUIRED: Return URLs
-//                 returnSuccessUrl: `${BASE_URL}/api/v1/ramp/callback/success`,
-//                 returnFailedUrl: `${BASE_URL}/api/v1/ramp/callback/failed`,
-//                 ip: req.ip || req.headers['x-forwarded-for'] as string || undefined,
-//                 userAgent: req.get('User-Agent') || undefined
-//             };
-
-//             const order = await ChangellyService.createSellOrder(orderPayload);
-
-//             try {
-//                 await AppDataSource.getRepository(FiatOrder).save({
-//                     orderId: order.orderId,
-//                     externalOrderId: order.externalOrderId || externalOrderId,
-//                     providerCode: order.providerCode || bestOffer.providerCode,
-//                     currencyFrom: order.currencyFrom || currencyFromUpper,
-//                     currencyTo: order.currencyTo || 'NGN',
-//                     amountFrom: Number(order.amountFrom || amount) || amount,
-//                     status: (order.status as string) || 'created',
-//                     rawResponse: order
-//                 });
-//             } catch (saveErr) {
-//                 console.error('Failed to persist FiatOrder:', saveErr);
-//             }
-
-//             return res.json({
-//                 success: true,
-//                 redirectUrl: order.redirectUrl,
-//                 order: {
-//                     orderId: order.orderId,
-//                     externalOrderId: order.externalOrderId,
-//                     provider: order.providerCode,
-//                     amountFrom: order.amountFrom,
-//                     currencyFrom: order.currencyFrom,
-//                     currencyTo: order.currencyTo,
-//                     expectedAmountNGN: bestOffer.amountExpectedTo,
-//                     rate: bestOffer.rate,
-//                     fee: bestOffer.fee
-//                 }
-//             });
-
-//         } catch (err: any) {
-//             console.error('Withdraw error:', err);
-            
-//             if (err.errorType) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: err.errorMessage || 'Provider error',
-//                     errorType: err.errorType,
-//                     details: err.errorDetails || []
-//                 });
-//             }
-
-//             return res.status(err.status || 500).json({
-//                 success: false,
-//                 error: err.message || 'Failed to process withdrawal'
-//             });
-//         }
-//     }
-
-//     static async getBuyQuote(req: Request, res: Response) {
-//         try {
-//             const { amountNGN, currencyTo, country = 'NG' } = req.body;
-
-//             if (!amountNGN || !currencyTo) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: 'Missing required fields',
-//                     required: ['amountNGN', 'currencyTo']
-//                 });
-//             }
-
-//             const amount = parseFloat(amountNGN);
-//             if (isNaN(amount) || amount <= 0) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: 'Invalid amount'
-//                 });
-//             }
-
-//             const offers = await ChangellyService.getOffers({
-//                 currencyFrom: 'NGN',
-//                 currencyTo: String(currencyTo).toUpperCase(),
-//                 amountFrom: String(amount),
-//                 country
-//             });
-
-//             if (!offers || offers.length === 0) {
-//                 return res.status(404).json({
-//                     success: false,
-//                     error: 'No quotes available'
-//                 });
-//             }
-
-//             const quotes = offers.map(offer => ({
-//                 provider: offer.providerCode,
-//                 amountYouGet: offer.amountExpectedTo,
-//                 rate: offer.rate,
-//                 fee: offer.fee,
-//                 paymentMethods: offer.paymentMethodOffer?.map(pm => ({
-//                     method: pm.methodName,
-//                     amountYouGet: pm.amountExpectedTo,
-//                     rate: pm.rate,
-//                     fee: pm.fee
-//                 })) || []
-//             }));
-
-//             return res.json({
-//                 success: true,
-//                 amountNGN: amount,
-//                 currencyTo: String(currencyTo).toUpperCase(),
-//                 quotes
-//             });
-
-//         } catch (err: any) {
-//             console.error('Get buy quote error:', err);
-//             return res.status(err.status || 500).json({
-//                 success: false,
-//                 error: err.message || 'Failed to get quote'
-//             });
-//         }
-//     }
-
-//     static async getSellQuote(req: Request, res: Response) {
-//         try {
-//             const { amountCrypto, currencyFrom, country = 'NG' } = req.body;
-
-//             if (!amountCrypto || !currencyFrom) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: 'Missing required fields',
-//                     required: ['amountCrypto', 'currencyFrom']
-//                 });
-//             }
-
-//             const amount = parseFloat(amountCrypto);
-//             if (isNaN(amount) || amount <= 0) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     error: 'Invalid amount'
-//                 });
-//             }
-
-//             const offers = await ChangellyService.getSellOffers({
-//                 currencyFrom: String(currencyFrom).toUpperCase(),
-//                 currencyTo: 'NGN',
-//                 amountFrom: String(amount),
-//                 country
-//             });
-
-//             if (!offers || offers.length === 0) {
-//                 return res.status(404).json({
-//                     success: false,
-//                     error: 'No quotes available'
-//                 });
-//             }
-
-//             const quotes = offers.map(offer => ({
-//                 provider: offer.providerCode,
-//                 amountNGN: offer.amountExpectedTo,
-//                 rate: offer.rate,
-//                 fee: offer.fee
-//             }));
-
-//             return res.json({
-//                 success: true,
-//                 amountCrypto: amount,
-//                 currencyFrom: String(currencyFrom).toUpperCase(),
-//                 quotes
-//             });
-
-//         } catch (err: any) {
-//             console.error('Get sell quote error:', err);
-//             return res.status(err.status || 500).json({
-//                 success: false,
-//                 error: err.message || 'Failed to get quote'
-//             });
-//         }
-//     }
-
-//     // NEW: Callback handlers for success/failed redirects
-//     static async handleSuccessCallback(req: Request, res: Response) {
-//         try {
-//             const { orderId, externalOrderId } = req.query;
-            
-//             // Update order status in your database
-//             if (orderId) {
-//                 const orderRepo = AppDataSource.getRepository(FiatOrder);
-//                 const order = await orderRepo.findOne({ 
-//                     where: { orderId: orderId as string } 
-//                 });
-                
-//                 if (order) {
-//                     order.status = 'completed';
-//                     await orderRepo.save(order);
-//                 }
-//             }
-
-//             // Redirect to your frontend success page
-//             return res.redirect(`${process.env.FRONTEND_URL}/payment/success?orderId=${orderId}`);
-//         } catch (err) {
-//             console.error('Success callback error:', err);
-//             return res.redirect(`${process.env.FRONTEND_URL}/payment/error`);
-//         }
-//     }
-
-//     static async handleFailedCallback(req: Request, res: Response) {
-//         try {
-//             const { orderId, externalOrderId } = req.query;
-            
-//             // Update order status in your database
-//             if (orderId) {
-//                 const orderRepo = AppDataSource.getRepository(FiatOrder);
-//                 const order = await orderRepo.findOne({ 
-//                     where: { orderId: orderId as string } 
-//                 });
-                
-//                 if (order) {
-//                     order.status = 'failed';
-//                     await orderRepo.save(order);
-//                 }
-//             }
-
-//             // Redirect to your frontend failed page
-//             return res.redirect(`${process.env.FRONTEND_URL}/payment/failed?orderId=${orderId}`);
-//         } catch (err) {
-//             console.error('Failed callback error:', err);
-//             return res.redirect(`${process.env.FRONTEND_URL}/payment/error`);
-//         }
-//     }
-// }
+export default router;

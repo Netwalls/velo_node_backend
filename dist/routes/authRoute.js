@@ -14,6 +14,8 @@ authController_1.AuthController.register);
 router.post('/login', 
 // createRateLimiter({ windowMs: 60 * 1000, max: 10, message: 'Too many login attempts, please try again in a minute.' }),
 authController_1.AuthController.login);
+// Google Sign-in check: returns tokens if user exists, otherwise { exists: false }
+router.post('/google', authController_1.AuthController.googleSignIn);
 // Verify OTP
 router.post('/verify-otp', authController_1.AuthController.verifyOTP);
 // Resend OTP

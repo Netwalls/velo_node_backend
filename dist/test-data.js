@@ -102,7 +102,7 @@ async function testDataService() {
                     chain: DataPurchase_1.Blockchain.SOLANA,
                     phoneNumber: '2349125381992',
                     mobileNetwork: DataPurchase_1.MobileNetwork.AIRTEL,
-                    transactionHash: 'PMYtV5nhtd2UbCG499DcWfiQQKv2f2iooCSgZGF97hb2Ss1p1svy8wTB3DzXrTEwyaTCNCyXJnEKL94G9nr16Cd'
+                    transactionHash: '3oZwTDN1SHLLBcfcbij9N927PmziKFrKagW43T2ri1FYW3NvoUywFABVuRqi9JCEsimbs45P2aFcGo1yW53DPJy5'
                 });
                 console.log('✅ Purchase result:', JSON.stringify(purchaseResult, null, 2));
             }

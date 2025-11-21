@@ -23,6 +23,10 @@ router.post('/check-deposits', async (req, res) => {
 router.post('/send', auth_1.authMiddleware, async (req, res) => {
     await walletController_1.WalletController.sendTransaction(req, res);
 });
+// Send by username (resolve username -> address, then delegate to sendTransaction)
+router.post('/send/by-username', auth_1.authMiddleware, async (req, res) => {
+    await walletController_1.WalletController.sendByUsername(req, res);
+});
 // Debug probe for Alchemy endpoints (requires auth)
 router.get('/debug/alchemy-probe', auth_1.authMiddleware, async (req, res) => {
     await walletController_1.WalletController.alchemyProbe(req, res);

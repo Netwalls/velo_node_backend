@@ -1,17 +1,11 @@
 export declare class BlockchainValidator {
     private readonly AMOUNT_TOLERANCE_PERCENT;
-    /**
-     * Validate Ethereum transaction using Etherscan API (Goerli Testnet)
-     */
+    validateSolanaTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     validateEthereumTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     /**
      * Validate Bitcoin transaction using Blockchain.com API (Testnet)
      */
     validateBitcoinTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
-    /**
-     * Validate Solana transaction using Solana RPC (Devnet)
-     */
-    validateSolanaTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     /**
      * Validate Stellar transaction using Horizon API (Testnet)
      */

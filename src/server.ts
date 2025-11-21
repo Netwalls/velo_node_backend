@@ -21,7 +21,7 @@ import feeRoute from './routes/feeRoute';
 import airtimeRoutes from "./routes/airtime";
 import dataRoutes from "./routes/data";
 import electricityRoutes from "./routes/electricity";
-
+import changellyRouter from './controllers/changellyController';
 
 // Load environment variables
 dotenv.config();
@@ -44,6 +44,7 @@ app.get('/', (req, res) => {
 
 // app.use('/fiat', changellyRoute);
 // app.use('/fiat', fiatRoutes);
+app.use('/api/fiat/changelly', changellyRouter);
 app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/wallet', walletRouter);

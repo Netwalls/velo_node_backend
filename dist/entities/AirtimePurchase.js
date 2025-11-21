@@ -27,7 +27,7 @@ var MobileNetwork;
     MobileNetwork["MTN"] = "mtn";
     MobileNetwork["GLO"] = "glo";
     MobileNetwork["AIRTEL"] = "airtel";
-    MobileNetwork["ETISALAT"] = "etisalat";
+    MobileNetwork["ETISALAT"] = "9mobile";
 })(MobileNetwork || (exports.MobileNetwork = MobileNetwork = {}));
 // Define supported blockchains
 var Blockchain;

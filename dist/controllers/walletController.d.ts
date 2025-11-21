@@ -24,6 +24,14 @@ export declare class WalletController {
      */
     static sendTransaction(req: AuthRequest, res: Response): Promise<void>;
     /**
+     * Send funds to a Velo user identified by username.
+     * This resolves the recipient's address for the given chain/network and delegates
+     * to the existing sendTransaction method to perform the actual send (including PIN checks).
+     * POST /wallet/send/by-username
+     * Body: { username, chain, network, amount, fromAddress?, transactionPin }
+     */
+    static sendByUsername(req: AuthRequest, res: Response): Promise<void>;
+    /**
      * Get user wallet addresses
      * Expects authenticated user in req.user
      * Returns all wallet addresses for the user

@@ -1,14 +1,11 @@
-import { AirtimePurchase, MobileNetwork, Blockchain } from "../entities/AirtimePurchase";
+import { AirtimePurchase } from "../entities/AirtimePurchase";
+import { Blockchain, MobileNetwork } from "../utils/purchaseUtils";
 export declare class AirtimeService {
     private airtimePurchaseRepo;
-    private readonly MIN_AIRTIME_AMOUNT;
-    private readonly MAX_AIRTIME_AMOUNT;
-    private readonly AMOUNT_TOLERANCE_PERCENT;
-    private readonly PURCHASE_EXPIRY_MS;
     constructor();
     private getRepository;
     /**
-     * SECURE: Process airtime purchase with comprehensive validation
+     * Process airtime purchase with comprehensive validation
      */
     processAirtimePurchase(userId: string, purchaseData: {
         type: "airtime";
@@ -32,50 +29,17 @@ export declare class AirtimeService {
         };
     }>;
     /**
-     * Process airtime with Nellobytesystems with proper error handling
+     * Process airtime with Nellobytesystems
      */
     private processAirtimeWithNellobytes;
     /**
-     * Map Nellobytes error codes to user-friendly messages
-     */
-    private mapNellobytesError;
-    /**
-     * Initiate refund when airtime delivery fails
-     */
-    private initiateRefund;
-    /**
-     * SECURITY: Comprehensive input validation
+     * Validate purchase data
      */
     private validatePurchaseData;
     /**
-     * SECURITY: Check transaction hash uniqueness
-     */
-    private checkTransactionHashUniqueness;
-    /**
-     * SECURITY: Enhanced blockchain validation with amount tolerance
-     */
-    private validateBlockchainTransaction;
-    /**
-     * SECURITY: Real blockchain validation with amount tolerance
-     */
-    private realBlockchainValidation;
-    /**
-     * SECURITY: Mark purchase as failed with reason
+     * Mark purchase as failed
      */
     private markPurchaseFailed;
-    /**
-     * SECURITY: Log security events
-     */
-    private logSecurityEvent;
-    /**
-     * Get company's wallet address (static as requested)
-     */
-    private getBlockchainWallet;
-    /**
-     * Convert fiat to crypto with validation
-     */
-    private convertFiatToCrypto;
-    private getMockCryptoAmount;
     getUserAirtimeHistory(userId: string, limit?: number): Promise<AirtimePurchase[]>;
     getExpectedCryptoAmount(fiatAmount: number, chain: Blockchain): Promise<{
         cryptoAmount: number;
@@ -97,14 +61,9 @@ export declare class AirtimeService {
         label: string;
         name: string;
     }[];
-    /**
-     * SECURITY: Get security limits for frontend
-     */
     getSecurityLimits(): {
-        minAirtimeAmount: number;
-        maxAirtimeAmount: number;
-        amountTolerancePercent: number;
-        purchaseExpiryMinutes: number;
+        minAmount: number;
+        maxAmount: number;
     };
     getUserPurchaseStats(userId: string): Promise<{
         totalPurchases: number;

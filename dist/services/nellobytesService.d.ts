@@ -6,12 +6,13 @@ export declare enum MobileNetworkCode {
 }
 export interface NellobytesResponse {
     orderid?: string;
-    statuscode: string;
-    status: string;
+    statuscode?: string;
+    status?: string;
     requestid?: string;
     transid?: string;
     meterno?: string;
     metertoken?: string;
+    customer_name?: string;
 }
 export interface NellobytesDataPlan {
     dataplan_id: string;
@@ -47,6 +48,7 @@ export interface ElectricityPurchaseParams {
     meterNo: string;
     phoneNo: string;
     amount: number;
+    CallBackURL?: string;
 }
 /**
  * Parse Nellobytes API response which can be in different formats
@@ -82,7 +84,7 @@ export declare class NellobytesService {
      */
     buyDatabundle(params: DataBundlePurchaseParams): Promise<NellobytesResponse>;
     /**
-     * Buy electricity
+     * Buy electricity - FIXED VERSION
      * @param params - Electricity purchase parameters
      * @returns Nellobytes API response
      */
@@ -134,7 +136,7 @@ export declare class NellobytesService {
      */
     purchaseDataBundle(network: string, dataplanId: string, phoneNumber: string, requestId?: string): Promise<NellobytesResponse>;
     /**
-     * Utility function to purchase electricity
+     * Utility function to purchase electricity - FIXED VERSION
      */
     purchaseElectricity(electricCompany: string, meterType: string, meterNo: string, phoneNo: string, amount: number, requestId?: string): Promise<NellobytesResponse>;
     /**

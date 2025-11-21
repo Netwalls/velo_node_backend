@@ -1,204 +1,136 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ChangellyController = void 0;
-const changellyService_1 = __importDefault(require("../services/changellyService"));
-class ChangellyController {
-    static async getProviders(req, res) {
-        try {
-            const data = await changellyService_1.default.getProviders();
-            return res.json(data);
-        }
-        catch (err) {
-            console.error('getProviders error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly providers error' });
-        }
+// src/controllers/changelly.controller.ts
+const express_1 = require("express");
+const crypto_1 = require("crypto");
+const router = (0, express_1.Router)();
+// ===================================================================
+// CONFIG – Put these in .env in production!
+// ===================================================================
+const API_PUBLIC_KEY = "1fc5ebda92bce8350b973f6718f99aeb871319f2f21fd2d90a6cc12b382883ea";
+const API_PRIVATE_KEY_PEM = "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktrd2dnU2xBZ0VBQW9JQkFRRGlWRi9hTEY0ZWpPM0IKMHJxTk9tOStKTEFGZU9LYTUyby85ZkE3TFNXV2JBSkNncnVoVWhoQ3VCbmpaMXlEOWtVdjd6TFRDK0puandnQgp4Yi9YK2JxUUJzaEo3SXhObHhjZEhVOEVSOXJpcTQ1SEFJYnR6RXllRkViYndmdVB2emIveG5LY1ZSSndJODkyClIrNUJESEtvTmgxbTVGaHUwTFZ1c01TeXZNVlVHTlEzQUdtQVBQeERyTC9ML2hVQVJaTjZLYlhGYTBpY2F3cG8KVEJVbjBCQ2IwZUJ6OHdZaVZxam9wQmdvb0plSTlWT3hUMGN3OXUwb1htL0VKS3djQTBxN2ZFcWxTNENhRXcwTApqcDQ0L3JqZmF3NjJWNUpZZTFiZU9UTjJYQjhGVHhBcWk2cFJpbWZOQ1hJajJqZFNIUEh4Vzh6UmQvMTViZk0wCjNIWFNWV0t0QWdNQkFBRUNnZ0VBQlQ2aDlLaFA0TEt3cW12UkJESWZ5MGlHVzY5d0c0UXBUaVRMZ0ZPTTFNT0QKK2VQcS9TaXQyZWljNWt3Z05MUDI2U1FkMnJqTkhQYVBpa1drS3hrUHN3UUtqWGFuSkZVbFQvaThrQU4vbGFrVwp1WnZRTDBxQXJBUEVSZXRrMTV2b0VRZnU0cU13czRYZzZpNFlpS0ZyakNpcU14YmFNR3lJWFJ4STNVREtseWJyCnBQZHhZUWpUNWlnQmp4bVVvVjZlUjJiUFNWMXlkV08yMG1jNnpGRUJCV2R6VWY0Y1F2eFM0andRb0JGQXdHSmwKYlhuSll5dE8rUHlUUTgwSXNuamN4eVhZUVpJMDR1YXkxZW5yb1dERVdlQ0JBVk1WMldhR1J3Vk8zdHR3UFNZdgpuMExEY2pVSU5GK0RTcE9BaVJwNTBENzIxRnBxRjVMTHB3MzlncC9VOFFLQmdRRG9VSUNTSEhGdEF6STVxRTdICldNcG14aTZvMG45OUx6aVFqMFkzVWQ3bk1YL25iTHIvWUhJTFlsU0pUYTY1cDBESzhuWmI2ZGsyMVdZTnFrenUKajdibjFDNXlDN2l2QmhqUWlHdXkvZjJPdlJUQy9KVHJoYXBreUR6TkpiODIrVmNzN1Z1RDREdzBsdzNTTVg5Twp3c2tNU0UrazIwQTRLaXZKKzNKdnlWa3M1d0tCZ1FENVo2b21iS05sS3lSOVRMeGlna3hDWTQ3d0puM3EzVFhQCnpGQzd2N2xyd3o2L0JhRU80NElVcWpsL3hpelhGbkZBSzRuRlczT29rR2ZTTVNyUkwyOVpyOHZQdFVEUktxSzgKdndUOWpkK2IzYVJBTGZIOWY1ZXZ2eE1CbUY4R2c4NHRZK1RaYVZ1NmdPQUpPeWZRTHhLc3lZR2l5NGRmWWphYQpvK1hGTTNhTlN3S0JnUURQVFc2OWN4WWdFZGNTcmtiR0NreHFrM1IxZjRqMk8xbjlYV3hwMXV2U1lGQmpRWnBJCllsYkNJOWVOd2owbE84Tk1sam5aNFAzTXVYWmN3VmZ2RlYxQTJBMHVCWm1pelF6OW9JNkNaYldLVnQyYzlXa3EKRmRlc0lTWm9aY09RbWNVWnVTQ051RjNoQzkzd2Irekxhbk9mT3pPZXgyc3g4eWVxRUcvWW90S3Bod0tCZ1FDWApQSnA4TkhLY3ZaMmg4YTltMlBaZlo3bmN2S3FzaWpuQWFYZ25jYXFCdzJMQU9TeWlONm5BMkR5SDArZUxBa3ZvCmlyNC9sQ1k5ZUZ2TXBRMyt6WkhyUStRR2J6WC80S2ZRWnRFaTVDNU5lUWpKOWxLQTB5ZHJaaVdqV1A5K2x0eW0KdjZXZGhQc2Z6RmlPb0hXVEU0aHlpTHI0dWd5NzlYV0JMcFA5a2loNG93S0JnUUNXb1VxWVY1ZG02MmRTc0JwMwpqalFwdXorZ0lmb3Bwa25vSUhGUmpXMXdYeTZrd3AyUk5xenplVS9TWDNpRWlXUTM2MTBmYXZxV1NWdEttTFBDClVwb2N1cEtTZUpzekM1K3pZaHB4QWZ2T080QWY1Y2xEZXk3aGt6TlVIMUpGSjZ1anI3SHpieFFUU1c2ZkhnOXgKelJBaEMyUjgwdjVRaUJHRnA1UHpEalZ3K3c9PQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg";
+const privateKey = (0, crypto_1.createPrivateKey)({
+    key: API_PRIVATE_KEY_PEM,
+    type: 'pkcs1',
+    format: 'pem',
+    encoding: 'base64',
+});
+const BASE_URL = 'https://fiat-api.changelly.com';
+// Helper: Generate signature exactly like your working script
+const generateSignature = (payload) => {
+    return (0, crypto_1.sign)('sha256', Buffer.from(payload), privateKey).toString('base64');
+};
+// ===================================================================
+// GET /api/fiat/changelly/offers
+// ===================================================================
+router.get('/offers', async (req, res) => {
+    const { currencyFrom, currencyTo, amountFrom, country, providerCode, externalUserId, state, ip, } = req.query;
+    // Required params
+    if (!currencyFrom || !currencyTo || !amountFrom || !country) {
+        return res.status(400).json({
+            error: 'Missing required query params: currencyFrom, currencyTo, amountFrom, country',
+        });
     }
-    static async getCurrencies(req, res) {
+    const queryParams = new URLSearchParams({
+        currencyFrom: String(currencyFrom).toUpperCase(),
+        currencyTo: String(currencyTo).toUpperCase(),
+        amountFrom: String(amountFrom),
+        country: String(country).toUpperCase(),
+        ...(providerCode && { providerCode: String(providerCode) }),
+        ...(externalUserId && { externalUserId: String(externalUserId) }),
+        ...(state && { state: String(state) }),
+        ...(ip && { ip: String(ip) }),
+    });
+    const path = `/v1/offers?${queryParams.toString()}`;
+    const fullUrl = BASE_URL + path;
+    try {
+        const signature = generateSignature(fullUrl); // GET → sign full URL
+        const apiRes = await fetch(fullUrl, {
+            method: 'GET',
+            headers: {
+                'X-Api-Key': API_PUBLIC_KEY,
+                'X-Api-Signature': signature,
+                'Content-Type': 'application/json',
+            },
+        });
+        const text = await apiRes.text();
+        let data;
         try {
-            const query = req.query;
-            const data = await changellyService_1.default.getCurrencies(query);
-            return res.json(data);
+            data = JSON.parse(text);
         }
-        catch (err) {
-            console.error('getCurrencies error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly currencies error' });
+        catch {
+            data = text;
         }
+        if (!apiRes.ok) {
+            return res.status(apiRes.status).json({ error: 'Changelly API error', details: data });
+        }
+        return res.json(data.result || data);
     }
-    static async getAvailableCountries(req, res) {
+    catch (err) {
+        console.error('Changelly offers error:', err);
+        return res.status(500).json({ error: 'Internal server error', message: err.message });
+    }
+});
+// ===================================================================
+// POST /api/fiat/changelly/orders
+// ===================================================================
+router.post('/orders', async (req, res) => {
+    const body = req.body;
+    const required = [
+        'externalOrderId',
+        'externalUserId',
+        'providerCode',
+        'currencyFrom',
+        'currencyTo',
+        'amountFrom',
+        'country',
+        'walletAddress',
+    ];
+    const missing = required.filter((field) => !body[field]);
+    if (missing.length > 0) {
+        return res.status(400).json({
+            error: 'Missing required fields',
+            missing,
+        });
+    }
+    const path = '/v1/orders';
+    const fullUrl = BASE_URL + path;
+    const jsonBody = JSON.stringify({
+        ...body,
+        currencyFrom: body.currencyFrom.toUpperCase(),
+        currencyTo: body.currencyTo.toUpperCase(),
+        country: body.country.toUpperCase(),
+    });
+    try {
+        const payloadToSign = fullUrl + jsonBody; // POST → full URL + JSON body
+        const signature = generateSignature(payloadToSign);
+        const apiRes = await fetch(fullUrl, {
+            method: 'POST',
+            headers: {
+                'X-Api-Key': API_PUBLIC_KEY,
+                'X-Api-Signature': signature,
+                'Content-Type': 'application/json',
+            },
+            body: jsonBody,
+        });
+        const text = await apiRes.text();
+        let data;
         try {
-            const query = req.query;
-            const data = await changellyService_1.default.getAvailableCountries(query);
-            return res.json(data);
+            data = JSON.parse(text);
         }
-        catch (err) {
-            console.error('getAvailableCountries error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly available countries error' });
+        catch {
+            data = text;
         }
+        if (!apiRes.ok) {
+            return res.status(apiRes.status).json({ error: 'Changelly create order failed', details: data });
+        }
+        const result = data.result || data;
+        return res.status(201).json(result);
     }
-    static async getOffers(req, res) {
-        try {
-            const query = req.query;
-            const data = await changellyService_1.default.getOffers(query);
-            return res.json(data);
-        }
-        catch (err) {
-            console.error('getOffers error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly offers error' });
-        }
+    catch (err) {
+        console.error('Changelly create order error:', err);
+        return res.status(500).json({ error: 'Internal server error', message: err.message });
     }
-    static async createOrder(req, res) {
-        try {
-            const body = req.body;
-            const data = await changellyService_1.default.createOrder(body);
-            return res.json(data);
-        }
-        catch (err) {
-            console.error('createOrder error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly create order error' });
-        }
-    }
-    /**
-     * Simplified endpoint for front-end to create an on-ramp (buy) order.
-     * Expects: { externalUserId, amountNGN, currencyTo, walletAddress, walletExtraId?, returnSuccessUrl?, returnFailedUrl?, country? }
-     * Flow: fetch offers for NGN -> pick best (first) -> create order with chosen provider -> return redirectUrl and order info
-     */
-    static async deposit(req, res) {
-        try {
-            const { externalUserId, externalOrderId, amountNGN, currencyTo, walletAddress, walletExtraId, returnSuccessUrl, returnFailedUrl, country = 'NG', } = req.body;
-            if (!externalUserId || !amountNGN || !currencyTo || !walletAddress) {
-                return res.status(400).json({ error: 'Missing required fields: externalUserId, amountNGN, currencyTo, walletAddress' });
-            }
-            // Query offers (amountFrom is fiat amount)
-            const offers = await changellyService_1.default.getOffers({ currencyFrom: 'NGN', currencyTo: String(currencyTo).toUpperCase(), amountFrom: String(amountNGN), country });
-            if (!offers || !Array.isArray(offers) || offers.length === 0) {
-                return res.status(400).json({ error: 'No offers available for the requested pair/amount' });
-            }
-            // Pick the first offer and payment method (simple selection - can be improved)
-            const best = offers[0];
-            const paymentMethodOffer = (best.paymentMethodOffer && best.paymentMethodOffer[0]) || null;
-            const genExternalOrderId = externalOrderId || `velo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-            const orderPayload = {
-                externalOrderId: genExternalOrderId,
-                externalUserId,
-                providerCode: best.providerCode,
-                currencyFrom: 'NGN',
-                currencyTo: String(currencyTo).toUpperCase(),
-                amountFrom: String(amountNGN),
-                country,
-                walletAddress,
-                walletExtraId: walletExtraId || undefined,
-                paymentMethod: paymentMethodOffer ? paymentMethodOffer.method || paymentMethodOffer.methodName : undefined,
-                returnSuccessUrl: returnSuccessUrl || null,
-                returnFailedUrl: returnFailedUrl || null,
-                userAgent: req.get('User-Agent') || undefined,
-                ip: req.ip,
-            };
-            const created = await changellyService_1.default.createOrder(orderPayload);
-            // Return the redirectUrl and raw order info so frontend can redirect user
-            return res.json({ redirectUrl: created.redirectUrl, order: created });
-        }
-        catch (err) {
-            console.error('deposit error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly deposit error' });
-        }
-    }
-    /**
-     * Simplified endpoint for front-end to create an off-ramp (sell) order.
-     * Expects: { externalUserId, externalOrderId?, currencyFrom, amountFrom, refundAddress, country? }
-     * Flow: fetch sell offers -> pick best -> create sell order -> return redirectUrl and order info
-     */
-    static async withdraw(req, res) {
-        try {
-            const { externalUserId, externalOrderId, currencyFrom, amountFrom, refundAddress, country = 'NG', } = req.body;
-            if (!externalUserId || !currencyFrom || !amountFrom || !refundAddress) {
-                return res.status(400).json({ error: 'Missing required fields: externalUserId, currencyFrom, amountFrom, refundAddress' });
-            }
-            const currencyFromUpper = String(currencyFrom).toUpperCase();
-            const offers = await changellyService_1.default.getSellOffers({ currencyFrom: currencyFromUpper, currencyTo: 'NGN', amountFrom: String(amountFrom), country });
-            if (!offers || !Array.isArray(offers) || offers.length === 0) {
-                return res.status(400).json({ error: 'No sell offers available for the requested pair/amount' });
-            }
-            const best = offers[0];
-            const genExternalOrderId = externalOrderId || `velo_sell_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-            const orderPayload = {
-                externalOrderId: genExternalOrderId,
-                externalUserId,
-                providerCode: best.providerCode,
-                currencyFrom: currencyFromUpper,
-                currencyTo: 'NGN',
-                amountFrom: amountFrom,
-                country,
-                refundAddress,
-                userAgent: req.get('User-Agent') || undefined,
-                ip: req.ip,
-            };
-            const created = await changellyService_1.default.createSellOrder(orderPayload);
-            return res.json({ redirectUrl: created.redirectUrl, order: created });
-        }
-        catch (err) {
-            console.error('withdraw error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly withdraw error' });
-        }
-    }
-    static async validateAddress(req, res) {
-        try {
-            const body = req.body;
-            const data = await changellyService_1.default.validateAddress(body);
-            return res.json(data);
-        }
-        catch (err) {
-            console.error('validateAddress error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly validate address error' });
-        }
-    }
-    // Off-ramp / sell
-    static async getSellOffers(req, res) {
-        try {
-            const query = req.query;
-            const data = await changellyService_1.default.getSellOffers(query);
-            return res.json(data);
-        }
-        catch (err) {
-            console.error('getSellOffers error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly sell offers error' });
-        }
-    }
-    static async createSellOrder(req, res) {
-        try {
-            const body = req.body;
-            const data = await changellyService_1.default.createSellOrder(body);
-            return res.json(data);
-        }
-        catch (err) {
-            console.error('createSellOrder error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly create sell order error' });
-        }
-    }
-    static async getOrders(req, res) {
-        try {
-            const query = req.query;
-            const data = await changellyService_1.default.getOrders(query);
-            return res.json(data);
-        }
-        catch (err) {
-            console.error('getOrders error', err);
-            const status = err.status || 500;
-            return res.status(status).json({ error: err.message || 'Changelly get orders error' });
-        }
-    }
-}
-exports.ChangellyController = ChangellyController;
+});
+exports.default = router;
 //# sourceMappingURL=changellyController.js.map

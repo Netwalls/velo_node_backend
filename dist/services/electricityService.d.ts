@@ -1,15 +1,12 @@
-import { ElectricityPurchase, ElectricityCompany, MeterType, Blockchain } from "../entities/ElectricityPurchase";
+import { ElectricityPurchase, ElectricityCompany, MeterType } from "../entities/ElectricityPurchase";
+import { Blockchain } from "../utils/purchaseUtils";
 export declare class ElectricityService {
     private electricityPurchaseRepo;
-    private readonly MIN_ELECTRICITY_AMOUNT;
-    private readonly MAX_ELECTRICITY_AMOUNT;
-    private readonly AMOUNT_TOLERANCE_PERCENT;
-    private readonly PURCHASE_EXPIRY_MS;
     private readonly COMPANY_MAP;
     constructor();
     private getRepository;
     /**
-     * SECURE: Process electricity payment with comprehensive validation
+     * Process electricity payment with comprehensive validation
      */
     processElectricityPayment(userId: string, purchaseData: {
         type: "electricity";
@@ -41,53 +38,18 @@ export declare class ElectricityService {
      */
     private processElectricityWithNellobytes;
     /**
-     * Verify meter number before payment (optional)
+     * Verify meter number before payment
      */
     verifyMeterNumber(company: ElectricityCompany, meterNumber: string): Promise<any>;
     /**
-     * Map Nellobytes error codes to user-friendly messages
-     */
-    private mapNellobytesError;
-    /**
-     * Initiate refund when payment fails
-     */
-    private initiateRefund;
-    /**
-     * SECURITY: Comprehensive input validation
+     * Validate purchase data
      */
     private validatePurchaseData;
     /**
-     * SECURITY: Check transaction hash uniqueness
-     */
-    private checkTransactionHashUniqueness;
-    /**
-     * SECURITY: Enhanced blockchain validation with amount tolerance
-     */
-    private validateBlockchainTransaction;
-    /**
-     * SECURITY: Mark purchase as failed
+     * Mark purchase as failed
      */
     private markPurchaseFailed;
-    /**
-     * SECURITY: Log security events
-     */
-    private logSecurityEvent;
-    /**
-     * Get company's wallet address
-     */
-    private getBlockchainWallet;
-    /**
-     * Convert fiat to crypto
-     */
-    private convertFiatToCrypto;
-    private getMockCryptoAmount;
-    /**
-     * Get user's electricity payment history
-     */
     getUserElectricityHistory(userId: string, limit?: number): Promise<ElectricityPurchase[]>;
-    /**
-     * Get expected crypto amount
-     */
     getExpectedCryptoAmount(amount: number, chain: Blockchain): Promise<{
         cryptoAmount: number;
         cryptoCurrency: string;
@@ -116,10 +78,8 @@ export declare class ElectricityService {
         code: string;
     }[];
     getSecurityLimits(): {
-        minElectricityAmount: number;
-        maxElectricityAmount: number;
-        amountTolerancePercent: number;
-        purchaseExpiryMinutes: number;
+        minAmount: number;
+        maxAmount: number;
     };
     getUserPurchaseStats(userId: string): Promise<{
         totalPurchases: number;

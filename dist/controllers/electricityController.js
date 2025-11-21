@@ -61,6 +61,9 @@ class ElectricityController {
     /**
      * Verify meter number before payment
      */
+    /**
+  * Verify meter number before payment
+  */
     async verifyMeterNumber(req, res) {
         try {
             const { company, meterNumber } = req.query;
@@ -85,11 +88,9 @@ class ElectricityController {
                 });
             }
             const result = await electricityService_1.electricityService.verifyMeterNumber(company, meterNumber);
-            res.json({
-                success: true,
-                message: result.valid ? 'Meter number verified successfully' : 'Meter verification failed',
-                data: result
-            });
+            const customerName = result.customer_name || "Customer information not available";
+            // FIXED: Return the service result directly instead of wrapping it
+            res.json(result);
         }
         catch (error) {
             console.error('Meter verification error:', error);

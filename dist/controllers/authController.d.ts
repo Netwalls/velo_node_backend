@@ -28,13 +28,20 @@ export declare class AuthController {
      */
     static login(req: Request, res: Response): Promise<void>;
     /**
+     * Google Sign-in / Sign-up check
+     * Expects either { idToken } (Google ID token) or { email } in the body.
+     * If user exists -> issue JWTs and return user + tokens.
+     * If user does NOT exist -> return { exists: false, email, name } so frontend can route to account creation.
+     */
+    static googleSignIn(req: Request, res: Response): Promise<any>;
+    /**
      * Verify OTP for email verification.
      * - Looks up user by email.
      * - Checks OTP and expiry.
      * - Marks email as verified if OTP is valid.
      * - Returns success or error.
      */
-    static verifyOTP(req: Request, res: Response): Promise<void>;
+    static verifyOTP(req: Request, res: Response): Promise<any>;
     /**
      * Resend OTP for email verification.
      * - Finds user by email.

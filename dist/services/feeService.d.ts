@@ -3,7 +3,8 @@
  * Implements the Normal Transaction Model
  *
  * Fee Tiers:
- * - $0 - $50: $0.10
+ * - $0 - $10: $0.00 (no VELO fee)
+ * - $10.01 - $50: $0.10
  * - $51 - $100: $0.25
  * - $101 - $500: $1.00
  * - $501 - $1,000: $2.00

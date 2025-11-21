@@ -35,17 +35,13 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dataService = exports.DataService = void 0;
 const database_1 = require("../config/database");
+const notificationService_1 = require("./notificationService");
+const types_1 = require("../types");
 const DataPurchase_1 = require("../entities/DataPurchase");
 const nellobytesService_1 = __importStar(require("./nellobytesService"));
-const validators_1 = require("./blockchain/validators");
-const exchangeRateService_1 = require("./exchangeRateService");
+const purchaseUtils_1 = require("../utils/purchaseUtils");
 class DataService {
     constructor() {
-        // Security constants
-        this.MIN_DATA_AMOUNT = 50;
-        this.MAX_DATA_AMOUNT = 200000;
-        this.AMOUNT_TOLERANCE_PERCENT = 1.0; // 1% tolerance
-        this.PURCHASE_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
         // Data plans cache
         this.dataPlansCache = {};
         this.plansCacheTimestamp = 0;
@@ -63,47 +59,44 @@ class DataService {
      */
     async refreshDataPlans() {
         const now = Date.now();
-        // Check if cache is still valid
-        if (this.plansCacheTimestamp && (now - this.plansCacheTimestamp) < this.CACHE_DURATION_MS) {
-            console.log('📋 Using cached data plans');
+        if (this.plansCacheTimestamp &&
+            now - this.plansCacheTimestamp < this.CACHE_DURATION_MS) {
+            console.log("📋 Using cached data plans");
             return;
         }
         try {
-            console.log('📋 Fetching fresh data plans from Nellobytes API...');
-            // Fetch all plans
+            console.log("📋 Fetching fresh data plans from Nellobytes API...");
             const allPlans = await nellobytesService_1.default.fetchDataPlans();
-            // Group plans by network
             this.dataPlansCache = {
-                [DataPurchase_1.MobileNetwork.MTN]: allPlans.filter(p => p.plan_network === '01'),
-                [DataPurchase_1.MobileNetwork.GLO]: allPlans.filter(p => p.plan_network === '02'),
-                [DataPurchase_1.MobileNetwork.ETISALAT]: allPlans.filter(p => p.plan_network === '03'),
-                [DataPurchase_1.MobileNetwork.AIRTEL]: allPlans.filter(p => p.plan_network === '04'),
+                [purchaseUtils_1.MobileNetwork.MTN]: allPlans.filter((p) => p.plan_network === "01"),
+                [purchaseUtils_1.MobileNetwork.GLO]: allPlans.filter((p) => p.plan_network === "02"),
+                [purchaseUtils_1.MobileNetwork.ETISALAT]: allPlans.filter((p) => p.plan_network === "03"),
+                [purchaseUtils_1.MobileNetwork.AIRTEL]: allPlans.filter((p) => p.plan_network === "04"),
             };
             this.plansCacheTimestamp = now;
-            console.log('✅ Data plans cached successfully:', {
-                mtn: this.dataPlansCache[DataPurchase_1.MobileNetwork.MTN]?.length || 0,
-                glo: this.dataPlansCache[DataPurchase_1.MobileNetwork.GLO]?.length || 0,
-                '9mobile': this.dataPlansCache[DataPurchase_1.MobileNetwork.ETISALAT]?.length || 0,
-                airtel: this.dataPlansCache[DataPurchase_1.MobileNetwork.AIRTEL]?.length || 0,
+            console.log("✅ Data plans cached successfully:", {
+                mtn: this.dataPlansCache[purchaseUtils_1.MobileNetwork.MTN]?.length || 0,
+                glo: this.dataPlansCache[purchaseUtils_1.MobileNetwork.GLO]?.length || 0,
+                "9mobile": this.dataPlansCache[purchaseUtils_1.MobileNetwork.ETISALAT]?.length || 0,
+                airtel: this.dataPlansCache[purchaseUtils_1.MobileNetwork.AIRTEL]?.length || 0,
             });
         }
         catch (error) {
-            console.error('❌ Failed to fetch data plans:', error.message);
-            // If cache is empty, throw error. Otherwise, use stale cache
+            console.error("❌ Failed to fetch data plans:", error.message);
             if (Object.keys(this.dataPlansCache).length === 0) {
-                throw new Error('Failed to load data plans. Please try again later.');
+                throw new Error("Failed to load data plans. Please try again later.");
             }
-            console.warn('⚠️ Using stale cache due to API error');
+            console.warn("⚠️ Using stale cache due to API error");
         }
     }
     /**
-     * SECURE: Process data purchase with comprehensive validation
+     * Process data purchase with comprehensive validation
      */
     async processDataPurchase(userId, purchaseData) {
         console.log(`📄 Processing data purchase for user ${userId}:`, purchaseData);
         let dataPurchase = null;
         try {
-            // 1. Refresh data plans cache if needed
+            // 1. Refresh data plans cache
             await this.refreshDataPlans();
             // 2. Get and validate the selected data plan
             const plan = await this.getDataPlanById(purchaseData.mobileNetwork, purchaseData.dataplanId);
@@ -111,21 +104,21 @@ class DataService {
                 throw new Error(`Invalid data plan selected: ${purchaseData.dataplanId}`);
             }
             console.log(`📱 Selected plan: ${plan.plan_name} - ${plan.plan_amount}`);
-            // 3. Parse the plan amount from Nellobytes
+            // 3. Parse the plan amount
             const planAmount = (0, nellobytesService_1.parsePriceString)(plan.plan_amount);
             console.log(`💰 Plan price: ₦${planAmount}`);
             // 4. Validate that user's amount matches plan amount
             if (Math.abs(purchaseData.amount - planAmount) > 0.01) {
                 throw new Error(`Amount mismatch: Expected ₦${planAmount} for selected plan, but received ₦${purchaseData.amount}`);
             }
-            // 5. Comprehensive input validation
+            // 5. Validate inputs
             this.validatePurchaseData(purchaseData, planAmount);
-            // 6. Check transaction hash uniqueness
-            await this.checkTransactionHashUniqueness(purchaseData.transactionHash);
-            // 7. Convert fiat amount to crypto amount (using user's amount)
-            const expectedCryptoAmount = await this.convertFiatToCrypto(purchaseData.amount, purchaseData.chain);
-            // 8. Get the company's wallet address
-            const receivingWallet = this.getBlockchainWallet(purchaseData.chain);
+            // 6. Check transaction hash uniqueness (only checks COMPLETED purchases)
+            await (0, purchaseUtils_1.checkTransactionHashUniqueness)(purchaseData.transactionHash);
+            // 7. Convert fiat to crypto
+            const expectedCryptoAmount = await (0, purchaseUtils_1.convertFiatToCrypto)(purchaseData.amount, purchaseData.chain);
+            // 8. Get receiving wallet
+            const receivingWallet = (0, purchaseUtils_1.getBlockchainWallet)(purchaseData.chain);
             console.log(`💰 Expected: ${expectedCryptoAmount} ${purchaseData.chain} to ${receivingWallet}`);
             // 9. Create pending purchase record
             dataPurchase = new DataPurchase_1.DataPurchase();
@@ -141,17 +134,17 @@ class DataService {
             dataPurchase.plan_name = plan.plan_name;
             dataPurchase.dataplan_id = plan.dataplan_id;
             await this.getRepository().save(dataPurchase);
-            // 10. Validate the blockchain transaction with amount tolerance
+            // 10. Validate blockchain transaction
             console.log(`🔍 Validating ${purchaseData.chain} transaction: ${purchaseData.transactionHash}`);
-            const isValid = await this.validateBlockchainTransaction(purchaseData.chain, purchaseData.transactionHash, expectedCryptoAmount, receivingWallet);
+            const isValid = await (0, purchaseUtils_1.validateBlockchainTransaction)(purchaseData.chain, purchaseData.transactionHash, expectedCryptoAmount, receivingWallet);
             if (!isValid) {
                 await this.markPurchaseFailed(dataPurchase, "Transaction validation failed");
                 throw new Error("Transaction validation failed. Please check the transaction details.");
             }
             console.log(`✅ Transaction validated! Proceeding to data delivery...`);
-            // 11. Process data with Nellobytesystems (NO AMOUNT, just dataplan_id)
+            // 11. Process data with Nellobytes
             const providerResult = await this.processDataWithNellobytes(dataPurchase);
-            // 12. Mark as completed ONLY if provider succeeded
+            // 12. Mark as COMPLETED only if Nellobytes succeeded (transaction is now "used")
             dataPurchase.status = DataPurchase_1.DataPurchaseStatus.COMPLETED;
             dataPurchase.provider_reference = providerResult.orderid;
             dataPurchase.metadata = {
@@ -164,10 +157,12 @@ class DataService {
                 },
                 security: {
                     validatedAt: new Date().toISOString(),
-                    amountTolerance: this.AMOUNT_TOLERANCE_PERCENT,
+                    amountTolerance: purchaseUtils_1.SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT,
                 },
             };
             await this.getRepository().save(dataPurchase);
+            // Mark transaction as used (for logging)
+            (0, purchaseUtils_1.markTransactionAsUsed)(dataPurchase.id, "data");
             console.log(`🎉 Data delivered! ${plan.plan_name} to ${purchaseData.phoneNumber}`);
             return {
                 success: true,
@@ -188,89 +183,40 @@ class DataService {
         }
         catch (error) {
             console.error("❌ Data purchase failed:", error);
-            // If we created a purchase record but failed later, update its status
             if (dataPurchase && dataPurchase.id) {
                 await this.markPurchaseFailed(dataPurchase, error.message);
-                // Initiate refund for blockchain-validated but provider-failed transactions
                 if (dataPurchase.status === DataPurchase_1.DataPurchaseStatus.PROCESSING) {
-                    await this.initiateRefund(dataPurchase, error.message);
+                    await (0, purchaseUtils_1.initiateRefund)(dataPurchase, this.getRepository(), dataPurchase.crypto_amount, dataPurchase.crypto_currency, error.message, dataPurchase.id);
                 }
             }
             throw error;
         }
     }
     /**
-     * Process data with Nellobytesystems with proper error handling
-     * NOTE: We send dataplan_id, NOT amount
+     * Process data with Nellobytesystems
      */
     async processDataWithNellobytes(purchase) {
         try {
             console.log(`📞 Calling Nellobytes API for ${purchase.plan_name} to ${purchase.phone_number}`);
-            const providerResult = await nellobytesService_1.default.purchaseDataBundle(purchase.network, purchase.dataplan_id, // Send dataplan_id, not amount
-            purchase.phone_number, `VELO_DATA_${purchase.id}_${Date.now()}`);
+            const providerResult = await nellobytesService_1.default.purchaseDataBundle(purchase.network, purchase.dataplan_id, purchase.phone_number, `VELO_DATA_${purchase.id}_${Date.now()}`);
             console.log(`📞 Nellobytes API response:`, providerResult);
-            // ✅ CHECK FOR SUCCESS
-            if ((0, nellobytesService_1.isSuccessfulResponse)(providerResult) || providerResult.status === 'ORDER_RECEIVED') {
+            if ((0, nellobytesService_1.isSuccessfulResponse)(providerResult) ||
+                providerResult.status === "ORDER_RECEIVED") {
                 console.log(`✅ Nellobytes order successful: ${providerResult.orderid}`);
                 return providerResult;
             }
             else {
-                const errorMessage = this.mapNellobytesError(providerResult.statuscode, providerResult.status);
+                const errorMessage = (0, purchaseUtils_1.mapNellobytesError)(providerResult.statuscode, providerResult.status || "");
                 console.error(`❌ Nellobytes API error: ${providerResult.statuscode} - ${providerResult.status}`);
                 throw new Error(errorMessage);
             }
         }
         catch (error) {
             console.error(`❌ Nellobytes API call failed:`, error.message);
-            if (error.message.includes('Nellobytes:')) {
+            if (error.message.includes("Nellobytes:")) {
                 throw error;
             }
             throw new Error(`Nellobytes: ${error.message}`);
-        }
-    }
-    /**
-     * Map Nellobytes error codes to user-friendly messages
-     */
-    mapNellobytesError(statusCode, status) {
-        const errorMap = {
-            'INVALID_CREDENTIALS': 'Nellobytes: Invalid API credentials. Please contact support.',
-            'MISSING_CREDENTIALS': 'Nellobytes: API credentials missing. Please contact support.',
-            'INVALID_PRODUCT_CODE': 'Nellobytes: Invalid data plan selected.',
-            'INVALID_DATAPLAN': 'Nellobytes: Invalid data plan selected.',
-            'INVALID_RECIPIENT': 'Nellobytes: Invalid phone number format.',
-            'SERVICE_TEMPORARILY_UNAVAIALBLE': 'Nellobytes: Service temporarily unavailable. Please try again later.',
-            'INSUFFICIENT_APIBALANCE': 'Nellobytes: Insufficient provider balance. Please try again later.',
-        };
-        if (errorMap[status]) {
-            return errorMap[status];
-        }
-        if (statusCode !== '100' && statusCode !== '200') {
-            return `Nellobytes: Service error (Code: ${statusCode}) - ${status}`;
-        }
-        return `Nellobytes: ${status}`;
-    }
-    /**
-     * Initiate refund when data delivery fails
-     */
-    async initiateRefund(purchase, reason) {
-        try {
-            console.log(`💸 Initiating refund for purchase ${purchase.id}: ${reason}`);
-            purchase.metadata = {
-                ...purchase.metadata,
-                refund: {
-                    initiated: true,
-                    reason: reason,
-                    initiatedAt: new Date().toISOString(),
-                    amount: purchase.crypto_amount,
-                    currency: purchase.crypto_currency,
-                    status: 'pending'
-                }
-            };
-            await this.getRepository().save(purchase);
-            console.log(`✅ Refund initiated for ${purchase.crypto_amount} ${purchase.crypto_currency}`);
-        }
-        catch (error) {
-            console.error('❌ Refund initiation failed:', error);
         }
     }
     /**
@@ -281,10 +227,10 @@ class DataService {
         const plans = this.dataPlansCache[network];
         if (!plans)
             return null;
-        return plans.find(plan => plan.dataplan_id === dataplanId) || null;
+        return plans.find((plan) => plan.dataplan_id === dataplanId) || null;
     }
     /**
-     * SECURITY: Comprehensive input validation
+     * Validate purchase data
      */
     validatePurchaseData(purchaseData, planAmount) {
         const { type, amount, chain, phoneNumber, mobileNetwork, transactionHash } = purchaseData;
@@ -292,86 +238,23 @@ class DataService {
         if (type !== "data") {
             throw new Error("Invalid purchase type");
         }
-        // Amount validation
-        if (typeof amount !== "number" || isNaN(amount)) {
-            throw new Error("Amount must be a valid number");
-        }
-        if (amount < this.MIN_DATA_AMOUNT) {
-            throw new Error(`Minimum data amount is ${this.MIN_DATA_AMOUNT} NGN`);
-        }
-        if (amount > this.MAX_DATA_AMOUNT) {
-            throw new Error(`Maximum data amount is ${this.MAX_DATA_AMOUNT} NGN`);
-        }
-        // Phone number validation (Nigeria)
-        const phoneRegex = /^234[7-9][0-9]{9}$/;
-        if (!phoneRegex.test(phoneNumber)) {
-            throw new Error("Invalid Nigerian phone number format. Use 234XXXXXXXXXX");
-        }
         // Network validation
-        if (!Object.values(DataPurchase_1.MobileNetwork).includes(mobileNetwork)) {
-            throw new Error(`Invalid mobile network. Supported: ${Object.values(DataPurchase_1.MobileNetwork).join(", ")}`);
+        if (!Object.values(purchaseUtils_1.MobileNetwork).includes(mobileNetwork)) {
+            throw new Error(`Invalid mobile network. Supported: ${Object.values(purchaseUtils_1.MobileNetwork).join(", ")}`);
         }
-        // Blockchain validation
-        if (!Object.values(DataPurchase_1.Blockchain).includes(chain)) {
-            throw new Error(`Unsupported blockchain. Supported: ${Object.values(DataPurchase_1.Blockchain).join(", ")}`);
-        }
-        // Transaction hash validation
-        if (!transactionHash || typeof transactionHash !== "string") {
-            throw new Error("Valid transaction hash is required");
-        }
-        if (transactionHash.length < 10) {
-            throw new Error("Invalid transaction hash format");
-        }
+        // Common validation
+        (0, purchaseUtils_1.validateCommonInputs)({
+            phoneNumber,
+            chain,
+            transactionHash,
+            amount,
+            minAmount: purchaseUtils_1.SECURITY_CONSTANTS.MIN_DATA_AMOUNT,
+            maxAmount: purchaseUtils_1.SECURITY_CONSTANTS.MAX_DATA_AMOUNT,
+        });
         console.log("✅ Input validation passed");
     }
     /**
-     * SECURITY: Check transaction hash uniqueness
-     */
-    async checkTransactionHashUniqueness(transactionHash) {
-        const existingPurchase = await this.getRepository().findOne({
-            where: { transaction_hash: transactionHash },
-        });
-        if (existingPurchase) {
-            this.logSecurityEvent("DUPLICATE_TRANSACTION_HASH", { transactionHash });
-            throw new Error("This transaction has already been used for another purchase");
-        }
-        console.log("✅ Transaction hash is unique");
-    }
-    /**
-     * SECURITY: Enhanced blockchain validation with amount tolerance
-     */
-    async validateBlockchainTransaction(blockchain, transactionHash, expectedAmount, expectedToAddress) {
-        const tolerance = expectedAmount * (this.AMOUNT_TOLERANCE_PERCENT / 100);
-        const minAllowedAmount = expectedAmount - tolerance;
-        const maxAllowedAmount = expectedAmount + tolerance;
-        console.log(`   Amount range: ${minAllowedAmount} - ${maxAllowedAmount} ${blockchain}`);
-        try {
-            switch (blockchain) {
-                case DataPurchase_1.Blockchain.ETHEREUM:
-                    return await validators_1.blockchainValidator.validateEthereumTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                case DataPurchase_1.Blockchain.BITCOIN:
-                    return await validators_1.blockchainValidator.validateBitcoinTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                case DataPurchase_1.Blockchain.SOLANA:
-                    return await validators_1.blockchainValidator.validateSolanaTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                case DataPurchase_1.Blockchain.STELLAR:
-                    return await validators_1.blockchainValidator.validateStellarTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                case DataPurchase_1.Blockchain.POLKADOT:
-                    return await validators_1.blockchainValidator.validatePolkadotTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                case DataPurchase_1.Blockchain.STARKNET:
-                    return await validators_1.blockchainValidator.validateStarknetTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                case DataPurchase_1.Blockchain.USDT_ERC20:
-                    return await validators_1.blockchainValidator.validateUsdtTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                default:
-                    return false;
-            }
-        }
-        catch (error) {
-            console.error(`Blockchain validation error:`, error);
-            return false;
-        }
-    }
-    /**
-     * SECURITY: Mark purchase as failed
+     * Mark purchase as failed
      */
     async markPurchaseFailed(purchase, reason) {
         purchase.status = DataPurchase_1.DataPurchaseStatus.FAILED;
@@ -381,96 +264,28 @@ class DataService {
             failedAt: new Date().toISOString(),
         };
         await this.getRepository().save(purchase);
-        this.logSecurityEvent("PURCHASE_FAILED", {
+        (0, purchaseUtils_1.logSecurityEvent)("PURCHASE_FAILED", {
             purchaseId: purchase.id,
             reason,
             userId: purchase.user_id,
         });
-    }
-    /**
-     * SECURITY: Log security events
-     */
-    async logSecurityEvent(event, details) {
-        console.warn(`🔒 SECURITY EVENT: ${event}`, {
-            timestamp: new Date().toISOString(),
-            event,
-            details,
-            service: "DataService",
-        });
-    }
-    /**
-     * Get company's wallet address
-     */
-    getBlockchainWallet(blockchain) {
-        const walletMap = {
-            [DataPurchase_1.Blockchain.ETHEREUM]: process.env.ETHEREUM_TESTNET_TREASURY,
-            [DataPurchase_1.Blockchain.BITCOIN]: process.env.BITCOIN_TESTNET_TREASURY,
-            [DataPurchase_1.Blockchain.SOLANA]: process.env.SOLANA_TESTNET_TREASURY,
-            [DataPurchase_1.Blockchain.STELLAR]: process.env.STELLAR_TESTNET_TREASURY,
-            [DataPurchase_1.Blockchain.POLKADOT]: process.env.POLKADOT_TESTNET_TREASURY,
-            [DataPurchase_1.Blockchain.STARKNET]: process.env.STARKNET_TESTNET_TREASURY,
-            [DataPurchase_1.Blockchain.USDT_ERC20]: process.env.USDT_TESTNET_TREASURY,
-        };
-        const walletAddress = walletMap[blockchain];
-        if (!walletAddress) {
-            throw new Error(`Wallet not configured for blockchain: ${blockchain}`);
-        }
-        return walletAddress;
-    }
-    /**
-     * Convert fiat to crypto
-     */
-    async convertFiatToCrypto(fiatAmount, blockchain) {
+        // Notify user about failure
         try {
-            const cryptoMap = {
-                [DataPurchase_1.Blockchain.ETHEREUM]: "eth",
-                [DataPurchase_1.Blockchain.BITCOIN]: "btc",
-                [DataPurchase_1.Blockchain.SOLANA]: "sol",
-                [DataPurchase_1.Blockchain.STELLAR]: "xlm",
-                [DataPurchase_1.Blockchain.POLKADOT]: "dot",
-                [DataPurchase_1.Blockchain.STARKNET]: "strk",
-                [DataPurchase_1.Blockchain.USDT_ERC20]: "usdt",
-            };
-            const cryptoId = cryptoMap[blockchain];
-            const cryptoAmount = await exchangeRateService_1.exchangeRateService.convertFiatToCrypto(fiatAmount, cryptoId);
-            console.log(`💰 Exchange rate: ${fiatAmount} NGN = ${cryptoAmount} ${cryptoId.toUpperCase()}`);
-            return cryptoAmount;
+            await notificationService_1.NotificationService.notifyPurchaseFailed(purchase.user_id, types_1.NotificationType.DATA_PURCHASE, reason, { purchaseId: purchase.id });
         }
-        catch (error) {
-            console.error("❌ Exchange rate failed:", error.message);
-            return this.getMockCryptoAmount(fiatAmount, blockchain);
+        catch (err) {
+            console.warn('Failed to send purchase failed notification:', err);
         }
     }
-    getMockCryptoAmount(fiatAmount, blockchain) {
-        const mockRates = {
-            [DataPurchase_1.Blockchain.ETHEREUM]: 2000000,
-            [DataPurchase_1.Blockchain.BITCOIN]: 60000000,
-            [DataPurchase_1.Blockchain.SOLANA]: 269800,
-            [DataPurchase_1.Blockchain.STELLAR]: 500,
-            [DataPurchase_1.Blockchain.POLKADOT]: 10000,
-            [DataPurchase_1.Blockchain.STARKNET]: 2000,
-            [DataPurchase_1.Blockchain.USDT_ERC20]: 1500,
-        };
-        const cryptoAmount = fiatAmount / mockRates[blockchain];
-        return Math.round(cryptoAmount * 100000000) / 100000000;
-    }
-    /**
-     * Get available data plans for a network (from cache or API)
-     */
+    // ========== PUBLIC UTILITY METHODS ==========
     async getDataPlans(network) {
         await this.refreshDataPlans();
         return this.dataPlansCache[network] || [];
     }
-    /**
-     * Force refresh data plans from API
-     */
     async forceRefreshDataPlans() {
-        this.plansCacheTimestamp = 0; // Invalidate cache
+        this.plansCacheTimestamp = 0;
         await this.refreshDataPlans();
     }
-    /**
-     * Get user's data purchase history
-     */
     async getUserDataHistory(userId, limit = 10) {
         return await this.getRepository().find({
             where: { user_id: userId },
@@ -478,16 +293,13 @@ class DataService {
             take: limit,
         });
     }
-    /**
-     * Get expected crypto amount for a data plan
-     */
     async getExpectedCryptoAmount(dataplanId, network, chain) {
         const plan = await this.getDataPlanById(network, dataplanId);
         if (!plan) {
-            throw new Error('Invalid data plan selected');
+            throw new Error("Invalid data plan selected");
         }
         const planAmount = (0, nellobytesService_1.parsePriceString)(plan.plan_amount);
-        const cryptoAmount = await this.convertFiatToCrypto(planAmount, chain);
+        const cryptoAmount = await (0, purchaseUtils_1.convertFiatToCrypto)(planAmount, chain);
         return {
             cryptoAmount,
             cryptoCurrency: chain.toUpperCase(),
@@ -499,31 +311,18 @@ class DataService {
                 amount: plan.plan_amount,
                 validity: plan.month_validate,
             },
-            tolerancePercent: this.AMOUNT_TOLERANCE_PERCENT,
+            tolerancePercent: purchaseUtils_1.SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT,
             instructions: `Send approximately ${cryptoAmount} ${chain.toUpperCase()} to complete the data purchase`,
         };
     }
     getSupportedBlockchains() {
-        return Object.values(DataPurchase_1.Blockchain).map((chain) => ({
-            chain: chain,
-            symbol: chain.toUpperCase(),
-            name: chain.charAt(0).toUpperCase() + chain.slice(1).replace("_", " "),
-        }));
+        return (0, purchaseUtils_1.getSupportedBlockchains)();
     }
     getSupportedNetworks() {
-        return Object.values(DataPurchase_1.MobileNetwork).map((network) => ({
-            value: network,
-            label: network.toUpperCase(),
-            name: network.charAt(0).toUpperCase() + network.slice(1),
-        }));
+        return (0, purchaseUtils_1.getSupportedNetworks)();
     }
     getSecurityLimits() {
-        return {
-            minDataAmount: this.MIN_DATA_AMOUNT,
-            maxDataAmount: this.MAX_DATA_AMOUNT,
-            amountTolerancePercent: this.AMOUNT_TOLERANCE_PERCENT,
-            purchaseExpiryMinutes: this.PURCHASE_EXPIRY_MS / (60 * 1000),
-        };
+        return (0, purchaseUtils_1.getSecurityLimits)().data;
     }
     async getUserPurchaseStats(userId) {
         const history = await this.getUserDataHistory(userId, 1000);

@@ -12,16 +12,21 @@ const userRoute_1 = __importDefault(require("./routes/userRoute"));
 const walletRoute_1 = __importDefault(require("./routes/walletRoute"));
 const notificationRoute_1 = __importDefault(require("./routes/notificationRoute"));
 const historyRoute_1 = __importDefault(require("./routes/historyRoute"));
-const payment_1 = __importDefault(require("./routes/payment"));
-const fiatRoute_1 = __importDefault(require("./routes/fiatRoute"));
+// import paymentRouter from './routes/payment';
+// import fiatRoutes from './routes/fiatRoute';
 const transactionRoute_1 = __importDefault(require("./routes/transactionRoute"));
 const splitPaymentRoute_1 = __importDefault(require("./routes/splitPaymentRoute"));
 const strkDeploymentRoute_1 = __importDefault(require("./routes/strkDeploymentRoute"));
 const qrpaymentRoute_1 = __importDefault(require("./routes/qrpaymentRoute"));
 const adminRoute_1 = __importDefault(require("./routes/adminRoute"));
 const publicRoute_1 = __importDefault(require("./routes/publicRoute"));
-const swapRoute_1 = __importDefault(require("./routes/swapRoute"));
+// import swapRoute from './routes/swapRoute';
 const feeRoute_1 = __importDefault(require("./routes/feeRoute"));
+// import changellyRoute from './routes/changellyRoute';
+const airtime_1 = __importDefault(require("./routes/airtime"));
+const data_1 = __importDefault(require("./routes/data"));
+const electricity_1 = __importDefault(require("./routes/electricity"));
+const changellyController_1 = __importDefault(require("./controllers/changellyController"));
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -36,15 +41,14 @@ app.use(express_1.default.json());
 app.get('/', (req, res) => {
     res.send('Velo Backend Server is running!');
 });
-app.use('/fiat', fiatRoute_1.default);
+// app.use('/fiat', changellyRoute);
+// app.use('/fiat', fiatRoutes);
+app.use('/api/fiat/changelly', changellyController_1.default);
 app.use('/auth', authRoute_1.default);
 app.use('/user', userRoute_1.default);
 app.use('/wallet', walletRoute_1.default);
 app.use('/notification', notificationRoute_1.default);
 app.use('/history', historyRoute_1.default);
-// Mount payments routes (both /payments and /api/payments for compatibility)
-app.use('/payments', payment_1.default);
-app.use('/api/payments', payment_1.default);
 app.use('/transactions', transactionRoute_1.default);
 app.use('/merchant', qrpaymentRoute_1.default);
 app.use('/split-payment', splitPaymentRoute_1.default);
@@ -53,7 +57,11 @@ app.use('/admin', adminRoute_1.default);
 app.use('/fees', feeRoute_1.default);
 // Public routes should be mounted last for clarity, but ensure no conflicts
 app.use('/', publicRoute_1.default);
-app.use('/swap', swapRoute_1.default);
+// app.use('/swap', swapRoute);
+// utility route
+app.use("/airtime", airtime_1.default);
+app.use("/data", data_1.default);
+app.use("/electricity", electricity_1.default);
 (0, database_1.connectDB)().then(() => {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);

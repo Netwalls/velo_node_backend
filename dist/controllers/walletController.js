@@ -52,6 +52,7 @@ const axios_1 = __importDefault(require("axios"));
 const Notification_1 = require("../entities/Notification");
 const index_1 = require("../types/index");
 const notificationService_1 = require("../services/notificationService");
+const User_1 = require("../entities/User");
 const database_1 = require("../config/database");
 const keygen_1 = require("../utils/keygen");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
@@ -397,38 +398,57 @@ class WalletController {
             // Loop through each address and fetch its balance based on chain type
             for (const addr of addresses) {
                 if (addr.chain === 'starknet') {
-                    // STRK (Starknet) balance using starknet.js
+                    // STRK (Starknet) balance using RpcProvider.callContract for more robust parsing
                     try {
-                        // Create a Starknet RPC provider
+                        // Use Alchemy Starknet v0_9 mainnet endpoint (more current)
                         const provider = new starknet_1.RpcProvider({
-                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
+                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
                         });
-                        // STRK token contract address
-                        const tokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-                        // Minimal ERC20 ABI for balanceOf
-                        const erc20Abi = [
-                            {
-                                name: 'balanceOf',
-                                type: 'function',
-                                inputs: [{ name: 'account', type: 'felt' }],
-                                outputs: [{ name: 'balance', type: 'felt' }],
-                            },
-                        ];
-                        // Import Contract class from starknet.js
-                        // @ts-ignore
-                        const { Contract } = require('starknet');
-                        // Create contract instance for STRK token
-                        const contract = new Contract(erc20Abi, tokenAddress, provider);
-                        // Call balanceOf to get the user's STRK balance
-                        const balanceResult = await contract.balanceOf(addr.address);
+                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        // Call the contract entrypoint directly to avoid ABI/Contract class mismatches.
+                        // balanceOf usually returns a uint256 (low, high) pair or a single felt depending on the token.
+                        const callResult = await provider.callContract({
+                            contractAddress: strkTokenAddress,
+                            entrypoint: 'balanceOf',
+                            calldata: [padStarknetAddress(addr.address)],
+                        });
+                        // Normalize various shapes returned by different providers
+                        let raw = callResult;
+                        if (raw && typeof raw === 'object' && 'result' in raw)
+                            raw = raw.result;
+                        let balanceBig = BigInt(0);
+                        if (Array.isArray(raw)) {
+                            if (raw.length === 1) {
+                                // single felt string
+                                balanceBig = BigInt(raw[0]);
+                            }
+                            else if (raw.length >= 2) {
+                                // uint256: [low, high]
+                                const low = BigInt(raw[0]);
+                                const high = BigInt(raw[1]);
+                                balanceBig = (high << BigInt(128)) + low;
+                            }
+                        }
+                        else if (typeof raw === 'string') {
+                            balanceBig = BigInt(raw);
+                        }
+                        // Convert to STRK decimal (18 decimals)
+                        const balanceInSTRK = Number(balanceBig) / 1e18;
+                        // Save last known balance asynchronously (best-effort)
+                        try {
+                            addr.lastKnownBalance = balanceInSTRK;
+                            addressRepo.save(addr).catch(() => { });
+                        }
+                        catch { }
                         balances.push({
                             chain: addr.chain,
                             address: addr.address,
-                            balance: balanceResult.balance.toString(),
+                            balance: String(balanceInSTRK),
                         });
                     }
                     catch (err) {
                         // Handle errors for STRK balance fetch
+                        console.warn('Starknet balance fetch failed for', addr.address, (err?.message || String(err)));
                         balances.push({
                             chain: addr.chain,
                             address: addr.address,
@@ -1068,6 +1088,50 @@ class WalletController {
                         throw new Error('No transfer method available on this chain');
                     }
                     const tx = transfer(toAddress, planck.toString());
+                    // --- Polkadot preflight fee + existential deposit check ---
+                    try {
+                        // Estimate fee for this extrinsic using the sender keypair
+                        let estimatedFeePlanck = BigInt(0);
+                        try {
+                            const paymentInfo = await tx.paymentInfo(sender);
+                            estimatedFeePlanck = BigInt((paymentInfo && paymentInfo.partialFee) ? paymentInfo.partialFee.toString() : '0');
+                            console.log('[DEBUG] Polkadot estimated partialFee (planck):', estimatedFeePlanck.toString());
+                        }
+                        catch (pfErr) {
+                            console.warn('[WARN] Could not estimate Polkadot paymentInfo:', (pfErr?.message || String(pfErr)));
+                        }
+                        // Existential deposit (planck)
+                        let existentialDepositPlanck = BigInt(0);
+                        try {
+                            existentialDepositPlanck = BigInt(api.consts.balances.existentialDeposit.toString());
+                            console.log('[DEBUG] Polkadot existentialDeposit (planck):', existentialDepositPlanck.toString());
+                        }
+                        catch (edErr) {
+                            console.warn('[WARN] Could not read existentialDeposit from chain constants:', (edErr?.message || String(edErr)));
+                        }
+                        // Re-check account free balance (planck)
+                        const freshAccount = await api.query.system.account(userAddress.address);
+                        const freePlanck = BigInt(freshAccount.data.free.toString());
+                        console.log('[DEBUG] Polkadot fresh free balance (planck):', freePlanck.toString());
+                        // small safety buffer: 0.01 DOT (in planck)
+                        const safetyBufferPlanck = BigInt(Math.round(0.01 * 1e10));
+                        const requiredPlanck = planck + estimatedFeePlanck + existentialDepositPlanck + safetyBufferPlanck;
+                        if (freePlanck < requiredPlanck) {
+                            const toDot = (p) => (Number(p) / 1e10).toFixed(8);
+                            try {
+                                await api.disconnect();
+                            }
+                            catch { }
+                            throw new Error(`Insufficient balance for Polkadot transfer. ` +
+                                `Have: ${toDot(freePlanck)} DOT, ` +
+                                `Required: ${toDot(requiredPlanck)} DOT (amount ${toDot(planck)} + estFee ${toDot(estimatedFeePlanck)} + existentialDeposit ${toDot(existentialDepositPlanck)} + buffer 0.01). ` +
+                                `Reduce the amount or top up the account.`);
+                        }
+                    }
+                    catch (preflightErr) {
+                        console.error('Polkadot preflight check failed:', preflightErr?.message || String(preflightErr));
+                        throw preflightErr;
+                    }
                     // Sign and send
                     try {
                         txHash = await new Promise(async (resolve, reject) => {
@@ -1900,6 +1964,95 @@ class WalletController {
                 error: 'Failed to send transaction',
                 details: error instanceof Error ? error.message : String(error),
             });
+        }
+    }
+    /**
+     * Send funds to a Velo user identified by username.
+     * This resolves the recipient's address for the given chain/network and delegates
+     * to the existing sendTransaction method to perform the actual send (including PIN checks).
+     * POST /wallet/send/by-username
+     * Body: { username, chain, network, amount, fromAddress?, transactionPin }
+     */
+    static async sendByUsername(req, res) {
+        try {
+            const { username, chain, network, amount } = req.body;
+            if (!req.user || !req.user.id) {
+                res.status(401).json({ error: 'Unauthorized' });
+                return;
+            }
+            if (!username || !chain || !network || !amount) {
+                res.status(400).json({ error: 'Missing required fields: username, chain, network, amount' });
+                return;
+            }
+            // Resolve username -> user
+            const userRepo = database_1.AppDataSource.getRepository(User_1.User);
+            const recipient = await userRepo.findOne({ where: { username } });
+            if (!recipient) {
+                res.status(404).json({ error: 'Recipient username not found' });
+                return;
+            }
+            // Prevent sending to self
+            if (recipient.id === req.user.id) {
+                res.status(400).json({ error: 'Cannot send to your own username' });
+                return;
+            }
+            // Resolve recipient address for chain/network
+            const addressRepo = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
+            const recipientAddr = await addressRepo.findOne({ where: { userId: recipient.id, chain, network } });
+            if (!recipientAddr || !recipientAddr.address) {
+                res.status(404).json({ error: 'Recipient does not have a wallet for the requested chain/network' });
+                return;
+            }
+            // Inject resolved toAddress into request body and delegate to existing sendTransaction
+            req.body.toAddress = recipientAddr.address;
+            // Reuse existing sendTransaction which performs PIN checks, fee handling, DB writes, notifications etc.
+            await WalletController.sendTransaction(req, res);
+            // After sendTransaction completes, create a receive notification for the recipient (best-effort).
+            (async () => {
+                try {
+                    // Determine sender address for this chain/network (may have been provided by client)
+                    const addressRepo = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
+                    let senderAddress = req.body?.fromAddress;
+                    if (!senderAddress) {
+                        const senderAddrRec = await addressRepo.findOne({ where: { userId: req.user.id, chain, network } });
+                        if (senderAddrRec)
+                            senderAddress = senderAddrRec.address;
+                    }
+                    // Currency label -- simple mapping similar to sendTransaction
+                    const currency = (() => {
+                        const map = {
+                            starknet: 'STRK',
+                            ethereum: 'ETH',
+                            usdt_erc20: 'USDT',
+                            solana: 'SOL',
+                            bitcoin: 'BTC',
+                            stellar: 'XLM',
+                            polkadot: 'DOT',
+                        };
+                        return map[chain] || chain.toUpperCase();
+                    })();
+                    // Best-effort notify recipient that they will receive / have received funds
+                    try {
+                        if (!recipient || !recipient.id) {
+                            console.warn('Recipient record missing id; skipping receive notification');
+                        }
+                        else {
+                            await notificationService_1.NotificationService.notifyReceiveMoney(recipient.id, String(amount), currency, senderAddress || 'unknown', undefined, { chain, network, toAddress: recipientAddr.address, fromUserId: req.user.id });
+                        }
+                    }
+                    catch (notifyErr) {
+                        console.warn('Failed to notify recipient after sendByUsername:', notifyErr?.message || String(notifyErr));
+                    }
+                }
+                catch (bgErr) {
+                    console.warn('Background recipient notification failed (sendByUsername):', bgErr?.message || String(bgErr));
+                }
+            })();
+            return;
+        }
+        catch (err) {
+            console.error('sendByUsername error:', err);
+            res.status(500).json({ error: 'Failed to send by username', details: err?.message || String(err) });
         }
     }
     /**
