@@ -17,11 +17,13 @@ import adminRoute from './routes/adminRoute';
 import publicRoute from './routes/publicRoute';
 // import swapRoute from './routes/swapRoute';
 import feeRoute from './routes/feeRoute';
-// import changellyRoute from './routes/changellyRoute';
+import changellyRoute from './routes/changellyRoute';
 import airtimeRoutes from "./routes/airtime";
 import dataRoutes from "./routes/data";
 import electricityRoutes from "./routes/electricity";
-import changellyRouter from './controllers/changellyController';
+// Changelly routes are currently implemented in `src/routes/changellyRoute.ts` but
+// that file has its exports commented out while the feature is in progress.
+// Do not import controllers as routers — mount the routes file when it's ready.
 
 // Load environment variables
 dotenv.config();
@@ -42,9 +44,8 @@ app.get('/', (req, res) => {
     res.send('Velo Backend Server is running!');
 });
 
-// app.use('/fiat', changellyRoute);
-// app.use('/fiat', fiatRoutes);
-app.use('/api/fiat/changelly', changellyRouter);
+// TODO: enable Changelly routes when `src/routes/changellyRoute.ts` exports a router
+app.use('/api/fiat', changellyRoute);
 app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/wallet', walletRouter);
