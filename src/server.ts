@@ -18,6 +18,7 @@ import publicRoute from './routes/publicRoute';
 // import swapRoute from './routes/swapRoute';
 import feeRoute from './routes/feeRoute';
 import changellyRoute from './routes/changellyRoute';
+import moonpayRoute from './routes/moonpayRoute';
 import airtimeRoutes from "./routes/airtime";
 import dataRoutes from "./routes/data";
 import electricityRoutes from "./routes/electricity";
@@ -46,6 +47,7 @@ app.get('/', (req, res) => {
 
 // TODO: enable Changelly routes when `src/routes/changellyRoute.ts` exports a router
 app.use('/api/fiat', changellyRoute);
+app.use('/api/moonpay', moonpayRoute);
 app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/wallet', walletRouter);
