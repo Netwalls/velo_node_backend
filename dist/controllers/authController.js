@@ -431,74 +431,41 @@ class AuthController {
             }
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const refreshTokenRepository = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
-            let user = await userRepository.findOne({ where: { email } });
+            const user = await userRepository.findOne({ where: { email } });
             if (!user) {
-                // Auto-create user since Google verified email
-                const randomPwd = Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
-                const created = await (0, userService_1.createUserIfNotExists)(email, randomPwd);
-                if (!created) {
-                    // Race: user was created between checks, re-fetch
-                    const reUser = await userRepository.findOne({ where: { email } });
-                    if (!reUser) {
-                        return res.status(500).json({ error: 'Failed to create user' });
-                    }
-                    // continue with reUser below
-                    // assign to user variable so following logic proceeds
-                    user = reUser;
-                }
-                else {
-                    // mark email verified and set name if present
-                    created.isEmailVerified = true;
-                    if (name) {
-                        const parts = name.split(' ');
-                        created.firstName = parts.shift();
-                        created.lastName = parts.join(' ');
-                    }
-                    await database_1.AppDataSource.getRepository(User_1.User).save(created);
-                    // Generate wallets and addresses (same as register)
-                    try {
-                        const eth = (0, keygen_1.generateEthWallet)();
-                        const btc = (0, keygen_1.generateBtcWallet)();
-                        const sol = (0, keygen_1.generateSolWallet)();
-                        const stellar = (0, keygen_1.generateStellarWallet)();
-                        const polkadot = await (0, keygen_1.generatePolkadotWallet)();
-                        const strk = (0, keygen_1.generateStrkWallet)();
-                        const tron = (0, keygen_1.generateEthWallet)();
-                        const addresses = [
-                            { chain: 'ethereum', network: 'mainnet', address: eth.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey) },
-                            { chain: 'ethereum', network: 'testnet', address: eth.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey) },
-                            { chain: 'bitcoin', network: 'mainnet', address: btc.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(btc.mainnet.privateKey) },
-                            { chain: 'bitcoin', network: 'testnet', address: btc.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(btc.testnet.privateKey) },
-                            { chain: 'solana', network: 'mainnet', address: sol.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(sol.mainnet.privateKey) },
-                            { chain: 'solana', network: 'testnet', address: sol.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(sol.testnet.privateKey) },
-                            { chain: 'starknet', network: 'mainnet', address: strk.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(strk.mainnet.privateKey) },
-                            { chain: 'starknet', network: 'testnet', address: strk.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(strk.testnet.privateKey) },
-                            { chain: 'usdt_erc20', network: 'mainnet', address: eth.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey) },
-                            { chain: 'usdt_erc20', network: 'testnet', address: eth.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey) },
-                            { chain: 'usdt_trc20', network: 'mainnet', address: tron.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(tron.mainnet.privateKey) },
-                            { chain: 'usdt_trc20', network: 'testnet', address: tron.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(tron.testnet.privateKey) },
-                            { chain: 'stellar', network: 'mainnet', address: stellar.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.mainnet.privateKey) },
-                            { chain: 'stellar', network: 'testnet', address: stellar.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.testnet.privateKey) },
-                            { chain: 'polkadot', network: 'mainnet', address: polkadot.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.mainnet.privateKey) },
-                            { chain: 'polkadot', network: 'testnet', address: polkadot.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.testnet.privateKey) },
-                        ];
-                        await (0, userService_1.saveUserAddresses)(created, addresses);
-                        await notificationService_1.NotificationService.notifyRegistration(created.id, { email: created.email, registrationDate: new Date(), addressCount: addresses.length }).catch(err => console.error('notify reg failed', err));
-                        // set user variable to the created user for downstream token issuance
-                        user = created;
-                    }
-                    catch (addrErr) {
-                        console.error('Failed to generate wallets for google-created user', addrErr);
-                    }
-                }
+                // User not found — do not auto-create here. Let the frontend route the user to signup.
+                return res.json({ exists: false, email, name });
             }
             // Ensure user is available for downstream operations
             if (!user) {
                 return res.status(500).json({ error: 'Failed to retrieve or create user' });
             }
             // If Google verified the email but our DB flag isn't set, mark it verified
+            // If Google verified the email but our DB flag isn't set, mark it verified
             if (emailVerified && !user.isEmailVerified) {
                 user.isEmailVerified = true;
+            }
+            // Only populate firstName/lastName from Google if the user hasn't set them previously.
+            // This prevents overwriting user-updated profile fields with Google token values.
+            if (name) {
+                const parts = name.split(' ');
+                const gFirst = parts.shift();
+                const gLast = parts.join(' ');
+                let shouldSave = false;
+                if (!user.firstName && gFirst) {
+                    user.firstName = gFirst;
+                    shouldSave = true;
+                }
+                if (!user.lastName && gLast) {
+                    user.lastName = gLast;
+                    shouldSave = true;
+                }
+                if (shouldSave || (emailVerified && !user.isEmailVerified)) {
+                    await userRepository.save(user);
+                }
+            }
+            else if (emailVerified && !user.isEmailVerified) {
+                // No name to set but still need to persist email verification
                 await userRepository.save(user);
             }
             // Issue tokens (same as login)
@@ -515,21 +482,181 @@ class AuthController {
                 expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             });
             await refreshTokenRepository.save(refreshTokenEntity);
+            // Fetch full user profile (addresses, kyc) for consistent frontend shape
+            const fullUser = await userRepository.findOne({ where: { id: user.id }, relations: ['addresses', 'kycDocument'] });
             return res.json({
                 exists: true,
                 accessToken,
                 refreshToken,
                 user: {
-                    id: user.id,
-                    email: user.email,
-                    firstName: user.firstName,
-                    lastName: user.lastName,
-                    isEmailVerified: user.isEmailVerified,
+                    id: fullUser.id,
+                    email: fullUser.email,
+                    firstName: fullUser.firstName,
+                    lastName: fullUser.lastName,
+                    phoneNumber: fullUser.phoneNumber,
+                    username: fullUser.username,
+                    displayPicture: fullUser.displayPicture,
+                    isEmailVerified: fullUser.isEmailVerified,
+                    hasTransactionPin: !!fullUser.transactionPin,
+                    kycStatus: fullUser.kycStatus,
+                    kyc: fullUser.kycDocument,
+                    addresses: fullUser.addresses,
+                    bankDetails: {
+                        bankName: fullUser.bankName,
+                        accountNumber: fullUser.accountNumber,
+                        accountName: fullUser.accountName,
+                    },
+                    createdAt: fullUser.createdAt,
                 },
             });
         }
         catch (error) {
             console.error('Google sign-in error:', error);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+    /**
+     * Google Sign-up
+     * - Verifies idToken with Google
+     * - Ensures email_verified is true
+     * - Creates a new user (if not exists) and generates wallets/addresses
+     * - Issues access + refresh tokens and returns user + tokens
+     */
+    static async googleSignup(req, res) {
+        try {
+            const { idToken } = req.body;
+            if (!idToken) {
+                return res.status(400).json({ error: 'idToken is required' });
+            }
+            // Verify ID token with Google
+            let email;
+            let emailVerified = false;
+            let name;
+            try {
+                const resp = await axios_1.default.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+                const data = resp.data;
+                email = data.email;
+                emailVerified = data.email_verified === true || data.email_verified === 'true';
+                name = data.name;
+                // Verify audience and issuer
+                const aud = data.aud || data.audience || data.client_id;
+                const issuer = data.iss || data.issuer;
+                const expectedAud = process.env.GOOGLE_CLIENT_ID;
+                if (expectedAud && aud && expectedAud !== String(aud)) {
+                    console.error('[AUTH][Google][Signup] Token audience mismatch', { expectedAud, aud });
+                    return res.status(400).json({ error: 'Invalid Google ID token (audience mismatch)' });
+                }
+                if (issuer && issuer !== 'accounts.google.com' && issuer !== 'https://accounts.google.com') {
+                    console.error('[AUTH][Google][Signup] Token issuer unexpected', issuer);
+                    return res.status(400).json({ error: 'Invalid Google ID token (issuer mismatch)' });
+                }
+            }
+            catch (err) {
+                console.error('Failed to verify Google id_token (signup):', err?.response?.data || err);
+                return res.status(400).json({ error: 'Invalid Google ID token' });
+            }
+            if (!email) {
+                return res.status(400).json({ error: 'Email not available from Google token' });
+            }
+            if (!emailVerified) {
+                return res.status(400).json({ error: 'Google email not verified' });
+            }
+            const userRepository = database_1.AppDataSource.getRepository(User_1.User);
+            const refreshTokenRepository = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
+            // Attempt to create user; if already exists, return conflict
+            const randomPwd = Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
+            const created = await (0, userService_1.createUserIfNotExists)(email, randomPwd);
+            if (!created) {
+                // User already exists
+                return res.status(409).json({ error: 'User already exists' });
+            }
+            // Set verified and names
+            created.isEmailVerified = true;
+            if (req.body.firstName)
+                created.firstName = req.body.firstName;
+            if (req.body.lastName)
+                created.lastName = req.body.lastName;
+            if (!created.firstName && name) {
+                const parts = name.split(' ');
+                created.firstName = parts.shift();
+                created.lastName = parts.join(' ');
+            }
+            await userRepository.save(created);
+            // Generate wallets and addresses (same as register)
+            try {
+                const eth = (0, keygen_1.generateEthWallet)();
+                const btc = (0, keygen_1.generateBtcWallet)();
+                const sol = (0, keygen_1.generateSolWallet)();
+                const stellar = (0, keygen_1.generateStellarWallet)();
+                const polkadot = await (0, keygen_1.generatePolkadotWallet)();
+                const strk = (0, keygen_1.generateStrkWallet)();
+                const tron = (0, keygen_1.generateEthWallet)();
+                const addresses = [
+                    { chain: 'ethereum', network: 'mainnet', address: eth.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey) },
+                    { chain: 'ethereum', network: 'testnet', address: eth.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey) },
+                    { chain: 'bitcoin', network: 'mainnet', address: btc.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(btc.mainnet.privateKey) },
+                    { chain: 'bitcoin', network: 'testnet', address: btc.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(btc.testnet.privateKey) },
+                    { chain: 'solana', network: 'mainnet', address: sol.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(sol.mainnet.privateKey) },
+                    { chain: 'solana', network: 'testnet', address: sol.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(sol.testnet.privateKey) },
+                    { chain: 'starknet', network: 'mainnet', address: strk.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(strk.mainnet.privateKey) },
+                    { chain: 'starknet', network: 'testnet', address: strk.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(strk.testnet.privateKey) },
+                    { chain: 'usdt_erc20', network: 'mainnet', address: eth.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey) },
+                    { chain: 'usdt_erc20', network: 'testnet', address: eth.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey) },
+                    { chain: 'usdt_trc20', network: 'mainnet', address: tron.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(tron.mainnet.privateKey) },
+                    { chain: 'usdt_trc20', network: 'testnet', address: tron.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(tron.testnet.privateKey) },
+                    { chain: 'stellar', network: 'mainnet', address: stellar.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.mainnet.privateKey) },
+                    { chain: 'stellar', network: 'testnet', address: stellar.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.testnet.privateKey) },
+                    { chain: 'polkadot', network: 'mainnet', address: polkadot.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.mainnet.privateKey) },
+                    { chain: 'polkadot', network: 'testnet', address: polkadot.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.testnet.privateKey) },
+                ];
+                await (0, userService_1.saveUserAddresses)(created, addresses);
+                await notificationService_1.NotificationService.notifyRegistration(created.id, { email: created.email, registrationDate: new Date(), addressCount: addresses.length }).catch(err => console.error('notify reg failed', err));
+            }
+            catch (addrErr) {
+                console.error('Failed to generate wallets for google-signup user', addrErr);
+            }
+            // Issue tokens
+            if (!created.id || !created.email) {
+                return res.status(500).json({ error: 'User data incomplete after creation' });
+            }
+            const payload = { userId: created.id, email: created.email };
+            const accessToken = (0, jwt_1.generateAccessToken)(payload);
+            const refreshToken = (0, jwt_1.generateRefreshToken)(payload);
+            const refreshTokenEntity = refreshTokenRepository.create({
+                token: refreshToken,
+                userId: created.id,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            });
+            await refreshTokenRepository.save(refreshTokenEntity);
+            // Return full profile for consistency with other auth flows
+            const createdFull = await userRepository.findOne({ where: { id: created.id }, relations: ['addresses', 'kycDocument'] });
+            return res.status(201).json({
+                accessToken,
+                refreshToken,
+                user: {
+                    id: createdFull.id,
+                    email: createdFull.email,
+                    firstName: createdFull.firstName,
+                    lastName: createdFull.lastName,
+                    phoneNumber: createdFull.phoneNumber,
+                    username: createdFull.username,
+                    displayPicture: createdFull.displayPicture,
+                    isEmailVerified: createdFull.isEmailVerified,
+                    hasTransactionPin: !!createdFull.transactionPin,
+                    kycStatus: createdFull.kycStatus,
+                    kyc: createdFull.kycDocument,
+                    addresses: createdFull.addresses,
+                    bankDetails: {
+                        bankName: createdFull.bankName,
+                        accountNumber: createdFull.accountNumber,
+                        accountName: createdFull.accountName,
+                    },
+                    createdAt: createdFull.createdAt,
+                },
+            });
+        }
+        catch (error) {
+            console.error('Google signup error:', error);
             return res.status(500).json({ error: 'Internal server error' });
         }
     }

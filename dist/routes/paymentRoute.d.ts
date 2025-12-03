@@ -1,3 +1,3 @@
 declare const router: import("express-serve-static-core").Router;
 export default router;
-//# sourceMappingURL=changellyController.d.ts.map
+//# sourceMappingURL=paymentRoute.d.ts.map

@@ -1,164 +1,193 @@
-import crypto from 'crypto';
-import { Request, Response } from 'express';
-import { FiatTransaction } from '../entities/FiatTransaction';
-import { paystackConfig } from '../services/paystack/config';
-import { AppDataSource } from '../config/database';
-import { User } from '../entities/User';
+import crypto from "crypto";
+import { Request, Response } from "express";
+import { FiatTransaction } from "../entities/FiatTransaction";
+import { paystackConfig } from "../services/paystack/config";
+import { AppDataSource } from "../config/database";
+import { User } from "../entities/User";
 import initializeTransaction, {
-  InitPaymentInput,
-} from '../services/paystack/paystackService';
-import { nanoid } from 'nanoid';
-import calculateTotalCharge from '../services/paystack/feeService';
-import dotenv from 'dotenv';
+       InitPaymentInput,
+} from "../services/paystack/paystackService";
+import { nanoid } from "nanoid";
+import calculateTotalCharge from "../services/paystack/feeService";
+import dotenv from "dotenv";
+import { log } from "console";
 dotenv.config();
 
 interface PaystackWebhookBody {
-  event: string;
-  data: {
-    reference: string;
-    amount: number;
-    [key: string]: any;
-  };
+       event: string;
+       data: {
+              reference: string;
+              amount: number;
+              [key: string]: any;
+       };
 }
 
-const fundWallet = async (req: Request, res: Response) => {
-  try {
-    const userRepository = AppDataSource.getRepository(User);
-    const transactionRepository = AppDataSource.getRepository(FiatTransaction);
+export class PaystackController {
+       private userRepository = AppDataSource.getRepository(User);
+       private transactionRepository =
+              AppDataSource.getRepository(FiatTransaction);
 
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
+       public fundWallet = async (req: Request, res: Response) => {
+              try {
+                     const userId = req.user?.id;
+                     if (!userId) {
+                            return res
+                                   .status(401)
+                                   .json({ message: "Unauthorized" });
+                     }
 
-    const user = await userRepository.findOne({
-      where: { id: userId },
-    });
+                     const user = await this.userRepository.findOne({
+                            where: { id: userId },
+                     });
 
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
+                     if (!user) {
+                            return res
+                                   .status(404)
+                                   .json({ message: "User not found" });
+                     }
 
-    const { amount, paymentDescription, crypto } = req.body;
+                     const { amount, paymentDescription, crypto } = req.body;
 
-    if (!amount || typeof amount !== 'number' || isNaN(amount)) {
-      return res.status(400).json({ error: 'Valid amount is required' });
-    }
+                     if (
+                            !amount ||
+                            typeof amount !== "number" ||
+                            isNaN(amount)
+                     ) {
+                            return res
+                                   .status(400)
+                                   .json({ error: "Valid amount is required" });
+                     }
 
-    if (amount < 1000) {
-      return res
-        .status(400)
-        .json({ error: 'Amount to be funded must be greater than 1000NGN' });
-    }
+                     if (amount < 1000) {
+                            return res.status(400).json({
+                                   error: "Amount to be funded must be greater than 1000NGN",
+                            });
+                     }
 
-    // Generate unique reference
-    const paymentReference = `VELO_REF_${Date.now()}_${nanoid(8)}`;
+                     if (!crypto || typeof crypto !== "string") {
+                            return res.status(400).json({
+                                   error: "Valid crypto currency is required",
+                            });
+                     }
 
-    const fees = calculateTotalCharge(Number(amount));
+                     // Generate unique reference
+                     const paymentRef = `VELO_REF_${Date.now()}_${nanoid(8)}`;
 
-    const response = await initializeTransaction({
-      amount: fees.totalToCharge,
-      customerEmail: user.email,
-      crypto: crypto,
-      paymentReference: paymentReference,
-      paymentDescription: 'Wallet Funding',
-      redirectUrl: `${process.env.FRONTEND_DOMAIN}/dashboard`,
-    });
+                     const fees = calculateTotalCharge(Number(amount));
 
-    // Save transaction in DB
-    const transaction = transactionRepository.create({
-      userId: user.id,
-      amount: fees.userAmount,
-      reference: paymentReference,
-      crypto,
-      status: 'pending',
-      paymentDescription,
-    });
+                     // Validate crypto currency
+                     if (!crypto || typeof crypto !== "string") {
+                            return res.status(400).json({
+                                   error: "Valid crypto currency is required",
+                            });
+                     }
 
-    await transactionRepository.save(transaction);
+                     // build the response for the transaction
+                     const response = await initializeTransaction({
+                            amount: fees.totalToCharge,
+                            customerEmail: user.email,
+                            crypto: crypto,
+                            paymentReference: paymentRef,
+                            paymentDescription: paymentDescription,
+                            redirectUrl: `${process.env.FRONTEND_DOMAIN}`,
+                     });
 
-    // Return response for frontend
-    return res.status(200).json({
-      message: 'Transaction initialized. Please complete payment.',
-      checkoutUrl: response.data.authorization_url,
-      reference: paymentReference,
-    });
-  } catch (error: any) {
-    console.error(error);
-    res.status(500).json({ message: 'Failed to fund wallet' });
-  }
-};
+                     // Save transaction in DB
+                     const transaction = this.transactionRepository.create({
+                            userId: user.id,
+                            amount: fees.userAmount,
+                            reference: paymentRef,
+                            crypto,
+                            status: "pending",
+                            paymentDescription,
+                     });
 
-const verifyTransactionWithWebhook = async (
-  req: Request<{}, {}, PaystackWebhookBody>,
-  res: Response
-) => {
-  try {
-    const signature = req.headers['x-paystack-signature'] as string;
-    const payload = JSON.stringify(req.body);
+                     await this.transactionRepository.save(transaction);
 
-    if (!paystackConfig.secretKey) {
-      throw new Error('PAYSTACK_SECRET_KEY is not set in environment');
-    }
+                     // Return response for frontend
+                     return res.status(200).json({
+                            message: "Transaction initialized. Please complete payment.",
+                            checkoutUrl: response.data.authorization_url,
+                            reference: paymentRef,
+                     });
+              } catch (error: any) {
+                     console.error(error);
+                     res.status(500).json({ message: "Failed to fund wallet" });
+              }
+       };
 
-    const expectedSignature = crypto
-      .createHmac('sha512', paystackConfig.secretKey)
-      .update(payload)
-      .digest('hex');
+       public verifyTransactionWithWebhook = async (
+              req: Request<{}, {}, PaystackWebhookBody>,
+              res: Response,
+       ) => {
+              try {
+                     const signature = req.headers[
+                            "x-paystack-signature"
+                     ] as string;
+                     const payload = JSON.stringify(req.body);
 
-    if (signature !== expectedSignature) {
-      logger.warn('Invalid Paystack webhook signature');
-      return res
-        .status(430)
-        .json({ success: false, error: 'Invalid signature' });
-    }
+                     if (!paystackConfig.secretKey) {
+                            throw new Error(
+                                   "PAYSTACK_SECRET_KEY is not set in environment",
+                            );
+                     }
 
-    const { event, data } = req.body;
+                     const expectedSignature = crypto
+                            .createHmac("sha512", paystackConfig.secretKey)
+                            .update(payload)
+                            .digest("hex");
 
-    if (event !== 'charge.success') {
-      return res.status(200).json({
-        message: 'Paystack Webhook acknowledged: Skipped processing',
-      });
-    }
+                     if (signature !== expectedSignature) {
+                            return res.status(430).json({
+                                   success: false,
+                                   error: "Invalid signature",
+                            });
+                     }
 
-    const reference = data.reference;
-    const amountPaid = data.amount / 100; // convert kobo → Naira
+                     const { event, data } = req.body;
 
-    const transactionRepository = AppDataSource.getRepository(FiatTransaction);
+                     if (event !== "charge.success") {
+                            return res.status(200).json({
+                                   message: "Paystack Webhook acknowledged: Skipped processing",
+                            });
+                     }
 
-    const transaction = await transactionRepository.findOne({
-      where: { reference },
-    });
+                     const reference = data.reference;
+                     const amountPaid = data.amount / 100; // convert kobo → Naira
 
-    if (!transaction) {
-      return res
-        .status(404)
-        .json({ success: false, error: 'Transaction not found' });
-    }
+                     const transaction =
+                            await this.transactionRepository.findOne({
+                                   where: { reference },
+                            });
 
-    if (transaction.status === 'success') {
-      return res.status(200).json({
-        message: 'Transaction has been processed earlier',
-      });
-    }
+                     if (!transaction) {
+                            return res.status(404).json({
+                                   success: false,
+                                   error: "Transaction not found",
+                            });
+                     }
 
-    // Mark transaction as successful
-    transaction.status = 'success';
-    await transactionRepository.save(transaction);
+                     if (transaction.status === "success") {
+                            return res.status(200).json({
+                                   message: "Transaction has been processed earlier",
+                            });
+                     }
 
-    return res.status(200).json({
-      success: true,
-      message: 'Transaction verified successfully',
-      reference,
-      amountPaid,
-    });
-  } catch (error: any) {
-    return res
-      .status(500)
-      .json({ success: false, error: 'Internal server error' });
-  }
-};
+                     // Mark transaction as successful
+                     transaction.status = "success";
+                     await this.transactionRepository.save(transaction);
 
-
-
-export { fundWallet, verifyTransactionWithWebhook };
+                     return res.status(200).json({
+                            success: true,
+                            message: "Transaction verified successfully",
+                            reference,
+                            amountPaid,
+                     });
+              } catch (error: any) {
+                     return res.status(500).json({
+                            success: false,
+                            error: "Internal server error",
+                     });
+              }
+       };
+}
