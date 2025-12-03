@@ -1,17 +1,15 @@
+// src/routes/changellyRoute.ts
 import { Router } from 'express';
-// import { ChangellyRampController } from '../controllers/changellyController';
-// import { authMiddleware } from '../middleware/auth';
+import { ChangellyController } from '../controllers/changellyController';
+import { authMiddleware } from '../middleware/auth'; // ← Your existing auth
 
-// const router = Router();
+const router = Router();
 
-// // On-Ramp: Buy crypto with NGN
-// router.post('/deposit', ChangellyRampController.deposit);
+// Protected route — real user ID from JWT/session
+router.post('/deposit', authMiddleware, ChangellyController.createDepositOrder);
 
-// // Off-Ramp: Sell crypto for NGN
-// router.post('/withdraw', authMiddleware, ChangellyRampController.withdraw);
+// Webhook endpoint for Changelly to notify order status updates
+// Note: this route is intentionally left unauthenticated because the provider will call it.
+router.post('/webhook', ChangellyController.changellyWebhook);
 
-// // Get quotes without creating orders
-// router.post('/quote/buy', authMiddleware, ChangellyRampController.getBuyQuote);
-// router.post('/quote/sell', authMiddleware, ChangellyRampController.getSellQuote);
-
-// export default router;
+export default router;

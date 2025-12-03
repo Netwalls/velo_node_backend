@@ -1,0 +1,202 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "VELO Auth Service API",
+    "version": "1.0.0",
+    "description": "Authentication service for VELO - register, login, password reset, OTP"
+  },
+  "servers": [
+    { "url": "http://localhost:3001" }
+  ],
+  "security": [
+    {
+      "AUTH": []
+    }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "security": [],
+        "summary": "Register a new user",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "email": { "type": "string" }, "password": { "type": "string" } }, "required": ["email","password"] } } } },
+        "responses": { "201": { "description": "User created" }, "400": { "description": "Bad request" } }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "security": [],
+        "summary": "Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+            "401": {
+              "description": "Unauthorized",
+              "content": {
+                "application/json": {
+                  "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                  "examples": {
+                    "invalidCredentials": {
+                      "summary": "Invalid credentials",
+                      "value": {
+                        "success": false,
+                        "error": {
+                          "code": "UNAUTHORIZED",
+                          "message": "Invalid credentials",
+                          "timestamp": "2025-11-29T15:30:19.547Z"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        }
+      }
+    },
+    "/api/auth/google": {
+      "post": {
+        "security": [],
+        "summary": "Google sign-in / register",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GoogleSignInRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "Signed in", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/verify-otp": {
+      "post": {
+        "security": [],
+        "summary": "Verify OTP",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VerifyOTPRequest" } } } },
+        "responses": {
+          "200": { "description": "OTP verified", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuthResponse" } } } },
+          "400": { "description": "Invalid OTP", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/auth/resend-otp": {
+      "post": {
+        "security": [],
+        "summary": "Resend OTP to user",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ResendOTPRequest" } } } },
+        "responses": {
+          "200": { "description": "OTP resent" },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "security": [{ "AUTH": [] }],
+        "summary": "Logout and revoke refresh token",
+        "requestBody": { "required": false },
+        "responses": {
+          "200": { "description": "Logged out" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "security": [],
+        "summary": "Request a password reset",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" } } } },
+        "responses": {
+          "200": { "description": "Password reset email sent" },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "AUTH": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Provide a JWT token as: `Bearer <token>`"
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "email": { "type": "string" }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "user": { "$ref": "#/components/schemas/User" },
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "description": "Indicates overall success of the request" },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "details": { "type": "object", "additionalProperties": true }
+            }
+          }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string" },
+          "password": { "type": "string" }
+        },
+        "required": ["email", "password"]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string" },
+          "password": { "type": "string" }
+        },
+        "required": ["email", "password"]
+      },
+      "GoogleSignInRequest": {
+        "type": "object",
+        "properties": { "idToken": { "type": "string" } },
+        "required": ["idToken"]
+      },
+      "VerifyOTPRequest": {
+        "type": "object",
+        "properties": { "email": { "type": "string" }, "otp": { "type": "string" } },
+        "required": ["email", "otp"]
+      },
+      "ResendOTPRequest": {
+        "type": "object",
+        "properties": { "email": { "type": "string" } },
+        "required": ["email"]
+      },
+      "ForgotPasswordRequest": {
+        "type": "object",
+        "properties": { "email": { "type": "string" } },
+        "required": ["email"]
+      }
+    }
+  }
+}

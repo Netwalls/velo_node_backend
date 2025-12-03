@@ -4,6 +4,12 @@ import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 dotenv.config();
 
+// // src/changelly.js
+// import crypto from "crypto";
+// import fetch from "node-fetch";
+// import dotenv from "dotenv";
+// dotenv.config();
+
 const API_URL = process.env.CHANGELLY_API_URL;
 const PUBLIC_KEY = process.env.CHANGELLY_PUBLIC_KEY;
 const PRIVATE_KEY_B64 = process.env.CHANGELLY_PRIVATE_KEY;
@@ -35,7 +41,9 @@ async function signedRequest(
     .sign('sha256', Buffer.from(payload), privateKey)
     .toString('base64');
 
-  if (!PUBLIC_KEY) throw new Error('Missing CHANGELLY_PUBLIC_KEY');
+  if (!API_URL || !PUBLIC_KEY) {
+    throw new Error('Missing Changelly API configuration');
+  }
 
   const res = await fetch(url, {
     method,
@@ -126,3 +134,46 @@ export async function createSellOrder({
 export async function getOrderStatus(orderId: string) {
   return signedRequest(`/v1/orders/${orderId}`, null, 'GET');
 }
+
+// // BUY: NGN → Crypto
+// export async function createBuyOrder({ userId, amountNgn, crypto, walletAddress }) {
+//   const externalOrderId = `buy_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+//   const order = await signedRequest("/v1/orders", {
+//     externalOrderId,
+//     externalUserId: userId,
+//     currencyFrom: "NGN",
+//     currencyTo: crypto.toUpperCase(),
+//     amountFrom: String(amountNgn),
+//     walletAddress,
+//     country: "NG",
+//     paymentMethod: "card",
+//     returnSuccessUrl: "https://www.connectvelo.com/wallet",
+//     returnFailedUrl: "https://www.connectvelo.com/wallet",
+//   });
+
+//   return { redirectUrl: order.redirectUrl || order.paymentUrl, orderId: externalOrderId };
+// }
+
+// // SELL: Crypto → NGN
+// export async function createSellOrder({ userId, amountCrypto, crypto }) {
+//   const externalOrderId = `sell_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+//   const order = await signedRequest("/v1/orders", {
+//     externalOrderId,
+//     externalUserId: userId,
+//     currencyFrom: crypto.toUpperCase(),
+//     currencyTo: "NGN",
+//     amountFrom: String(amountCrypto),
+//     country: "NG",
+//     paymentMethod: "bank",
+//     returnSuccessUrl: "https://www.connectvelo.com/wallet",
+//     returnFailedUrl: "https://www.connectvelo.com/wallet",
+//   });
+
+//   return { redirectUrl: order.redirectUrl || order.paymentUrl, orderId: externalOrderId };
+// }
+
+// export async function getOrderStatus(orderId) {
+//   return signedRequest(`/v1/orders/${orderId}`, null, "GET");
+// }

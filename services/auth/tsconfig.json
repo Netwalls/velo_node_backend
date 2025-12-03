@@ -3,7 +3,9 @@
     "target": "ES2020",
     "module": "CommonJS",
     "outDir": "dist",
-    "rootDir": "src",
+    // Allow sources outside the service folder (e.g. ../shared/src)
+    // Set rootDir to the repository root so tsc accepts imports from sibling packages.
+    "rootDir": "../..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -11,5 +13,5 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "../shared/src/**/*"]
 }

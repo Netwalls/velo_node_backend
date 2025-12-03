@@ -1,21 +1,47 @@
-import nodemailer from 'nodemailer';
+/**
+ * Utility for sending emails using Mailtrap's official SDK.
+ * Requires MAILTRAP_TOKEN and MAILTRAP_SENDER in your .env file.
+ * Install dependencies:
+ *   yarn add mailtrap
+ *   # or
+ *   npm install mailtrap
+ */
+import { MailtrapClient } from 'mailtrap';
+import { env } from '../../../../shared/config/env';
 
-const host = process.env.MAIL_HOST || 'smtp.mailtrap.io';
-const port = Number(process.env.MAIL_PORT || 587);
-const user = process.env.MAIL_USER;
-const pass = process.env.MAIL_PASS;
 
-const transporter = nodemailer.createTransport({
-  host,
-  port,
-  auth: user && pass ? { user, pass } : undefined,
-});
+const TOKEN = env.MAILTRAP_TOKEN || '';
+const SENDER_EMAIL = env.MAILTRAP_SENDER || '';
 
-export const sendMailtrapMail = async ({ to, subject, text, html }: { to: string; subject: string; text?: string; html?: string; }) => {
-  if (!user || !pass) {
-    console.warn('Mailtrap credentials not set; printing mail to console.');
-    console.log('To:', to, 'Subject:', subject, 'Text:', text);
-    return;
-  }
-  await transporter.sendMail({ from: process.env.MAIL_FROM || 'noreply@velo.local', to, subject, text, html });
-};
+const client = new MailtrapClient({ token: TOKEN });
+
+
+/**
+ * Send an email using Mailtrap.
+ * @param to Recipient email address
+ * @param subject Email subject
+ * @param text Plain text body
+ * @param html Optional HTML body
+ */
+export async function sendMailtrapMail({
+    to,
+    subject,
+    text,
+    html,
+    fromName = 'Velo',
+}: {
+    to: string;
+    subject: string;
+    text: string;
+    html?: string;
+    fromName?: string;
+}): Promise<void> {
+    const sender = { name: fromName, email: SENDER_EMAIL };
+    await client.send({
+        from: sender,
+        to: [{ email: to }],
+        subject,
+        text,
+        html,
+    });
+}
