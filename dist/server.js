@@ -20,13 +20,17 @@ const qrpaymentRoute_1 = __importDefault(require("./routes/qrpaymentRoute"));
 const adminRoute_1 = __importDefault(require("./routes/adminRoute"));
 const publicRoute_1 = __importDefault(require("./routes/publicRoute"));
 // import swapRoute from './routes/swapRoute';
+// import changellyRouter from './controllers/changellyController';
+const paymentRoute_1 = __importDefault(require("./routes/paymentRoute"));
 const feeRoute_1 = __importDefault(require("./routes/feeRoute"));
-// import changellyRoute from './routes/changellyRoute';
+const changellyRoute_1 = __importDefault(require("./routes/changellyRoute"));
+const moonpayRoute_1 = __importDefault(require("./routes/moonpayRoute"));
 const airtime_1 = __importDefault(require("./routes/airtime"));
 const data_1 = __importDefault(require("./routes/data"));
 const electricity_1 = __importDefault(require("./routes/electricity"));
-// import changellyRouter from './controllers/changellyController';
-const paymentRoute_1 = __importDefault(require("./routes/paymentRoute"));
+// Changelly routes are currently implemented in `src/routes/changellyRoute.ts` but
+// that file has its exports commented out while the feature is in progress.
+// Do not import controllers as routers — mount the routes file when it's ready.
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -50,6 +54,14 @@ app.use("/wallet", walletRoute_1.default);
 app.use("/notification", notificationRoute_1.default);
 app.use("/history", historyRoute_1.default);
 app.use("/payment", paymentRoute_1.default);
+// TODO: enable Changelly routes when `src/routes/changellyRoute.ts` exports a router
+app.use('/api/fiat', changellyRoute_1.default);
+app.use('/api/moonpay', moonpayRoute_1.default);
+// app.use('/auth', authRouter);
+// app.use('/user', userRouter);
+// app.use('/wallet', walletRouter);
+app.use('/notification', notificationRoute_1.default);
+app.use('/history', historyRoute_1.default);
 app.use("/transactions", transactionRoute_1.default);
 app.use("/merchant", qrpaymentRoute_1.default);
 app.use("/split-payment", splitPaymentRoute_1.default);
