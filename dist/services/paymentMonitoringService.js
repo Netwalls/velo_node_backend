@@ -68,9 +68,7 @@ class PaymentMonitoringService {
                 if (!payment.chain || !payment.network || !payment.address)
                     continue;
                 const detected = await checkBlockchainForDeposit(payment.chain, payment.network, payment.address, Number(payment.amount));
-                if (detected &&
-                    detected.txHash &&
-                    detected.confirmations >= 1) {
+                if (detected && detected.txHash && detected.confirmations >= 1) {
                     payment.status = MerchantPayment_2.MerchantPaymentStatus.COMPLETED;
                     payment.txHash = detected.txHash;
                     payment.completedAt = new Date();
@@ -99,14 +97,22 @@ class PaymentMonitoringService {
             const addrRepo = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
             const txRepo = database_1.AppDataSource.getRepository(Transaction_1.Transaction);
             // Fetch all stellar addresses
-            const stellarAddresses = await addrRepo.find({ where: { chain: types_1.ChainType.STELLAR } });
+            const stellarAddresses = await addrRepo.find({
+                where: { chain: types_1.ChainType.STELLAR },
+            });
             for (const addr of stellarAddresses) {
                 try {
                     const horizon = (addr.network || 'mainnet').toLowerCase() === 'testnet'
                         ? STELLAR_HORIZON_TEST
                         : STELLAR_HORIZON_MAIN;
+                    if (!addr.address) {
+                        throw new Error('Address is empty');
+                    }
                     const url = `${horizon}/accounts/${encodeURIComponent(addr.address)}/payments`;
-                    const resp = await require('axios').get(url, { params: { limit: 20, order: 'desc' }, timeout: 10000 });
+                    const resp = await require('axios').get(url, {
+                        params: { limit: 20, order: 'desc' },
+                        timeout: 10000,
+                    });
                     const dataAny = resp.data || {};
                     const records = Array.isArray(dataAny.records)
                         ? dataAny.records
@@ -175,12 +181,17 @@ class PaymentMonitoringService {
                 try {
                     const chain = a.chain;
                     const network = a.network || 'mainnet';
+                    if (!a.address) {
+                        throw new Error('Address is empty');
+                    }
                     // Call with amount = 0 to detect any incoming tx (function returns first matching tx)
                     const detected = await checkBlockchainForDeposit(chain, network, a.address, 0);
                     if (!detected || !detected.txHash)
                         continue;
                     // Skip if already recorded
-                    const already = await txRepo.findOne({ where: { txHash: detected.txHash } });
+                    const already = await txRepo.findOne({
+                        where: { txHash: detected.txHash },
+                    });
                     if (already)
                         continue;
                     // Build incoming payment object and process
@@ -273,8 +284,7 @@ class PaymentMonitoringService {
                 !!payment.txHash &&
                 !!payment.fromAddress &&
                 !!payment.toAddress &&
-                payment.confirmations >=
-                    this.getMinConfirmations(payment.currency));
+                payment.confirmations >= this.getMinConfirmations(payment.currency));
         }
         catch (error) {
             console.error('Payment validation error:', error);
@@ -499,8 +509,7 @@ async function checkBlockchainForDeposit(chain, network, address, amount) {
     //     }
     // USDT ERC20 (Ethereum)
     if (chain.toLowerCase() === 'usdterc20' ||
-        (chain.toLowerCase() === 'usdt' &&
-            network.toLowerCase().includes('erc20'))) {
+        (chain.toLowerCase() === 'usdt' && network.toLowerCase().includes('erc20'))) {
         const apiKey = process.env.ETHERSCAN_API_KEY;
         if (!apiKey) {
             console.error('ETHERSCAN_API_KEY not set');
@@ -514,8 +523,7 @@ async function checkBlockchainForDeposit(chain, network, address, amount) {
             const url = `${baseUrl}/api?module=account&action=tokentx&contractaddress=${usdtContract}&address=${address}&sort=desc&apikey=${apiKey}`;
             const { data } = await axios_1.default.get(url);
             const tokenTxData = data;
-            if (tokenTxData.status !== '1' ||
-                !Array.isArray(tokenTxData.result))
+            if (tokenTxData.status !== '1' || !Array.isArray(tokenTxData.result))
                 return null;
             const requiredAmount = BigInt(Math.floor(amount * 1e6)); // USDT has 6 decimals
             for (const tx of tokenTxData.result) {
@@ -539,8 +547,7 @@ async function checkBlockchainForDeposit(chain, network, address, amount) {
     }
     // USDT TRC20 (Tron)
     if (chain.toLowerCase() === 'usdttrc20' ||
-        (chain.toLowerCase() === 'usdt' &&
-            network.toLowerCase().includes('trc20'))) {
+        (chain.toLowerCase() === 'usdt' && network.toLowerCase().includes('trc20'))) {
         const usdtContract = 'TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj'; // Mainnet USDT contract
         try {
             const url = `https://api.trongrid.io/v1/accounts/${address}/transactions/trc20?limit=20&contract_address=${usdtContract}`;

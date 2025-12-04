@@ -156,8 +156,7 @@ class StrkController {
                 else if (addr.chain === 'solana') {
                     // ... [rest of your solana code]
                 }
-                else if (addr.chain === 'usdt_erc20' ||
-                    addr.chain === 'usdt_trc20') {
+                else if (addr.chain === 'usdt_erc20' || addr.chain === 'usdt_trc20') {
                     balances.push({
                         chain: addr.chain,
                         network: 'testnet',
@@ -284,6 +283,8 @@ class StrkController {
                                         const privateKey = (0, keygen_1.decrypt)(addr.encryptedPrivateKey);
                                         const publicKey = starknet_1.ec.starkCurve.getStarkKey(privateKey);
                                         console.log(`[DEBUG] Private key decrypted, public key: ${publicKey}`);
+                                        if (!addr.address)
+                                            throw new Error('Missing user address.');
                                         // Deploy with STRK fee token
                                         const deployResult = await (0, keygen_2.deployStrkWallet)(provider, privateKey, publicKey, addr.address, false // Skip balance check (we already did it)
                                         );
@@ -320,10 +321,12 @@ class StrkController {
                                         console.log(`  Current: ${balanceFormatted} ${token}`);
                                         console.log(`  Required: 0.5 ${token} minimum`);
                                         console.log(`  💡 You have ${balanceInSTRK} STRK but need ${token === 'ETH' ? 'ETH' : 'more STRK'} to deploy`);
-                                        balances[balances.length - 1].deploymentStatus = 'insufficient_balance';
+                                        balances[balances.length - 1].deploymentStatus =
+                                            'insufficient_balance';
                                         balances[balances.length - 1].requiredToken = token;
                                         balances[balances.length - 1].requiredAmount = '0.5';
-                                        balances[balances.length - 1].currentAmount = balanceFormatted;
+                                        balances[balances.length - 1].currentAmount =
+                                            balanceFormatted;
                                     }
                                 }
                                 catch (deployError) {
@@ -336,7 +339,8 @@ class StrkController {
                                         console.error(`[ERROR] Stack trace:`, deployError.stack);
                                     }
                                     balances[balances.length - 1].deploymentStatus = 'failed';
-                                    balances[balances.length - 1].deploymentError = deployError?.message || 'Unknown error';
+                                    balances[balances.length - 1].deploymentError =
+                                        deployError?.message || 'Unknown error';
                                 }
                             }
                         }

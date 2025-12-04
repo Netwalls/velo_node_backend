@@ -24,6 +24,7 @@ const ProviderOrder_1 = __importDefault(require("../entities/ProviderOrder"));
 const AirtimePurchase_1 = require("../entities/AirtimePurchase"); // ADD THIS IMPORT
 const DataPurchase_1 = require("../entities/DataPurchase");
 const ElectricityPurchase_1 = require("../entities/ElectricityPurchase");
+const FiatTransaction_1 = require("../entities/FiatTransaction");
 exports.AppDataSource = new typeorm_1.DataSource({
     type: 'postgres',
     url: process.env.DATABASE_URL,
@@ -47,6 +48,7 @@ exports.AppDataSource = new typeorm_1.DataSource({
         AirtimePurchase_1.AirtimePurchase, // ADD THIS LINE
         DataPurchase_1.DataPurchase,
         ElectricityPurchase_1.ElectricityPurchase,
+        FiatTransaction_1.FiatTransaction,
     ],
     migrations: ['src/migrations/*.ts'],
     subscribers: ['src/subscribers/*.ts'],
@@ -57,7 +59,7 @@ const connectDB = async () => {
         await exports.AppDataSource.initialize();
         console.log('PostgreSQL Connected successfully');
         // Debug: Check if AirtimePurchase is registered
-        const entityNames = exports.AppDataSource.entityMetadatas.map(meta => meta.name);
+        const entityNames = exports.AppDataSource.entityMetadatas.map((meta) => meta.name);
         console.log('Registered entities:', entityNames);
     }
     catch (error) {

@@ -1,19 +1,19 @@
-export declare function createBuyOrder({ userId, amountNgn, crypto, walletAddress }: {
-    userId: any;
-    amountNgn: any;
-    crypto: any;
-    walletAddress: any;
+export declare function createBuyOrder({ userId, amountNgn, crypto, walletAddress, }: {
+    userId: string;
+    amountNgn: number;
+    crypto: string;
+    walletAddress: string;
 }): Promise<{
-    redirectUrl: any;
+    redirectUrl: string | undefined;
     orderId: string;
 }>;
-export declare function createSellOrder({ userId, amountCrypto, crypto }: {
-    userId: any;
-    amountCrypto: any;
-    crypto: any;
+export declare function createSellOrder({ userId, amountCrypto, crypto, }: {
+    userId: string;
+    amountCrypto: number;
+    crypto: string;
 }): Promise<{
-    redirectUrl: any;
+    redirectUrl: string | undefined;
     orderId: string;
 }>;
-export declare function getOrderStatus(orderId: any): Promise<unknown>;
+export declare function getOrderStatus(orderId: string): Promise<unknown>;
 //# sourceMappingURL=changellyService_impl.d.ts.map

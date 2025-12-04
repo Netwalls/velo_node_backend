@@ -35,6 +35,14 @@ export declare class AuthController {
      */
     static googleSignIn(req: Request, res: Response): Promise<any>;
     /**
+     * Google Sign-up
+     * - Verifies idToken with Google
+     * - Ensures email_verified is true
+     * - Creates a new user (if not exists) and generates wallets/addresses
+     * - Issues access + refresh tokens and returns user + tokens
+     */
+    static googleSignup(req: Request, res: Response): Promise<any>;
+    /**
      * Verify OTP for email verification.
      * - Looks up user by email.
      * - Checks OTP and expiry.
