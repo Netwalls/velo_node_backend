@@ -77,12 +77,16 @@ class AdminController {
             // Sum split executions where some processing completed (completed or partially_failed)
             const splitExecSumRaw = await splitExecRepo
                 .createQueryBuilder('s')
-                .select("COALESCE(SUM(s.totalAmount), 0)", 'sum')
-                .where("s.status IN (:...statuses)", { statuses: ['completed', 'partially_failed'] })
+                .select('COALESCE(SUM(s.totalAmount), 0)', 'sum')
+                .where('s.status IN (:...statuses)', {
+                statuses: ['completed', 'partially_failed'],
+            })
                 .getRawOne();
             const txSum = txSumRaw && txSumRaw.sum ? Number(txSumRaw.sum) : 0;
             const merchantSum = merchantSumRaw && merchantSumRaw.sum ? Number(merchantSumRaw.sum) : 0;
-            const splitExecSum = splitExecSumRaw && splitExecSumRaw.sum ? Number(splitExecSumRaw.sum) : 0;
+            const splitExecSum = splitExecSumRaw && splitExecSumRaw.sum
+                ? Number(splitExecSumRaw.sum)
+                : 0;
             const totalAmount = txSum + merchantSum + splitExecSum;
             // Most used chain by transaction count
             const chainRaw = await txRepo
@@ -142,11 +146,11 @@ class AdminController {
                             else if (a.chain === 'bitcoin') {
                                 const url = (a.network === 'testnet'
                                     ? 'https://blockstream.info/testnet/api/address/'
-                                    : 'https://blockstream.info/api/address/') +
-                                    a.address;
+                                    : 'https://blockstream.info/api/address/') + a.address;
                                 const resp = await axios_1.default.get(url, { timeout: 10000 });
                                 const data = resp.data;
-                                const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) - (data.chain_stats?.spent_txo_sum || 0);
+                                const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) -
+                                    (data.chain_stats?.spent_txo_sum || 0);
                                 bal = balanceInSatoshis / 1e8;
                             }
                             else if (a.chain === 'solana') {
@@ -155,12 +159,16 @@ class AdminController {
                                 const conn = new solWeb.Connection(a.network === 'testnet'
                                     ? `https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                                     : `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
+                                if (!a.address)
+                                    throw new Error('Missing address for Solana balance fetch.');
                                 const pk = new solWeb.PublicKey(a.address);
                                 const b = await conn.getBalance(pk);
                                 bal = b / 1e9;
                             }
                             else if (a.chain === 'stellar') {
-                                const horizon = a.network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
+                                const horizon = a.network === 'testnet'
+                                    ? 'https://horizon-testnet.stellar.org'
+                                    : 'https://horizon.stellar.org';
                                 const resp = await axios_1.default.get(`${horizon}/accounts/${a.address}`, { timeout: 10000 });
                                 const data = resp.data;
                                 const native = (data.balances || []).find((b) => b.asset_type === 'native');
@@ -169,12 +177,22 @@ class AdminController {
                             else if (a.chain === 'polkadot') {
                                 // @ts-ignore
                                 const { ApiPromise, WsProvider } = await Promise.resolve().then(() => __importStar(require('@polkadot/api')));
-                                const wsUrl = a.network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+                                const wsUrl = a.network === 'testnet'
+                                    ? process.env.POLKADOT_WS_TESTNET ||
+                                        'wss://pas-rpc.stakeworld.io'
+                                    : process.env.POLKADOT_WS_MAINNET ||
+                                        'wss://rpc.polkadot.io';
                                 const provider = new WsProvider(wsUrl);
                                 const api = await ApiPromise.create({ provider });
+                                if (!a.address)
+                                    throw new Error('Missing address for balance fetch.');
                                 const derived = await api.derive.balances.account(a.address);
                                 const derivedAny = derived;
-                                const available = (derivedAny && (derivedAny.availableBalance ?? derivedAny.freeBalance ?? derivedAny.free)) || 0;
+                                const available = (derivedAny &&
+                                    (derivedAny.availableBalance ??
+                                        derivedAny.freeBalance ??
+                                        derivedAny.free)) ||
+                                    0;
                                 const PLANCK = BigInt(10 ** 10);
                                 const availableBig = BigInt(String(available));
                                 bal = Number(availableBig / PLANCK);
@@ -196,7 +214,8 @@ class AdminController {
                             }
                         }
                         catch (saveErr) {
-                            console.warn('Background: Failed to persist lastKnownBalance for address', a.address, saveErr && (saveErr.message || String(saveErr)));
+                            console.warn('Background: Failed to persist lastKnownBalance for address', a.address, saveErr &&
+                                (saveErr.message || String(saveErr)));
                         }
                     }
                     console.log('[Admin] Background balance refresh completed');
@@ -292,7 +311,13 @@ class AdminController {
             function ensureChainEntry(k) {
                 const kk = (k || 'unknown').toLowerCase();
                 if (!activityMap[kk])
-                    activityMap[kk] = { send: 0, receive: 0, qr: 0, splitting: 0, total: 0 };
+                    activityMap[kk] = {
+                        send: 0,
+                        receive: 0,
+                        qr: 0,
+                        splitting: 0,
+                        total: 0,
+                    };
                 return kk;
             }
             for (const r of txTypeRows) {
@@ -334,7 +359,9 @@ class AdminController {
                 splitCount += v.splitting;
             }
             // Also include deposit notifications as receives (in case deposits were only logged as notifications)
-            const depositNotifCount = await notificationRepo.count({ where: { type: index_1.NotificationType.DEPOSIT } });
+            const depositNotifCount = await notificationRepo.count({
+                where: { type: index_1.NotificationType.DEPOSIT },
+            });
             receiveCount += depositNotifCount;
             // Determine most used chain by activity total, use holdings USD as tie-breaker
             let computedMostUsed = null;
@@ -346,8 +373,9 @@ class AdminController {
                 }
                 else if (vals.total === maxActivity && vals.total > 0) {
                     // tie-breaker: prefer chain with higher holdings USD
-                    const currentHoldings = holdingsDetailed.find(h => h.chain === computedMostUsed)?.usd || 0;
-                    const challengerHoldings = holdingsDetailed.find(h => h.chain === chain)?.usd || 0;
+                    const currentHoldings = holdingsDetailed.find((h) => h.chain === computedMostUsed)?.usd ||
+                        0;
+                    const challengerHoldings = holdingsDetailed.find((h) => h.chain === chain)?.usd || 0;
                     if ((challengerHoldings || 0) > (currentHoldings || 0)) {
                         computedMostUsed = chain;
                     }
