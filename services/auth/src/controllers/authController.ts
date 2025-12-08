@@ -28,16 +28,11 @@ import {
 import { sendError } from '../../../../shared/errors/response';
 import axios from 'axios';
 import { sendRegistrationEmails } from '../services/emailService';
-
-// Wallet client — uses shared env
-const walletClient = axios.create({
-  baseURL: env.WALLET_SERVICE_URL,
-  headers: {
-    'x-api-key': env.INTERNAL_API_KEY,
-    'Content-Type': 'application/json',
-  },
-  timeout: 8000,
-});
+import {
+  walletClient,
+  broadcastAuthTokens,
+  broadcastLogout,
+} from '../services/internalClients';
 
 export class AuthController {
   // All your methods stay EXACTLY the same
@@ -53,6 +48,7 @@ export class AuthController {
         throw new ConflictError('User already exists');
 
       const otp = generateOTP();
+      console.log('[AUTH] OTP generated for registration', { email, otp, expiry: getOTPExpiry() });
       const user = userRepo.create({
         email,
         password,
@@ -105,6 +101,14 @@ export class AuthController {
 
       // Auto-upgrade wallets with new chains
       walletClient.post('/api/wallet/internal/create-missing', { userId: user.id }).catch(() => {});
+
+      // Broadcast tokens to downstream services
+      broadcastAuthTokens({
+        userId: user.id!,
+        accessToken,
+        refreshToken,
+        email: user.email,
+      }).catch(() => {});
 
       res.json({
         success: true,
@@ -206,10 +210,20 @@ export class AuthController {
       walletClient.post('/internal/create-missing', { userId: user.id }).catch(() => {});
 
       const payload = { userId: user.id!, email: user.email! };
+      const accessToken = generateAccessToken(payload);
+      const refreshToken = generateRefreshToken(payload);
+
+      broadcastAuthTokens({
+        userId: user.id!,
+        accessToken,
+        refreshToken,
+        email: user.email,
+      }).catch(() => {});
+
       res.json({
         exists: true,
-        accessToken: generateAccessToken(payload),
-        refreshToken: generateRefreshToken(payload),
+        accessToken,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -231,6 +245,7 @@ export class AuthController {
       const user = await userRepo.findOne({ where: { email } });
       if (!user) throw new NotFoundError('User not found');
 
+      console.log('[AUTH] Verifying OTP', { email, providedOTP: otp, storedOTP: user.emailOTP, expiry: user.emailOTPExpiry });
       if (user.emailOTP !== otp || isOTPExpired(user.emailOTPExpiry!))
         throw new BadRequestError('Invalid or expired OTP expired');
 
@@ -240,11 +255,21 @@ export class AuthController {
       await userRepo.save(user);
 
       const payload = { userId: user.id!, email: user.email! };
+      const accessToken = generateAccessToken(payload);
+      const refreshToken = generateRefreshToken(payload);
+
+      broadcastAuthTokens({
+        userId: user.id!,
+        accessToken,
+        refreshToken,
+        email: user.email,
+      }).catch(() => {});
+
       res.json({
         success: true,
         message: 'Email verified',
-        accessToken: generateAccessToken(payload),
-        refreshToken: generateRefreshToken(payload),
+        accessToken,
+        refreshToken,
       });
     } catch (err) {
       sendError(res, err);
@@ -261,6 +286,7 @@ export class AuthController {
       if (user.isEmailVerified) throw new BadRequestError('Email already verified');
 
       const otp = generateOTP();
+      console.log('[AUTH] OTP resent', { email, otp, expiry: getOTPExpiry() });
       user.emailOTP = otp;
       user.emailOTPExpiry = getOTPExpiry();
       await userRepo.save(user);
@@ -280,12 +306,20 @@ export class AuthController {
   static async logout(req: Request, res: Response) {
     try {
       const { refreshToken } = req.body;
+      const userId = (req as any).user?.id;
+
       if (refreshToken) {
         await AppDataSource.getRepository(RefreshToken).update(
           { token: refreshToken },
           { isRevoked: true }
         );
       }
+
+      // Notify services of logout
+      if (userId) {
+        broadcastLogout(userId).catch(() => {});
+      }
+
       res.json({ success: true, message: 'Logged out successfully' });
     } catch (err) {
       sendError(res, err);
@@ -327,6 +361,7 @@ static async forgotPassword(req: Request, res: Response) {
 
     if (user) {
       const token = generateOTP();
+      console.log('[AUTH] Password reset token generated', { email, token, expiry: new Date(Date.now() + 15 * 60 * 1000) });
       user.passwordResetToken = token;
       user.passwordResetExpiry = new Date(Date.now() + 15 * 60 * 1000);
       await userRepo.save(user);
