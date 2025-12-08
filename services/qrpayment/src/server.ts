@@ -54,15 +54,21 @@ const allowedOrigins = [
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps, Postman, or curl requests) in development
-    if (!origin && process.env.NODE_ENV !== 'production') {
+    if (!origin) {
       return callback(null, true);
     }
 
-    if (origin && allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // Check if origin is allowed
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
     }
+
+    // Allow local development dynamically
+    if (process.env.NODE_ENV !== 'production' && origin.startsWith('http://localhost:')) {
+      return callback(null, true);
+    }
+
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true, // This allows cookies to be sent
   optionsSuccessStatus: 200 // For legacy browser support
@@ -79,8 +85,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ 
-    ok: true, 
+  res.json({
+    ok: true,
     service: 'qrpayment',
     timestamp: new Date().toISOString(),
     docs: '/api-docs'
@@ -120,7 +126,7 @@ const PORT = process.env.PORT || 3002;
 AppDataSource.initialize()
   .then(() => {
     console.log('✅ QR Payment Service - Database connected');
-    
+
     app.listen(PORT, () => {
       console.log(` QR Payment Service listening on port ${PORT}`);
       console.log(` Health check: http://localhost:${PORT}/health`);

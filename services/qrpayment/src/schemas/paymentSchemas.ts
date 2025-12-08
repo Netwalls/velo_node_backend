@@ -6,7 +6,7 @@ const btcAddressRegex = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^bc1[a-zA-HJ-NP-Z0-9]
 
 export const createPaymentSchema = z.object({
   body: z.object({
-    userId: z.string().uuid({ message: 'Invalid User ID format' }),
+    userId: z.string().uuid({ message: 'Invalid User ID format' }).optional(),
     amount: z.number().positive({ message: 'Amount must be positive' }),
     chain: z.enum(['ethereum', 'bitcoin', 'solana', 'starknet', 'stellar', 'polkadot', 'usdt-erc20']),
     network: z.enum(['mainnet', 'testnet', 'devnet']).optional().default('mainnet'),
@@ -28,7 +28,7 @@ export const createPaymentSchema = z.object({
 
 export const getPaymentsSchema = z.object({
   query: z.object({
-    userId: z.string().uuid({ message: 'Invalid User ID format' }),
+    userId: z.string().uuid({ message: 'Invalid User ID format' }).optional(),
     status: z.enum(['pending', 'completed', 'failed', 'cancelled']).optional(),
     chain: z.string().optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).optional(),
@@ -47,7 +47,7 @@ export const cancelPaymentSchema = z.object({
     id: z.string().uuid({ message: 'Invalid Payment ID format' }),
   }),
   body: z.object({
-    userId: z.string().uuid({ message: 'Invalid User ID format' }),
+    userId: z.string().uuid({ message: 'Invalid User ID format' }).optional(),
   }),
 });
 
@@ -59,6 +59,6 @@ export const monitorPaymentSchema = z.object({
 
 export const getStatsSchema = z.object({
   query: z.object({
-    userId: z.string().uuid({ message: 'Invalid User ID format' }),
+    userId: z.string().uuid({ message: 'Invalid User ID format' }).optional(),
   }),
 });

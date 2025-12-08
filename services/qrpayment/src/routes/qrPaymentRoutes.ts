@@ -93,12 +93,16 @@ const router = Router();
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Valid amount is required"
  *       500:
  *         description: Server error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Failed to create payment request"
  */
 router.post('/create', validate(createPaymentSchema), QRPaymentController.createPayment);
 
@@ -117,6 +121,7 @@ router.post('/create', validate(createPaymentSchema), QRPaymentController.create
  *         schema:
  *           type: string
  *         description: User ID to fetch payments for
+_
  *         example: "user-123-uuid"
  *       - in: query
  *         name: status
@@ -171,18 +176,40 @@ router.post('/create', validate(createPaymentSchema), QRPaymentController.create
  *                       type: number
  *                     hasMore:
  *                       type: boolean
+ *             example:
+ *               payments:
+ *                 - id: "550e8400-e29b-41d4-a716-446655440000"
+ *                   userId: "user-123-uuid"
+ *                   amount: 0.01
+ *                   chain: "ethereum"
+ *                   network: "testnet"
+ *                   address: "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47"
+ *                   status: "pending"
+ *                   qrData": "ethereum:0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47?amount=0.01"
+ *                   createdAt: "2025-12-08T20:30:00.000Z"
+ *                   updatedAt: "2025-12-08T20:30:00.000Z"
+ *               total: 1
+ *               pagination:
+ *                 total: 1
+ *                 limit: 50
+ *                 offset: 0
+ *                 hasMore: false
  *       400:
- *         description: Missing or invalid parameters
+ *         description: Invalid request parameters
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "User ID is required"
  *       500:
  *         description: Server error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Failed to fetch payments"
  */
 router.get('/payments', validate(getPaymentsSchema), QRPaymentController.getPayments);
 
@@ -222,14 +249,18 @@ router.get('/payments', validate(getPaymentsSchema), QRPaymentController.getPaym
  *         description: Payment not found
  *         content:
  *           application/json:
- *             schema:
+ *             schema: 
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Payment not found"
  *       500:
  *         description: Server error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Failed to fetch payment"
  */
 router.get('/payments/:id', validate(paymentIdSchema), QRPaymentController.getPaymentById);
 
@@ -280,20 +311,26 @@ router.get('/payments/:id', validate(paymentIdSchema), QRPaymentController.getPa
  *         description: Cannot cancel payment (not pending or invalid user)
  *         content:
  *           application/json:
- *             schema:
+ *             schema: 
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Payment is not in pending state"
  *       404:
  *         description: Payment not found
  *         content:
  *           application/json:
- *             schema:
+ *             schema: 
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Payment not found"
  *       500:
  *         description: Server error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Failed to cancel payment"
  */
 router.post('/payments/:id/cancel', validate(cancelPaymentSchema), QRPaymentController.cancelPayment);
 
@@ -330,14 +367,18 @@ router.post('/payments/:id/cancel', validate(cancelPaymentSchema), QRPaymentCont
  *         description: Payment not found
  *         content:
  *           application/json:
- *             schema:
+ *             schema: 
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Payment not found"
  *       500:
  *         description: Server error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Failed to check payment status"
  */
 router.get('/payments/:id/status', validate(paymentIdSchema), QRPaymentController.checkPaymentStatus);
 
@@ -377,14 +418,18 @@ router.get('/payments/:id/status', validate(paymentIdSchema), QRPaymentControlle
  *         description: Payment not found
  *         content:
  *           application/json:
- *             schema:
+ *             schema: 
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Payment not found"
  *       500:
  *         description: Server error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Failed to monitor payment"
  */
 router.post('/monitor/:id', validate(monitorPaymentSchema), QRPaymentController.monitorPayment);
 
@@ -436,6 +481,8 @@ router.post('/monitor/:id', validate(monitorPaymentSchema), QRPaymentController.
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Failed to monitor pending payments"
  */
 router.post('/monitor-all', QRPaymentController.monitorAllPendingPayments);
 
@@ -477,14 +524,18 @@ router.post('/monitor-all', QRPaymentController.monitorAllPendingPayments);
  *         description: Missing userId parameter
  *         content:
  *           application/json:
- *             schema:
+ *             schema: 
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "User ID is required"
  *       500:
  *         description: Server error
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               error: "Failed to fetch payment statistics"
  */
 router.get('/stats', validate(getStatsSchema), QRPaymentController.getPaymentStats);
 

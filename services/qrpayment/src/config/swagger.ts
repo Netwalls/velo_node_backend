@@ -17,6 +17,10 @@ const options: swaggerJsdoc.Options = {
     },
     servers: [
       {
+        url: '/',
+        description: 'Current Request Origin',
+      },
+      {
         url: 'http://localhost:3002',
         description: 'Development server',
       },
@@ -40,6 +44,13 @@ const options: swaggerJsdoc.Options = {
       },
     ],
     components: {
+      securitySchemes: {
+        BearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
       schemas: {
         MerchantPayment: {
           type: 'object',
@@ -113,7 +124,7 @@ const options: swaggerJsdoc.Options = {
         },
         CreatePaymentRequest: {
           type: 'object',
-          required: ['userId', 'amount', 'chain', 'address'],
+          required: ['amount', 'chain', 'address'],
           properties: {
             userId: {
               type: 'string',
@@ -239,6 +250,11 @@ const options: swaggerJsdoc.Options = {
         },
       },
     },
+    security: [
+      {
+        BearerAuth: [],
+      },
+    ],
   },
   apis: ['./src/routes/*.ts'],
 };

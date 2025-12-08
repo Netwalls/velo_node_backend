@@ -33,10 +33,8 @@ export interface PaymentQueryOptions {
 }
 
 export class QRPaymentService {
-  private paymentRepo: Repository<MerchantPayment>;
-
-  constructor() {
-    this.paymentRepo = AppDataSource.getRepository(MerchantPayment);
+  private get paymentRepo(): Repository<MerchantPayment> {
+    return AppDataSource.getRepository(MerchantPayment);
   }
 
   /**
@@ -157,7 +155,7 @@ export class QRPaymentService {
 
     payment.status = MerchantPaymentStatus.CANCELLED;
     payment.updatedAt = new Date();
-    
+
     return await this.paymentRepo.save(payment);
   }
 
@@ -235,7 +233,7 @@ export class QRPaymentService {
   async markPaymentFailed(payment: MerchantPayment, error: string): Promise<MerchantPayment> {
     payment.status = MerchantPaymentStatus.FAILED;
     payment.updatedAt = new Date();
-    
+
     return await this.paymentRepo.save(payment);
   }
 }

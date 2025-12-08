@@ -10,7 +10,6 @@ export class QRPaymentController {
   static async createPayment(req: Request, res: Response) {
     try {
       const {
-        userId,
         amount,
         chain,
         network,
@@ -25,6 +24,8 @@ export class QRPaymentController {
         usdtErc20Address,
         usdtTrc20Address,
       } = req.body;
+
+      const userId = req.userId || req.body.userId;
 
       // Validate required fields
       if (!userId) {
@@ -75,8 +76,8 @@ export class QRPaymentController {
       });
     } catch (error) {
       console.error('Create payment error:', error);
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to create payment request' 
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to create payment request'
       });
     }
   }
@@ -86,7 +87,8 @@ export class QRPaymentController {
    */
   static async getPayments(req: Request, res: Response) {
     try {
-      const { userId, status, chain, limit, offset } = req.query;
+      const { status, chain, limit, offset } = req.query;
+      const userId = req.userId || (req.query.userId as string);
 
       if (!userId) {
         return res.status(400).json({ error: 'User ID is required' });
@@ -113,7 +115,7 @@ export class QRPaymentController {
   static async getPaymentById(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { userId } = req.query;
+      const userId = req.userId || (req.query.userId as string);
 
       const payment = await qrPaymentService.getPaymentById(
         id,
@@ -137,7 +139,7 @@ export class QRPaymentController {
   static async cancelPayment(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { userId } = req.body;
+      const userId = req.userId || req.body.userId;
 
       if (!userId) {
         return res.status(400).json({ error: 'User ID is required' });
@@ -151,8 +153,8 @@ export class QRPaymentController {
       });
     } catch (error) {
       console.error('Cancel payment error:', error);
-      res.status(500).json({ 
-        error: error instanceof Error ? error.message : 'Failed to cancel payment' 
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to cancel payment'
       });
     }
   }
@@ -305,7 +307,7 @@ export class QRPaymentController {
    */
   static async getPaymentStats(req: Request, res: Response) {
     try {
-      const { userId } = req.query;
+      const userId = req.userId || (req.query.userId as string);
 
       if (!userId) {
         return res.status(400).json({ error: 'User ID is required' });
