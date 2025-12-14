@@ -40,6 +40,14 @@ services:
       - "5401:5401"
     depends_on:
       - postgres
+  splitpayment:
+    build: ./services/splitpayment
+    env_file:
+      - ./services/splitpayment/.env
+    ports:
+      - "3004:3004"
+    depends_on:
+      - postgres
 volumes:
   db-data:
     name: velo_db_data
