@@ -48,6 +48,14 @@ services:
       - "3004:3004"
     depends_on:
       - postgres
+  airtime:
+    build: ./services/airtime
+    env_file:
+      - ./services/airtime/.env
+    ports:
+      - "4004:4004"
+    depends_on:
+      - postgres
 volumes:
   db-data:
     name: velo_db_data
