@@ -742,7 +742,9 @@ curl -X POST "http://localhost:5500/auth/register" \
 {
   "chain": "ethereum", // "ethereum", "bitcoin", "solana", "starknet", "usdt_erc20"
   "network": "testnet", // or "mainnet"
-  "toAddress": "0xRecipient", // recipient address (any valid address)
+  // Provide either `toAddress` OR `toUsername`. If both are provided, `toAddress` takes precedence.
+  "toAddress": "0xRecipient", // optional: recipient address (any valid address)
+  "toUsername": "alice", // optional: recipient username to resolve to an address
   "amount": "0.01"
 }
 ```
@@ -774,6 +776,12 @@ If you have multiple addresses per chain, you can add:
 - For USDT ERC20, amount is in USDT (6 decimals).
 - For Bitcoin, amount is in BTC (not satoshis).
 - Automatic notifications are created for successful transactions.
+
+Username resolution rules:
+
+- If `toUsername` is provided the server will resolve the username to the user's primary address for the specified `chain` and `network`.
+- If a username resolves to multiple addresses for the requested chain/network the API will return `409 Conflict` with an array of matched addresses and require the client to retry with `toAddress` specified.
+- If no address is found for the username on that chain/network the API will return `404 Not Found` with `{ "error": "Username not found for requested chain/network" }`.
 
 ---
 
@@ -814,19 +822,23 @@ The Split Payment System allows you to create reusable payment templates for sen
   "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
   "recipients": [
     {
+      // Either provide `address` OR `username` (username will be resolved to an address)
       "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+      "username": null,
       "amount": "0.1",
       "name": "John (Son)",
       "email": "john@family.com"
     },
     {
-      "address": "0x456...789",
+      "address": null,
+      "username": "mary_username",
       "amount": "0.15",
       "name": "Mary (Daughter)",
       "email": "mary@family.com"
     },
     {
       "address": "0x789...abc",
+      "username": null,
       "amount": "0.05",
       "name": "Mom",
       "email": "mom@family.com"
@@ -2300,3 +2312,34 @@ Below are concise endpoint definitions for controllers not documented above. The
 - Response: `{ deploymentId, txHash, contractAddress, status }`.
 
 ---
+
+### Username Resolution
+
+- Endpoint: `GET /user/resolve/:username`
+- Headers: `Authorization: Bearer <token>` (optional for public lookup depending on privacy settings)
+- Description: Resolve a Velo `username` to one or more chain addresses. Returns the primary address per chain and a list of all known addresses for that user.
+- Response (200):
+
+```json
+{
+  "username": "alice",
+  "resolved": true,
+  "addresses": [
+    {
+      "chain": "ethereum",
+      "network": "mainnet",
+      "address": "0xAbc...",
+      "isPrimary": true
+    },
+    {
+      "chain": "bitcoin",
+      "network": "mainnet",
+      "address": "1Abc...",
+      "isPrimary": true
+    }
+  ]
+}
+```
+
+- If username exists but has no address on the requested chain/network, the array will omit that chain.
+- `409 Conflict` is used by send/split endpoints when a username resolves to multiple candidate addresses and the client must explicitly specify `address`.
