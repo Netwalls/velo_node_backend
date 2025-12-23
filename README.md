@@ -2,23 +2,23 @@
 
 ## Table of Contents
 
--   [Overview](#overview)
--   [Base URL](#base-url)
--   [Authentication](#authentication)
--   [Error Handling](#error-handling)
--   [Authentication Endpoints](#authentication-endpoints)
--   [User Management](#user-management)
--   [Wallet Endpoints](#wallet-endpoints)
--   [Split Payment System](#split-payment-system)
--   [QR Payment System](#qr-payment-system)
--   [Conversion & Exchange](#conversion--exchange)
--   [Merchant Payments](#merchant-payments)
--   [Notification Endpoints](#notification-endpoints)
--   [Transaction History](#transaction-history)
--   [KYC & Verification](#kyc--verification)
--   [Response Examples](#response-examples)
--   [Deposit Checking](#deposit-checking)
--   [Send Transactions](#send-transactions)
+- [Overview](#overview)
+- [Base URL](#base-url)
+- [Authentication](#authentication)
+- [Error Handling](#error-handling)
+- [Authentication Endpoints](#authentication-endpoints)
+- [User Management](#user-management)
+- [Wallet Endpoints](#wallet-endpoints)
+- [Split Payment System](#split-payment-system)
+- [QR Payment System](#qr-payment-system)
+- [Conversion & Exchange](#conversion--exchange)
+- [Merchant Payments](#merchant-payments)
+- [Notification Endpoints](#notification-endpoints)
+- [Transaction History](#transaction-history)
+- [KYC & Verification](#kyc--verification)
+- [Response Examples](#response-examples)
+- [Deposit Checking](#deposit-checking)
+- [Send Transactions](#send-transactions)
 
 ---
 
@@ -46,19 +46,19 @@ All errors follow a consistent format:
 
 ```json
 {
-    "error": "Error message description"
+  "error": "Error message description"
 }
 ```
 
 Common HTTP status codes:
 
--   `200` - Success
--   `201` - Created
--   `400` - Bad Request
--   `401` - Unauthorized
--   `404` - Not Found
--   `409` - Conflict
--   `500` - Internal Server Error
+- `200` - Success
+- `201` - Created
+- `400` - Bad Request
+- `401` - Unauthorized
+- `404` - Not Found
+- `409` - Conflict
+- `500` - Internal Server Error
 
 ---
 
@@ -74,8 +74,8 @@ Common HTTP status codes:
 
 ```json
 {
-    "email": "user@example.com",
-    "password": "SecurePassword123"
+  "email": "user@example.com",
+  "password": "SecurePassword123"
 }
 ```
 
@@ -83,21 +83,21 @@ Common HTTP status codes:
 
 ```json
 {
-    "message": "User registered successfully. Please verify your email.",
-    "userId": "86f44491-021b-41a7-8c64-726a642c1257",
-    "addresses": [
-        {
-            "chain": "ethereum",
-            "network": "mainnet",
-            "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47"
-        },
-        {
-            "chain": "bitcoin",
-            "network": "mainnet",
-            "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
-        }
-        // ... more addresses
-    ]
+  "message": "User registered successfully. Please verify your email.",
+  "userId": "86f44491-021b-41a7-8c64-726a642c1257",
+  "addresses": [
+    {
+      "chain": "ethereum",
+      "network": "mainnet",
+      "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47"
+    },
+    {
+      "chain": "bitcoin",
+      "network": "mainnet",
+      "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+    }
+    // ... more addresses
+  ]
 }
 ```
 
@@ -124,8 +124,8 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "email": "user@example.com",
-    "password": "SecurePassword123"
+  "email": "user@example.com",
+  "password": "SecurePassword123"
 }
 ```
 
@@ -133,16 +133,16 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Login successful",
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "user": {
-        "id": "86f44491-021b-41a7-8c64-726a642c1257",
-        "email": "user@example.com",
-        "firstName": "John",
-        "lastName": "Doe",
-        "isEmailVerified": false
-    }
+  "message": "Login successful",
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "86f44491-021b-41a7-8c64-726a642c1257",
+    "email": "user@example.com",
+    "firstName": "John",
+    "lastName": "Doe",
+    "isEmailVerified": false
+  }
 }
 ```
 
@@ -158,8 +158,8 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "email": "user@example.com",
-    "otp": "123456"
+  "email": "user@example.com",
+  "otp": "123456"
 }
 ```
 
@@ -167,7 +167,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Email verified successfully"
+  "message": "Email verified successfully"
 }
 ```
 
@@ -183,7 +183,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "email": "user@example.com"
+  "email": "user@example.com"
 }
 ```
 
@@ -191,7 +191,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "OTP sent successfully"
+  "message": "OTP sent successfully"
 }
 ```
 
@@ -207,7 +207,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
@@ -215,8 +215,8 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
@@ -234,7 +234,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Logged out successfully"
+  "message": "Logged out successfully"
 }
 ```
 
@@ -252,7 +252,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Logged out from all devices successfully"
+  "message": "Logged out from all devices successfully"
 }
 ```
 
@@ -268,7 +268,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "email": "user@example.com"
+  "email": "user@example.com"
 }
 ```
 
@@ -276,15 +276,15 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "If the email exists, you will receive a password reset link"
+  "message": "If the email exists, you will receive a password reset link"
 }
 ```
 
 **Notes:**
 
--   For security, the same response is returned whether the email exists or not
--   Reset code expires in 15 minutes
--   Only one active reset token per user at a time
+- For security, the same response is returned whether the email exists or not
+- Reset code expires in 15 minutes
+- Only one active reset token per user at a time
 
 ---
 
@@ -298,8 +298,8 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "email": "user@example.com",
-    "token": "123456"
+  "email": "user@example.com",
+  "token": "123456"
 }
 ```
 
@@ -307,8 +307,8 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Reset token is valid",
-    "canResetPassword": true
+  "message": "Reset token is valid",
+  "canResetPassword": true
 }
 ```
 
@@ -316,7 +316,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "error": "Invalid or expired reset token"
+  "error": "Invalid or expired reset token"
 }
 ```
 
@@ -332,9 +332,9 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "email": "user@example.com",
-    "token": "123456",
-    "newPassword": "newPassword123"
+  "email": "user@example.com",
+  "token": "123456",
+  "newPassword": "newPassword123"
 }
 ```
 
@@ -342,7 +342,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Password reset successfully. Please log in with your new password."
+  "message": "Password reset successfully. Please log in with your new password."
 }
 ```
 
@@ -350,16 +350,16 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "error": "Invalid or expired reset token"
+  "error": "Invalid or expired reset token"
 }
 ```
 
 **Notes:**
 
--   Password must be at least 6 characters long
--   All existing refresh tokens are revoked for security
--   User will need to log in again on all devices
--   Confirmation email is sent after successful reset
+- Password must be at least 6 characters long
+- All existing refresh tokens are revoked for security
+- User will need to log in again on all devices
+- Confirmation email is sent after successful reset
 
 ---
 
@@ -375,23 +375,23 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "user": {
-        "id": "86f44491-021b-41a7-8c64-726a642c1257",
-        "email": "user@example.com",
-        "firstName": "John",
-        "lastName": "Doe",
-        "phoneNumber": "+1234567890",
-        "username": "john_doe_2024",
-        "displayPicture": "https://example.com/profile.jpg",
-        "isEmailVerified": true,
-        "kycStatus": "pending",
-        "bankDetails": {
-            "bankName": "Wells Fargo",
-            "accountNumber": "9876543210",
-            "accountName": "John Doe"
-        },
-        "createdAt": "2025-09-20T10:00:00.000Z"
-    }
+  "user": {
+    "id": "86f44491-021b-41a7-8c64-726a642c1257",
+    "email": "user@example.com",
+    "firstName": "John",
+    "lastName": "Doe",
+    "phoneNumber": "+1234567890",
+    "username": "john_doe_2024",
+    "displayPicture": "https://example.com/profile.jpg",
+    "isEmailVerified": true,
+    "kycStatus": "pending",
+    "bankDetails": {
+      "bankName": "Wells Fargo",
+      "accountNumber": "9876543210",
+      "accountName": "John Doe"
+    },
+    "createdAt": "2025-09-20T10:00:00.000Z"
+  }
 }
 ```
 
@@ -407,14 +407,14 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "firstName": "Jane",
-    "lastName": "Smith",
-    "phoneNumber": "+1234567890",
-    "username": "jane_smith_2024",
-    "displayPicture": "https://example.com/profile.jpg",
-    "bankName": "Wells Fargo",
-    "accountNumber": "9876543210",
-    "accountName": "Jane Smith"
+  "firstName": "Jane",
+  "lastName": "Smith",
+  "phoneNumber": "+1234567890",
+  "username": "jane_smith_2024",
+  "displayPicture": "https://example.com/profile.jpg",
+  "bankName": "Wells Fargo",
+  "accountNumber": "9876543210",
+  "accountName": "Jane Smith"
 }
 ```
 
@@ -422,35 +422,35 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Profile updated successfully",
-    "user": {
-        "id": "86f44491-021b-41a7-8c64-726a642c1257",
-        "email": "user@example.com",
-        "firstName": "Jane",
-        "lastName": "Smith",
-        "phoneNumber": "+1234567890",
-        "username": "jane_smith_2024",
-        "displayPicture": "https://example.com/profile.jpg",
-        "bankDetails": {
-            "bankName": "Wells Fargo",
-            "accountNumber": "9876543210",
-            "accountName": "Jane Smith"
-        }
+  "message": "Profile updated successfully",
+  "user": {
+    "id": "86f44491-021b-41a7-8c64-726a642c1257",
+    "email": "user@example.com",
+    "firstName": "Jane",
+    "lastName": "Smith",
+    "phoneNumber": "+1234567890",
+    "username": "jane_smith_2024",
+    "displayPicture": "https://example.com/profile.jpg",
+    "bankDetails": {
+      "bankName": "Wells Fargo",
+      "accountNumber": "9876543210",
+      "accountName": "Jane Smith"
     }
+  }
 }
 ```
 
 **Username Validation:**
 
--   Length: 3-30 characters
--   Characters: Letters, numbers, underscores only
--   Must be unique across all users
--   No consecutive underscores allowed
+- Length: 3-30 characters
+- Characters: Letters, numbers, underscores only
+- Must be unique across all users
+- No consecutive underscores allowed
 
 **Additional Endpoints:**
 
--   `GET /user/username/:username/availability` - Check username availability
--   `GET /user/username/suggestions` - Get username suggestions
+- `GET /user/username/:username/availability` - Check username availability
+- `GET /user/username/suggestions` - Get username suggestions
 
 ---
 
@@ -468,28 +468,28 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Wallet addresses retrieved successfully",
-    "addresses": {
-        "ethereum": [
-            {
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "chain": "ethereum",
-                "network": "mainnet",
-                "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-                "addedAt": "2025-09-20T10:30:00.000Z"
-            }
-        ],
-        "bitcoin": [
-            {
-                "id": "550e8400-e29b-41d4-a716-446655440001",
-                "chain": "bitcoin",
-                "network": "mainnet",
-                "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
-                "addedAt": "2025-09-20T10:30:00.000Z"
-            }
-        ]
-    },
-    "totalCount": 12
+  "message": "Wallet addresses retrieved successfully",
+  "addresses": {
+    "ethereum": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "chain": "ethereum",
+        "network": "mainnet",
+        "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+        "addedAt": "2025-09-20T10:30:00.000Z"
+      }
+    ],
+    "bitcoin": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440001",
+        "chain": "bitcoin",
+        "network": "mainnet",
+        "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+        "addedAt": "2025-09-20T10:30:00.000Z"
+      }
+    ]
+  },
+  "totalCount": 12
 }
 ```
 
@@ -507,25 +507,25 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Testnet addresses retrieved successfully",
-    "addresses": [
-        {
-            "chain": "ethereum",
-            "address": "0x8ba1f109551bD432803012645Hac136c5d96c0B9"
-        },
-        {
-            "chain": "bitcoin",
-            "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
-        },
-        {
-            "chain": "solana",
-            "address": "11111111111111111111111111111112"
-        },
-        {
-            "chain": "starknet",
-            "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-        }
-    ]
+  "message": "Testnet addresses retrieved successfully",
+  "addresses": [
+    {
+      "chain": "ethereum",
+      "address": "0x8ba1f109551bD432803012645Hac136c5d96c0B9"
+    },
+    {
+      "chain": "bitcoin",
+      "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
+    },
+    {
+      "chain": "solana",
+      "address": "11111111111111111111111111111112"
+    },
+    {
+      "chain": "starknet",
+      "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+    }
+  ]
 }
 ```
 
@@ -543,25 +543,25 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Mainnet addresses retrieved successfully",
-    "addresses": [
-        {
-            "chain": "ethereum",
-            "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47"
-        },
-        {
-            "chain": "bitcoin",
-            "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
-        },
-        {
-            "chain": "solana",
-            "address": "11111111111111111111111111111112"
-        },
-        {
-            "chain": "starknet",
-            "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-        }
-    ]
+  "message": "Mainnet addresses retrieved successfully",
+  "addresses": [
+    {
+      "chain": "ethereum",
+      "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47"
+    },
+    {
+      "chain": "bitcoin",
+      "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+    },
+    {
+      "chain": "solana",
+      "address": "11111111111111111111111111111112"
+    },
+    {
+      "chain": "starknet",
+      "address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+    }
+  ]
 }
 ```
 
@@ -575,7 +575,7 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 **Query Parameters:**
 
--   `network` (optional): Filter by network (mainnet/testnet)
+- `network` (optional): Filter by network (mainnet/testnet)
 
 **Description:** Get balances for all user wallet addresses.
 
@@ -583,24 +583,24 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "balances": [
-        {
-            "chain": "ethereum",
-            "network": "mainnet",
-            "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-            "balance": "2.5",
-            "currency": "ETH",
-            "usdValue": "4250.00"
-        },
-        {
-            "chain": "bitcoin",
-            "network": "mainnet",
-            "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
-            "balance": "0.1",
-            "currency": "BTC",
-            "usdValue": "2700.00"
-        }
-    ]
+  "balances": [
+    {
+      "chain": "ethereum",
+      "network": "mainnet",
+      "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+      "balance": "2.5",
+      "currency": "ETH",
+      "usdValue": "4250.00"
+    },
+    {
+      "chain": "bitcoin",
+      "network": "mainnet",
+      "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+      "balance": "0.1",
+      "currency": "BTC",
+      "usdValue": "2700.00"
+    }
+  ]
 }
 ```
 
@@ -616,52 +616,52 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Testnet balances retrieved successfully",
-    "balances": [
-        {
-            "chain": "ethereum",
-            "network": "testnet",
-            "address": "0x1234567890123456789012345678901234567890",
-            "balance": "1.5",
-            "symbol": "ETH"
-        },
-        {
-            "chain": "bitcoin",
-            "network": "testnet",
-            "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
-            "balance": "0.001",
-            "symbol": "BTC"
-        },
-        {
-            "chain": "solana",
-            "network": "testnet",
-            "address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
-            "balance": "10.0",
-            "symbol": "SOL"
-        },
-        {
-            "chain": "starknet",
-            "network": "testnet",
-            "address": "0x123...abc",
-            "balance": "5.0",
-            "symbol": "STRK"
-        },
-        {
-            "chain": "usdt_erc20",
-            "network": "testnet",
-            "address": "0x1234567890123456789012345678901234567890",
-            "balance": "100.0",
-            "symbol": "USDT"
-        },
-        {
-            "chain": "usdt_trc20",
-            "network": "testnet",
-            "address": "0x9876543210987654321098765432109876543210",
-            "balance": "50.0",
-            "symbol": "USDT"
-        }
-    ],
-    "totalAddresses": 6
+  "message": "Testnet balances retrieved successfully",
+  "balances": [
+    {
+      "chain": "ethereum",
+      "network": "testnet",
+      "address": "0x1234567890123456789012345678901234567890",
+      "balance": "1.5",
+      "symbol": "ETH"
+    },
+    {
+      "chain": "bitcoin",
+      "network": "testnet",
+      "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+      "balance": "0.001",
+      "symbol": "BTC"
+    },
+    {
+      "chain": "solana",
+      "network": "testnet",
+      "address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+      "balance": "10.0",
+      "symbol": "SOL"
+    },
+    {
+      "chain": "starknet",
+      "network": "testnet",
+      "address": "0x123...abc",
+      "balance": "5.0",
+      "symbol": "STRK"
+    },
+    {
+      "chain": "usdt_erc20",
+      "network": "testnet",
+      "address": "0x1234567890123456789012345678901234567890",
+      "balance": "100.0",
+      "symbol": "USDT"
+    },
+    {
+      "chain": "usdt_trc20",
+      "network": "testnet",
+      "address": "0x9876543210987654321098765432109876543210",
+      "balance": "50.0",
+      "symbol": "USDT"
+    }
+  ],
+  "totalAddresses": 6
 }
 ```
 
@@ -677,52 +677,52 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "message": "Mainnet balances retrieved successfully",
-    "balances": [
-        {
-            "chain": "ethereum",
-            "network": "mainnet",
-            "address": "0xabAcBEb1896Acd006e7d51d7CF857487bD118eA6",
-            "balance": "0.0",
-            "symbol": "ETH"
-        },
-        {
-            "chain": "bitcoin",
-            "network": "mainnet",
-            "address": "1QA2xxSNyRNzxZRjF8r9PNpzLVNBwENfMV",
-            "balance": "0",
-            "symbol": "BTC"
-        },
-        {
-            "chain": "solana",
-            "network": "mainnet",
-            "address": "Df76jHDoc1XzyYHKBfdJ2HyLaYDKj1docAEjvXnrDaZz",
-            "balance": "0",
-            "symbol": "SOL"
-        },
-        {
-            "chain": "starknet",
-            "network": "mainnet",
-            "address": "0x3df8ed48bfa8bfebe5faf918eed245fcbda0a3b9df59a2dc4c0436ce1242ed7",
-            "balance": "0",
-            "symbol": "STRK"
-        },
-        {
-            "chain": "usdt_erc20",
-            "network": "mainnet",
-            "address": "0xabAcBEb1896Acd006e7d51d7CF857487bD118eA6",
-            "balance": "0",
-            "symbol": "USDT"
-        },
-        {
-            "chain": "usdt_trc20",
-            "network": "mainnet",
-            "address": "0x38D3fb1C2753f8F28be923f10EE797CCd15c5f15",
-            "balance": "0",
-            "symbol": "USDT"
-        }
-    ],
-    "totalAddresses": 6
+  "message": "Mainnet balances retrieved successfully",
+  "balances": [
+    {
+      "chain": "ethereum",
+      "network": "mainnet",
+      "address": "0xabAcBEb1896Acd006e7d51d7CF857487bD118eA6",
+      "balance": "0.0",
+      "symbol": "ETH"
+    },
+    {
+      "chain": "bitcoin",
+      "network": "mainnet",
+      "address": "1QA2xxSNyRNzxZRjF8r9PNpzLVNBwENfMV",
+      "balance": "0",
+      "symbol": "BTC"
+    },
+    {
+      "chain": "solana",
+      "network": "mainnet",
+      "address": "Df76jHDoc1XzyYHKBfdJ2HyLaYDKj1docAEjvXnrDaZz",
+      "balance": "0",
+      "symbol": "SOL"
+    },
+    {
+      "chain": "starknet",
+      "network": "mainnet",
+      "address": "0x3df8ed48bfa8bfebe5faf918eed245fcbda0a3b9df59a2dc4c0436ce1242ed7",
+      "balance": "0",
+      "symbol": "STRK"
+    },
+    {
+      "chain": "usdt_erc20",
+      "network": "mainnet",
+      "address": "0xabAcBEb1896Acd006e7d51d7CF857487bD118eA6",
+      "balance": "0",
+      "symbol": "USDT"
+    },
+    {
+      "chain": "usdt_trc20",
+      "network": "mainnet",
+      "address": "0x38D3fb1C2753f8F28be923f10EE797CCd15c5f15",
+      "balance": "0",
+      "symbol": "USDT"
+    }
+  ],
+  "totalAddresses": 6
 }
 ```
 
@@ -740,10 +740,10 @@ curl -X POST "http://localhost:5500/auth/register" \
 
 ```json
 {
-    "chain": "ethereum", // "ethereum", "bitcoin", "solana", "starknet", "usdt_erc20"
-    "network": "testnet", // or "mainnet"
-    "toAddress": "0xRecipient", // recipient address (any valid address)
-    "amount": "0.01"
+  "chain": "ethereum", // "ethereum", "bitcoin", "solana", "starknet", "usdt_erc20"
+  "network": "testnet", // or "mainnet"
+  "toAddress": "0xRecipient", // recipient address (any valid address)
+  "amount": "0.01"
 }
 ```
 
@@ -758,22 +758,22 @@ If you have multiple addresses per chain, you can add:
 
 ```json
 {
-    "message": "Transaction sent successfully",
-    "txHash": "0x1234567890abcdef...",
-    "amount": "0.01",
-    "fromAddress": "0xYourAddress",
-    "toAddress": "0xRecipientAddress",
-    "chain": "ethereum",
-    "network": "testnet"
+  "message": "Transaction sent successfully",
+  "txHash": "0x1234567890abcdef...",
+  "amount": "0.01",
+  "fromAddress": "0xYourAddress",
+  "toAddress": "0xRecipientAddress",
+  "chain": "ethereum",
+  "network": "testnet"
 }
 ```
 
 **Notes:**
 
--   For Starknet, the recipient address must be 66 characters and start with `0x`.
--   For USDT ERC20, amount is in USDT (6 decimals).
--   For Bitcoin, amount is in BTC (not satoshis).
--   Automatic notifications are created for successful transactions.
+- For Starknet, the recipient address must be 66 characters and start with `0x`.
+- For USDT ERC20, amount is in USDT (6 decimals).
+- For Bitcoin, amount is in BTC (not satoshis).
+- Automatic notifications are created for successful transactions.
 
 ---
 
@@ -807,31 +807,31 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 ```json
 {
-    "title": "Family Monthly Allowance",
-    "description": "Monthly allowance for family members",
-    "chain": "ethereum", // "ethereum", "bitcoin", "solana", "usdt_erc20"
-    "network": "testnet", // or "mainnet"
-    "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
-    "recipients": [
-        {
-            "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-            "amount": "0.1",
-            "name": "John (Son)",
-            "email": "john@family.com"
-        },
-        {
-            "address": "0x456...789",
-            "amount": "0.15",
-            "name": "Mary (Daughter)",
-            "email": "mary@family.com"
-        },
-        {
-            "address": "0x789...abc",
-            "amount": "0.05",
-            "name": "Mom",
-            "email": "mom@family.com"
-        }
-    ]
+  "title": "Family Monthly Allowance",
+  "description": "Monthly allowance for family members",
+  "chain": "ethereum", // "ethereum", "bitcoin", "solana", "usdt_erc20"
+  "network": "testnet", // or "mainnet"
+  "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
+  "recipients": [
+    {
+      "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+      "amount": "0.1",
+      "name": "John (Son)",
+      "email": "john@family.com"
+    },
+    {
+      "address": "0x456...789",
+      "amount": "0.15",
+      "name": "Mary (Daughter)",
+      "email": "mary@family.com"
+    },
+    {
+      "address": "0x789...abc",
+      "amount": "0.05",
+      "name": "Mom",
+      "email": "mom@family.com"
+    }
+  ]
 }
 ```
 
@@ -839,36 +839,36 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 ```json
 {
-    "message": "Split payment template created successfully",
-    "splitPayment": {
-        "id": "split_1234567890abcdef",
-        "title": "Family Monthly Allowance",
-        "description": "Monthly allowance for family members",
-        "totalAmount": "0.3",
-        "totalRecipients": 3,
-        "chain": "ethereum",
-        "network": "testnet",
-        "status": "active",
-        "executionCount": 0,
-        "createdAt": "2025-10-03T15:30:00.000Z"
+  "message": "Split payment template created successfully",
+  "splitPayment": {
+    "id": "split_1234567890abcdef",
+    "title": "Family Monthly Allowance",
+    "description": "Monthly allowance for family members",
+    "totalAmount": "0.3",
+    "totalRecipients": 3,
+    "chain": "ethereum",
+    "network": "testnet",
+    "status": "active",
+    "executionCount": 0,
+    "createdAt": "2025-10-03T15:30:00.000Z"
+  },
+  "recipients": [
+    {
+      "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+      "name": "John (Son)",
+      "amount": "0.1"
     },
-    "recipients": [
-        {
-            "address": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-            "name": "John (Son)",
-            "amount": "0.1"
-        },
-        {
-            "address": "0x456...789",
-            "name": "Mary (Daughter)",
-            "amount": "0.15"
-        },
-        {
-            "address": "0x789...abc",
-            "name": "Mom",
-            "amount": "0.05"
-        }
-    ]
+    {
+      "address": "0x456...789",
+      "name": "Mary (Daughter)",
+      "amount": "0.15"
+    },
+    {
+      "address": "0x789...abc",
+      "name": "Mom",
+      "amount": "0.05"
+    }
+  ]
 }
 ```
 
@@ -886,47 +886,47 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 ```json
 {
-    "message": "Split payment executed successfully",
-    "execution": {
-        "id": "exec_1234567890abcdef",
-        "status": "completed",
-        "total": 3,
-        "successful": 3,
-        "failed": 0,
-        "executionNumber": 1
+  "message": "Split payment executed successfully",
+  "execution": {
+    "id": "exec_1234567890abcdef",
+    "status": "completed",
+    "total": 3,
+    "successful": 3,
+    "failed": 0,
+    "executionNumber": 1
+  },
+  "splitPayment": {
+    "id": "split_1234567890abcdef",
+    "title": "Family Monthly Allowance",
+    "totalExecutions": 1,
+    "lastExecutedAt": "2025-10-03T15:45:00.000Z"
+  },
+  "results": [
+    {
+      "recipient": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+      "name": "John (Son)",
+      "amount": "0.1",
+      "success": true,
+      "txHash": "0x1234567890abcdef...",
+      "error": null
     },
-    "splitPayment": {
-        "id": "split_1234567890abcdef",
-        "title": "Family Monthly Allowance",
-        "totalExecutions": 1,
-        "lastExecutedAt": "2025-10-03T15:45:00.000Z"
+    {
+      "recipient": "0x456...789",
+      "name": "Mary (Daughter)",
+      "amount": "0.15",
+      "success": true,
+      "txHash": "0x2345678901bcdef0...",
+      "error": null
     },
-    "results": [
-        {
-            "recipient": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-            "name": "John (Son)",
-            "amount": "0.1",
-            "success": true,
-            "txHash": "0x1234567890abcdef...",
-            "error": null
-        },
-        {
-            "recipient": "0x456...789",
-            "name": "Mary (Daughter)",
-            "amount": "0.15",
-            "success": true,
-            "txHash": "0x2345678901bcdef0...",
-            "error": null
-        },
-        {
-            "recipient": "0x789...abc",
-            "name": "Mom",
-            "amount": "0.05",
-            "success": true,
-            "txHash": "0x3456789012cdef01...",
-            "error": null
-        }
-    ]
+    {
+      "recipient": "0x789...abc",
+      "name": "Mom",
+      "amount": "0.05",
+      "success": true,
+      "txHash": "0x3456789012cdef01...",
+      "error": null
+    }
+  ]
 }
 ```
 
@@ -940,7 +940,7 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 **Query Parameters:**
 
--   `status` (optional): Filter by status (active, inactive) - default: active
+- `status` (optional): Filter by status (active, inactive) - default: active
 
 **Description:** Get all your split payment templates (reusable payment setups).
 
@@ -948,42 +948,42 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 ```json
 {
-    "message": "Split payment templates retrieved successfully",
-    "templates": [
-        {
-            "id": "split_1234567890abcdef",
-            "title": "Family Monthly Allowance",
-            "description": "Monthly allowance for family members",
-            "chain": "ethereum",
-            "network": "testnet",
-            "currency": "ETH",
-            "totalAmount": "0.3",
-            "totalRecipients": 3,
-            "executionCount": 5,
-            "status": "active",
-            "createdAt": "2025-09-03T15:30:00.000Z",
-            "lastExecutedAt": "2025-10-03T15:45:00.000Z",
-            "recipientCount": 3,
-            "canExecute": true
-        },
-        {
-            "id": "split_2345678901bcdef0",
-            "title": "Team Weekly Salary",
-            "description": "Weekly salary for development team",
-            "chain": "solana",
-            "network": "testnet",
-            "currency": "SOL",
-            "totalAmount": "50.0",
-            "totalRecipients": 8,
-            "executionCount": 12,
-            "status": "active",
-            "createdAt": "2025-08-15T10:00:00.000Z",
-            "lastExecutedAt": "2025-10-02T16:00:00.000Z",
-            "recipientCount": 8,
-            "canExecute": true
-        }
-    ],
-    "totalTemplates": 2
+  "message": "Split payment templates retrieved successfully",
+  "templates": [
+    {
+      "id": "split_1234567890abcdef",
+      "title": "Family Monthly Allowance",
+      "description": "Monthly allowance for family members",
+      "chain": "ethereum",
+      "network": "testnet",
+      "currency": "ETH",
+      "totalAmount": "0.3",
+      "totalRecipients": 3,
+      "executionCount": 5,
+      "status": "active",
+      "createdAt": "2025-09-03T15:30:00.000Z",
+      "lastExecutedAt": "2025-10-03T15:45:00.000Z",
+      "recipientCount": 3,
+      "canExecute": true
+    },
+    {
+      "id": "split_2345678901bcdef0",
+      "title": "Team Weekly Salary",
+      "description": "Weekly salary for development team",
+      "chain": "solana",
+      "network": "testnet",
+      "currency": "SOL",
+      "totalAmount": "50.0",
+      "totalRecipients": 8,
+      "executionCount": 12,
+      "status": "active",
+      "createdAt": "2025-08-15T10:00:00.000Z",
+      "lastExecutedAt": "2025-10-02T16:00:00.000Z",
+      "recipientCount": 8,
+      "canExecute": true
+    }
+  ],
+  "totalTemplates": 2
 }
 ```
 
@@ -997,8 +997,8 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 **Query Parameters:**
 
--   `page` (optional): Page number (default: 1)
--   `limit` (optional): Items per page (default: 20)
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20)
 
 **Description:** Get execution history for a specific split payment template.
 
@@ -1006,44 +1006,44 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 ```json
 {
-    "message": "Execution history retrieved successfully",
-    "splitPayment": {
-        "id": "split_1234567890abcdef",
-        "title": "Family Monthly Allowance",
-        "totalExecutions": 5
+  "message": "Execution history retrieved successfully",
+  "splitPayment": {
+    "id": "split_1234567890abcdef",
+    "title": "Family Monthly Allowance",
+    "totalExecutions": 5
+  },
+  "executions": [
+    {
+      "id": "exec_1234567890abcdef",
+      "status": "completed",
+      "totalAmount": "0.3",
+      "totalRecipients": 3,
+      "successfulPayments": 3,
+      "failedPayments": 0,
+      "totalFees": "0.003",
+      "createdAt": "2025-10-03T15:45:00.000Z",
+      "completedAt": "2025-10-03T15:46:30.000Z",
+      "resultCount": 3
     },
-    "executions": [
-        {
-            "id": "exec_1234567890abcdef",
-            "status": "completed",
-            "totalAmount": "0.3",
-            "totalRecipients": 3,
-            "successfulPayments": 3,
-            "failedPayments": 0,
-            "totalFees": "0.003",
-            "createdAt": "2025-10-03T15:45:00.000Z",
-            "completedAt": "2025-10-03T15:46:30.000Z",
-            "resultCount": 3
-        },
-        {
-            "id": "exec_2345678901bcdef0",
-            "status": "completed",
-            "totalAmount": "0.3",
-            "totalRecipients": 3,
-            "successfulPayments": 3,
-            "failedPayments": 0,
-            "totalFees": "0.003",
-            "createdAt": "2025-09-03T15:45:00.000Z",
-            "completedAt": "2025-09-03T15:46:15.000Z",
-            "resultCount": 3
-        }
-    ],
-    "pagination": {
-        "page": 1,
-        "limit": 20,
-        "total": 5,
-        "totalPages": 1
+    {
+      "id": "exec_2345678901bcdef0",
+      "status": "completed",
+      "totalAmount": "0.3",
+      "totalRecipients": 3,
+      "successfulPayments": 3,
+      "failedPayments": 0,
+      "totalFees": "0.003",
+      "createdAt": "2025-09-03T15:45:00.000Z",
+      "completedAt": "2025-09-03T15:46:15.000Z",
+      "resultCount": 3
     }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 5,
+    "totalPages": 1
+  }
 }
 ```
 
@@ -1061,13 +1061,13 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 ```json
 {
-    "message": "Split payment activated successfully",
-    "splitPayment": {
-        "id": "split_1234567890abcdef",
-        "title": "Family Monthly Allowance",
-        "status": "active",
-        "canExecute": true
-    }
+  "message": "Split payment activated successfully",
+  "splitPayment": {
+    "id": "split_1234567890abcdef",
+    "title": "Family Monthly Allowance",
+    "status": "active",
+    "canExecute": true
+  }
 }
 ```
 
@@ -1077,42 +1077,42 @@ The Split Payment System allows you to create reusable payment templates for sen
 
 ### ✨ **Chain Support**
 
--   **Ethereum**: Individual transactions per recipient
--   **Bitcoin**: Individual transactions per recipient
--   **Solana**: Batch transaction (all recipients in one transaction - most efficient!)
--   **USDT ERC20**: Individual transactions per recipient
+- **Ethereum**: Individual transactions per recipient
+- **Bitcoin**: Individual transactions per recipient
+- **Solana**: Batch transaction (all recipients in one transaction - most efficient!)
+- **USDT ERC20**: Individual transactions per recipient
 
 ### 🔄 **Reusable Templates**
 
--   Create once, execute multiple times
--   Perfect for recurring payments (monthly salaries, family allowances)
--   Track execution count and history
+- Create once, execute multiple times
+- Perfect for recurring payments (monthly salaries, family allowances)
+- Track execution count and history
 
 ### 📊 **Execution Tracking**
 
--   Detailed execution history
--   Individual recipient success/failure tracking
--   Transaction hash for each payment
--   Fee tracking and reporting
+- Detailed execution history
+- Individual recipient success/failure tracking
+- Transaction hash for each payment
+- Fee tracking and reporting
 
 ### 🔔 **Automatic Notifications**
 
--   Notification when split payment is created
--   Notification when split payment is executed
--   Detailed execution results in notifications
+- Notification when split payment is created
+- Notification when split payment is executed
+- Detailed execution results in notifications
 
 ### 💰 **Cost Efficiency**
 
--   **Solana**: Most efficient - all payments in single transaction
--   **Ethereum/Bitcoin**: Individual transactions (higher fees but more reliable)
--   **Fee tracking**: Monitor total costs per execution
+- **Solana**: Most efficient - all payments in single transaction
+- **Ethereum/Bitcoin**: Individual transactions (higher fees but more reliable)
+- **Fee tracking**: Monitor total costs per execution
 
 ### 👥 **Recipient Management**
 
--   Support for 5 to 1000 recipients per split
--   Include recipient names and emails
--   Individual recipient tracking
--   Activate/deactivate specific recipients
+- Support for 5 to 1000 recipients per split
+- Include recipient names and emails
+- Individual recipient tracking
+- Activate/deactivate specific recipients
 
 ---
 
@@ -1238,7 +1238,7 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "qrCodeString": "velo://pay?id=qr_pay_1234567890abcdef&chain=ethereum&network=testnet&amount=0.1&to=0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47&desc=Payment%20for%20coffee"
+  "qrCodeString": "velo://pay?id=qr_pay_1234567890abcdef&chain=ethereum&network=testnet&amount=0.1&to=0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47&desc=Payment%20for%20coffee"
 }
 ```
 
@@ -1246,18 +1246,18 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "QR code parsed successfully",
-    "paymentDetails": {
-        "paymentId": "qr_pay_1234567890abcdef",
-        "recipientAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-        "chain": "ethereum",
-        "network": "testnet",
-        "amount": "0.1",
-        "description": "Payment for coffee",
-        "isValid": true,
-        "isExpired": false,
-        "expiresAt": "2025-10-03T16:00:00.000Z"
-    }
+  "message": "QR code parsed successfully",
+  "paymentDetails": {
+    "paymentId": "qr_pay_1234567890abcdef",
+    "recipientAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+    "chain": "ethereum",
+    "network": "testnet",
+    "amount": "0.1",
+    "description": "Payment for coffee",
+    "isValid": true,
+    "isExpired": false,
+    "expiresAt": "2025-10-03T16:00:00.000Z"
+  }
 }
 ```
 
@@ -1275,8 +1275,8 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "paymentId": "qr_pay_1234567890abcdef",
-    "fromAddress": "0xYourSenderAddress"
+  "paymentId": "qr_pay_1234567890abcdef",
+  "fromAddress": "0xYourSenderAddress"
 }
 ```
 
@@ -1284,17 +1284,17 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "QR payment completed successfully",
-    "transaction": {
-        "txHash": "0x1234567890abcdef...",
-        "fromAddress": "0xYourSenderAddress",
-        "toAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-        "amount": "0.1",
-        "chain": "ethereum",
-        "network": "testnet",
-        "paymentId": "qr_pay_1234567890abcdef",
-        "status": "confirmed"
-    }
+  "message": "QR payment completed successfully",
+  "transaction": {
+    "txHash": "0x1234567890abcdef...",
+    "fromAddress": "0xYourSenderAddress",
+    "toAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+    "amount": "0.1",
+    "chain": "ethereum",
+    "network": "testnet",
+    "paymentId": "qr_pay_1234567890abcdef",
+    "status": "confirmed"
+  }
 }
 ```
 
@@ -1312,16 +1312,16 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "paymentStatus": {
-        "paymentId": "qr_pay_1234567890abcdef",
-        "status": "completed",
-        "amount": "0.1",
-        "chain": "ethereum",
-        "network": "testnet",
-        "txHash": "0x1234567890abcdef...",
-        "paidAt": "2025-10-03T15:45:00.000Z",
-        "isExpired": false
-    }
+  "paymentStatus": {
+    "paymentId": "qr_pay_1234567890abcdef",
+    "status": "completed",
+    "amount": "0.1",
+    "chain": "ethereum",
+    "network": "testnet",
+    "txHash": "0x1234567890abcdef...",
+    "paidAt": "2025-10-03T15:45:00.000Z",
+    "isExpired": false
+  }
 }
 ```
 
@@ -1339,43 +1339,43 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "currencies": [
-        {
-            "symbol": "ETH",
-            "name": "Ethereum",
-            "chain": "ethereum",
-            "decimals": 18,
-            "type": "native"
-        },
-        {
-            "symbol": "BTC",
-            "name": "Bitcoin",
-            "chain": "bitcoin",
-            "decimals": 8,
-            "type": "native"
-        },
-        {
-            "symbol": "SOL",
-            "name": "Solana",
-            "chain": "solana",
-            "decimals": 9,
-            "type": "native"
-        },
-        {
-            "symbol": "STRK",
-            "name": "Starknet",
-            "chain": "starknet",
-            "decimals": 18,
-            "type": "native"
-        },
-        {
-            "symbol": "USDT",
-            "name": "Tether USD",
-            "chain": "ethereum",
-            "decimals": 6,
-            "type": "erc20"
-        }
-    ]
+  "currencies": [
+    {
+      "symbol": "ETH",
+      "name": "Ethereum",
+      "chain": "ethereum",
+      "decimals": 18,
+      "type": "native"
+    },
+    {
+      "symbol": "BTC",
+      "name": "Bitcoin",
+      "chain": "bitcoin",
+      "decimals": 8,
+      "type": "native"
+    },
+    {
+      "symbol": "SOL",
+      "name": "Solana",
+      "chain": "solana",
+      "decimals": 9,
+      "type": "native"
+    },
+    {
+      "symbol": "STRK",
+      "name": "Starknet",
+      "chain": "starknet",
+      "decimals": 18,
+      "type": "native"
+    },
+    {
+      "symbol": "USDT",
+      "name": "Tether USD",
+      "chain": "ethereum",
+      "decimals": 6,
+      "type": "erc20"
+    }
+  ]
 }
 ```
 
@@ -1387,9 +1387,9 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 **Query Parameters:**
 
--   `from` (required): Source currency symbol
--   `to` (required): Target currency symbol
--   `amount` (optional): Amount to convert
+- `from` (required): Source currency symbol
+- `to` (required): Target currency symbol
+- `amount` (optional): Amount to convert
 
 **Description:** Get real-time exchange rates between cryptocurrencies.
 
@@ -1397,13 +1397,13 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "from": "BTC",
-    "to": "ETH",
-    "rate": "16.25",
-    "amount": "1.0",
-    "convertedAmount": "16.25",
-    "timestamp": "2025-10-03T15:30:00.000Z",
-    "source": "coinmarketcap"
+  "from": "BTC",
+  "to": "ETH",
+  "rate": "16.25",
+  "amount": "1.0",
+  "convertedAmount": "16.25",
+  "timestamp": "2025-10-03T15:30:00.000Z",
+  "source": "coinmarketcap"
 }
 ```
 
@@ -1421,10 +1421,10 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "fromCurrency": "BTC",
-    "toCurrency": "ETH",
-    "amount": "0.1",
-    "network": "testnet"
+  "fromCurrency": "BTC",
+  "toCurrency": "ETH",
+  "amount": "0.1",
+  "network": "testnet"
 }
 ```
 
@@ -1432,21 +1432,21 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "quoteId": "quote_1234567890abcdef",
-    "fromCurrency": "BTC",
-    "toCurrency": "ETH",
-    "fromAmount": "0.1",
-    "toAmount": "1.625",
-    "exchangeRate": "16.25",
-    "fees": {
-        "networkFee": "0.001",
-        "serviceFee": "0.002",
-        "totalFees": "0.003"
-    },
-    "estimatedGas": "21000",
-    "slippage": "0.5%",
-    "expiresAt": "2025-10-03T15:45:00.000Z",
-    "validForMinutes": 15
+  "quoteId": "quote_1234567890abcdef",
+  "fromCurrency": "BTC",
+  "toCurrency": "ETH",
+  "fromAmount": "0.1",
+  "toAmount": "1.625",
+  "exchangeRate": "16.25",
+  "fees": {
+    "networkFee": "0.001",
+    "serviceFee": "0.002",
+    "totalFees": "0.003"
+  },
+  "estimatedGas": "21000",
+  "slippage": "0.5%",
+  "expiresAt": "2025-10-03T15:45:00.000Z",
+  "validForMinutes": 15
 }
 ```
 
@@ -1464,9 +1464,9 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "quoteId": "quote_1234567890abcdef",
-    "fromAddress": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
-    "toAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9"
+  "quoteId": "quote_1234567890abcdef",
+  "fromAddress": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+  "toAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9"
 }
 ```
 
@@ -1474,23 +1474,23 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "Conversion executed successfully",
-    "conversion": {
-        "conversionId": "conv_1234567890abcdef",
-        "fromCurrency": "BTC",
-        "toCurrency": "ETH",
-        "fromAmount": "0.1",
-        "toAmount": "1.625",
-        "fromTxHash": "abc123...",
-        "toTxHash": "def456...",
-        "status": "completed",
-        "executedAt": "2025-10-03T15:35:00.000Z",
-        "actualRate": "16.24",
-        "fees": {
-            "networkFee": "0.001",
-            "serviceFee": "0.002"
-        }
+  "message": "Conversion executed successfully",
+  "conversion": {
+    "conversionId": "conv_1234567890abcdef",
+    "fromCurrency": "BTC",
+    "toCurrency": "ETH",
+    "fromAmount": "0.1",
+    "toAmount": "1.625",
+    "fromTxHash": "abc123...",
+    "toTxHash": "def456...",
+    "status": "completed",
+    "executedAt": "2025-10-03T15:35:00.000Z",
+    "actualRate": "16.24",
+    "fees": {
+      "networkFee": "0.001",
+      "serviceFee": "0.002"
     }
+  }
 }
 ```
 
@@ -1504,33 +1504,33 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 **Query Parameters:**
 
--   `page` (optional): Page number (default: 1)
--   `limit` (optional): Items per page (default: 20)
--   `status` (optional): Filter by status (pending, completed, failed)
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20)
+- `status` (optional): Filter by status (pending, completed, failed)
 
 **Response (200):**
 
 ```json
 {
-    "conversions": [
-        {
-            "conversionId": "conv_1234567890abcdef",
-            "fromCurrency": "BTC",
-            "toCurrency": "ETH",
-            "fromAmount": "0.1",
-            "toAmount": "1.625",
-            "status": "completed",
-            "executedAt": "2025-10-03T15:35:00.000Z",
-            "fromTxHash": "abc123...",
-            "toTxHash": "def456..."
-        }
-    ],
-    "pagination": {
-        "page": 1,
-        "limit": 20,
-        "total": 5,
-        "totalPages": 1
+  "conversions": [
+    {
+      "conversionId": "conv_1234567890abcdef",
+      "fromCurrency": "BTC",
+      "toCurrency": "ETH",
+      "fromAmount": "0.1",
+      "toAmount": "1.625",
+      "status": "completed",
+      "executedAt": "2025-10-03T15:35:00.000Z",
+      "fromTxHash": "abc123...",
+      "toTxHash": "def456..."
     }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 5,
+    "totalPages": 1
+  }
 }
 ```
 
@@ -1550,15 +1550,15 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "merchantId": "merchant_12345",
-    "amount": "25.99",
-    "currency": "USDT",
-    "description": "Coffee and pastry",
-    "orderId": "ORDER_2025_001",
-    "customerEmail": "customer@example.com",
-    "expiresInMinutes": 30,
-    "callbackUrl": "https://merchant.com/webhook/payment",
-    "network": "testnet"
+  "merchantId": "merchant_12345",
+  "amount": "25.99",
+  "currency": "USDT",
+  "description": "Coffee and pastry",
+  "orderId": "ORDER_2025_001",
+  "customerEmail": "customer@example.com",
+  "expiresInMinutes": 30,
+  "callbackUrl": "https://merchant.com/webhook/payment",
+  "network": "testnet"
 }
 ```
 
@@ -1566,20 +1566,20 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "Merchant payment created successfully",
-    "payment": {
-        "paymentId": "pay_1234567890abcdef",
-        "merchantId": "merchant_12345",
-        "amount": "25.99",
-        "currency": "USDT",
-        "status": "pending",
-        "description": "Coffee and pastry",
-        "orderId": "ORDER_2025_001",
-        "paymentAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-        "qrCode": "velo://merchant?id=pay_1234567890abcdef&amount=25.99&currency=USDT",
-        "expiresAt": "2025-10-03T16:00:00.000Z",
-        "createdAt": "2025-10-03T15:30:00.000Z"
-    }
+  "message": "Merchant payment created successfully",
+  "payment": {
+    "paymentId": "pay_1234567890abcdef",
+    "merchantId": "merchant_12345",
+    "amount": "25.99",
+    "currency": "USDT",
+    "status": "pending",
+    "description": "Coffee and pastry",
+    "orderId": "ORDER_2025_001",
+    "paymentAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+    "qrCode": "velo://merchant?id=pay_1234567890abcdef&amount=25.99&currency=USDT",
+    "expiresAt": "2025-10-03T16:00:00.000Z",
+    "createdAt": "2025-10-03T15:30:00.000Z"
+  }
 }
 ```
 
@@ -1597,21 +1597,21 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "payment": {
-        "paymentId": "pay_1234567890abcdef",
-        "merchantId": "merchant_12345",
-        "amount": "25.99",
-        "currency": "USDT",
-        "status": "completed",
-        "description": "Coffee and pastry",
-        "orderId": "ORDER_2025_001",
-        "txHash": "0x1234567890abcdef...",
-        "paidAt": "2025-10-03T15:45:00.000Z",
-        "customerInfo": {
-            "email": "customer@example.com",
-            "paymentAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9"
-        }
+  "payment": {
+    "paymentId": "pay_1234567890abcdef",
+    "merchantId": "merchant_12345",
+    "amount": "25.99",
+    "currency": "USDT",
+    "status": "completed",
+    "description": "Coffee and pastry",
+    "orderId": "ORDER_2025_001",
+    "txHash": "0x1234567890abcdef...",
+    "paidAt": "2025-10-03T15:45:00.000Z",
+    "customerInfo": {
+      "email": "customer@example.com",
+      "paymentAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9"
     }
+  }
 }
 ```
 
@@ -1629,8 +1629,8 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "paymentId": "pay_1234567890abcdef",
-    "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9"
+  "paymentId": "pay_1234567890abcdef",
+  "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9"
 }
 ```
 
@@ -1638,16 +1638,16 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "Merchant payment completed successfully",
-    "transaction": {
-        "txHash": "0x1234567890abcdef...",
-        "paymentId": "pay_1234567890abcdef",
-        "amount": "25.99",
-        "currency": "USDT",
-        "merchantId": "merchant_12345",
-        "status": "confirmed",
-        "paidAt": "2025-10-03T15:45:00.000Z"
-    }
+  "message": "Merchant payment completed successfully",
+  "transaction": {
+    "txHash": "0x1234567890abcdef...",
+    "paymentId": "pay_1234567890abcdef",
+    "amount": "25.99",
+    "currency": "USDT",
+    "merchantId": "merchant_12345",
+    "status": "confirmed",
+    "paidAt": "2025-10-03T15:45:00.000Z"
+  }
 }
 ```
 
@@ -1661,33 +1661,33 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 **Query Parameters:**
 
--   `merchantId` (optional): Filter by merchant
--   `status` (optional): Filter by status
--   `page` (optional): Page number
--   `limit` (optional): Items per page
+- `merchantId` (optional): Filter by merchant
+- `status` (optional): Filter by status
+- `page` (optional): Page number
+- `limit` (optional): Items per page
 
 **Response (200):**
 
 ```json
 {
-    "payments": [
-        {
-            "paymentId": "pay_1234567890abcdef",
-            "merchantId": "merchant_12345",
-            "amount": "25.99",
-            "currency": "USDT",
-            "status": "completed",
-            "description": "Coffee and pastry",
-            "orderId": "ORDER_2025_001",
-            "paidAt": "2025-10-03T15:45:00.000Z"
-        }
-    ],
-    "pagination": {
-        "page": 1,
-        "limit": 20,
-        "total": 3,
-        "totalPages": 1
+  "payments": [
+    {
+      "paymentId": "pay_1234567890abcdef",
+      "merchantId": "merchant_12345",
+      "amount": "25.99",
+      "currency": "USDT",
+      "status": "completed",
+      "description": "Coffee and pastry",
+      "orderId": "ORDER_2025_001",
+      "paidAt": "2025-10-03T15:45:00.000Z"
     }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 3,
+    "totalPages": 1
+  }
 }
 ```
 
@@ -1701,29 +1701,29 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 **Headers:**
 
--   `Authorization: Bearer <token>`
--   `Content-Type: multipart/form-data`
+- `Authorization: Bearer <token>`
+- `Content-Type: multipart/form-data`
 
 **Description:** Upload KYC verification documents.
 
 **Form Data:**
 
--   `documentType`: "passport" | "national_id" | "driver_license" | "utility_bill"
--   `file`: Document image file (JPG, PNG, PDF)
+- `documentType`: "passport" | "national_id" | "driver_license" | "utility_bill"
+- `file`: Document image file (JPG, PNG, PDF)
 
 **Response (200):**
 
 ```json
 {
-    "message": "Document uploaded successfully",
-    "document": {
-        "id": "doc_1234567890abcdef",
-        "documentType": "passport",
-        "fileName": "passport_john_doe.jpg",
-        "fileSize": 2048576,
-        "status": "pending",
-        "uploadedAt": "2025-10-03T15:30:00.000Z"
-    }
+  "message": "Document uploaded successfully",
+  "document": {
+    "id": "doc_1234567890abcdef",
+    "documentType": "passport",
+    "fileName": "passport_john_doe.jpg",
+    "fileSize": 2048576,
+    "status": "pending",
+    "uploadedAt": "2025-10-03T15:30:00.000Z"
+  }
 }
 ```
 
@@ -1741,29 +1741,29 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "kycStatus": {
+  "kycStatus": {
+    "status": "pending",
+    "documentsSubmitted": 2,
+    "documentsRequired": 3,
+    "documents": [
+      {
+        "id": "doc_1234567890abcdef",
+        "documentType": "passport",
+        "status": "approved",
+        "uploadedAt": "2025-10-03T15:30:00.000Z"
+      },
+      {
+        "id": "doc_2234567890abcdef",
+        "documentType": "utility_bill",
         "status": "pending",
-        "documentsSubmitted": 2,
-        "documentsRequired": 3,
-        "documents": [
-            {
-                "id": "doc_1234567890abcdef",
-                "documentType": "passport",
-                "status": "approved",
-                "uploadedAt": "2025-10-03T15:30:00.000Z"
-            },
-            {
-                "id": "doc_2234567890abcdef",
-                "documentType": "utility_bill",
-                "status": "pending",
-                "uploadedAt": "2025-10-03T16:00:00.000Z"
-            }
-        ],
-        "nextSteps": [
-            "Upload proof of address document",
-            "Wait for document review"
-        ]
-    }
+        "uploadedAt": "2025-10-03T16:00:00.000Z"
+      }
+    ],
+    "nextSteps": [
+      "Upload proof of address document",
+      "Wait for document review"
+    ]
+  }
 }
 ```
 
@@ -1779,51 +1779,51 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 **Query Parameters:**
 
--   `page` (optional): Page number (default: 1)
--   `limit` (optional): Items per page (default: 20)
--   `unreadOnly` (optional): Set to "true" for unread only
--   `type` (optional): Filter by notification type
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20)
+- `unreadOnly` (optional): Set to "true" for unread only
+- `type` (optional): Filter by notification type
 
 **Response (200):**
 
 ```json
 {
-    "notifications": [
-        {
-            "id": "550e8400-e29b-41d4-a716-446655440000",
-            "type": "deposit",
-            "title": "Deposit Received",
-            "message": "You received 0.1 BTC at your wallet address",
-            "details": {
-                "amount": "0.1",
-                "currency": "BTC",
-                "txHash": "abc123...",
-                "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
-            },
-            "isRead": false,
-            "createdAt": "2025-10-03T15:30:00.000Z"
-        },
-        {
-            "id": "550e8400-e29b-41d4-a716-446655440001",
-            "type": "send",
-            "title": "Payment Sent",
-            "message": "You sent 0.05 ETH to 0x742d35...",
-            "details": {
-                "amount": "0.05",
-                "currency": "ETH",
-                "toAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-                "txHash": "def456..."
-            },
-            "isRead": true,
-            "createdAt": "2025-10-03T14:15:00.000Z"
-        }
-    ],
-    "pagination": {
-        "page": 1,
-        "limit": 20,
-        "total": 12,
-        "totalPages": 1
+  "notifications": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "deposit",
+      "title": "Deposit Received",
+      "message": "You received 0.1 BTC at your wallet address",
+      "details": {
+        "amount": "0.1",
+        "currency": "BTC",
+        "txHash": "abc123...",
+        "address": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
+      },
+      "isRead": false,
+      "createdAt": "2025-10-03T15:30:00.000Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "type": "send",
+      "title": "Payment Sent",
+      "message": "You sent 0.05 ETH to 0x742d35...",
+      "details": {
+        "amount": "0.05",
+        "currency": "ETH",
+        "toAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+        "txHash": "def456..."
+      },
+      "isRead": true,
+      "createdAt": "2025-10-03T14:15:00.000Z"
     }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 12,
+    "totalPages": 1
+  }
 }
 ```
 
@@ -1839,7 +1839,7 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "unreadCount": 3
+  "unreadCount": 3
 }
 ```
 
@@ -1855,11 +1855,11 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "Notification marked as read",
-    "notification": {
-        "id": "550e8400-e29b-41d4-a716-446655440000",
-        "isRead": true
-    }
+  "message": "Notification marked as read",
+  "notification": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "isRead": true
+  }
 }
 ```
 
@@ -1875,8 +1875,8 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "All notifications marked as read",
-    "updatedCount": 3
+  "message": "All notifications marked as read",
+  "updatedCount": 3
 }
 ```
 
@@ -1892,7 +1892,7 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "message": "Notification deleted successfully"
+  "message": "Notification deleted successfully"
 }
 ```
 
@@ -1908,61 +1908,61 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 **Query Parameters:**
 
--   `page` (optional): Page number (default: 1)
--   `limit` (optional): Items per page (default: 20)
--   `chain` (optional): Filter by blockchain
--   `network` (optional): Filter by network
--   `type` (optional): Filter by transaction type
--   `dateFrom` (optional): Start date (ISO string)
--   `dateTo` (optional): End date (ISO string)
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 20)
+- `chain` (optional): Filter by blockchain
+- `network` (optional): Filter by network
+- `type` (optional): Filter by transaction type
+- `dateFrom` (optional): Start date (ISO string)
+- `dateTo` (optional): End date (ISO string)
 
 **Response (200):**
 
 ```json
 {
-    "transactions": [
-        {
-            "id": "tx-001",
-            "type": "send",
-            "chain": "ethereum",
-            "network": "testnet",
-            "amount": "0.5",
-            "currency": "ETH",
-            "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
-            "toAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-            "txHash": "0x1234567890abcdef...",
-            "status": "confirmed",
-            "timestamp": "2025-10-03T15:30:00.000Z",
-            "fees": {
-                "networkFee": "0.001",
-                "serviceFee": "0.0005"
-            }
-        },
-        {
-            "id": "tx-002",
-            "type": "receive",
-            "chain": "bitcoin",
-            "network": "testnet",
-            "amount": "0.001",
-            "currency": "BTC",
-            "fromAddress": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
-            "toAddress": "mymoYSk7wH2cSCJRNDfmMj8t3CTE1X87aK",
-            "txHash": "cb5428e7b8f12dfcbe195e27c589e0f7de1c74183d021fbf6623f56c95d3a0e1",
-            "status": "confirmed",
-            "timestamp": "2025-10-03T14:15:00.000Z"
-        }
-    ],
-    "pagination": {
-        "page": 1,
-        "limit": 20,
-        "total": 25,
-        "totalPages": 2
+  "transactions": [
+    {
+      "id": "tx-001",
+      "type": "send",
+      "chain": "ethereum",
+      "network": "testnet",
+      "amount": "0.5",
+      "currency": "ETH",
+      "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
+      "toAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+      "txHash": "0x1234567890abcdef...",
+      "status": "confirmed",
+      "timestamp": "2025-10-03T15:30:00.000Z",
+      "fees": {
+        "networkFee": "0.001",
+        "serviceFee": "0.0005"
+      }
     },
-    "summary": {
-        "totalSent": "1.25",
-        "totalReceived": "2.1",
-        "totalTransactions": 25
+    {
+      "id": "tx-002",
+      "type": "receive",
+      "chain": "bitcoin",
+      "network": "testnet",
+      "amount": "0.001",
+      "currency": "BTC",
+      "fromAddress": "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+      "toAddress": "mymoYSk7wH2cSCJRNDfmMj8t3CTE1X87aK",
+      "txHash": "cb5428e7b8f12dfcbe195e27c589e0f7de1c74183d021fbf6623f56c95d3a0e1",
+      "status": "confirmed",
+      "timestamp": "2025-10-03T14:15:00.000Z"
     }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 25,
+    "totalPages": 2
+  },
+  "summary": {
+    "totalSent": "1.25",
+    "totalReceived": "2.1",
+    "totalTransactions": 25
+  }
 }
 ```
 
@@ -1978,31 +1978,31 @@ curl -X POST "http://localhost:5500/split-payment/create" \
 
 ```json
 {
-    "transaction": {
-        "id": "tx-001",
-        "type": "send",
-        "chain": "ethereum",
-        "network": "testnet",
-        "amount": "0.5",
-        "currency": "ETH",
-        "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
-        "toAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
-        "txHash": "0x1234567890abcdef...",
-        "status": "confirmed",
-        "timestamp": "2025-10-03T15:30:00.000Z",
-        "blockNumber": 12345678,
-        "confirmations": 15,
-        "fees": {
-            "networkFee": "0.001",
-            "serviceFee": "0.0005",
-            "gasUsed": "21000",
-            "gasPrice": "20"
-        },
-        "metadata": {
-            "description": "Payment for services",
-            "tags": ["business", "payment"]
-        }
+  "transaction": {
+    "id": "tx-001",
+    "type": "send",
+    "chain": "ethereum",
+    "network": "testnet",
+    "amount": "0.5",
+    "currency": "ETH",
+    "fromAddress": "0x8ba1f109551bD432803012645Hac136c5d96c0B9",
+    "toAddress": "0x742d35Cc6634C0532925a3b8D1e8b7ae8e6b3e47",
+    "txHash": "0x1234567890abcdef...",
+    "status": "confirmed",
+    "timestamp": "2025-10-03T15:30:00.000Z",
+    "blockNumber": 12345678,
+    "confirmations": 15,
+    "fees": {
+      "networkFee": "0.001",
+      "serviceFee": "0.0005",
+      "gasUsed": "21000",
+      "gasPrice": "20"
+    },
+    "metadata": {
+      "description": "Payment for services",
+      "tags": ["business", "payment"]
     }
+  }
 }
 ```
 
@@ -2098,3 +2098,205 @@ curl -X POST "http://localhost:5500/qr/generate" \
 ```bash
 curl -X GET "http://localhost:5500/conversion/rates?from=BTC&to=ETH&amount=1.0"
 ```
+
+---
+
+## Additional Endpoints (missing controllers)
+
+Below are concise endpoint definitions for controllers not documented above. These map to existing backend controllers (airtime, data, electricity, fee, fiat, changelly, moonpay, paystack, ramp, swap, transaction, unifiedPurchase, admin, deploy/Strk). Use `Authorization: Bearer <token>` where indicated.
+
+### Airtime
+
+- Endpoint: `POST /airtime/purchase`
+- Headers: `Authorization: Bearer <token>`
+- Body:
+
+```json
+{
+  "phoneNumber": "+2348012345678",
+  "network": "mtn",
+  "amount": "500",
+  "country": "NG",
+  "currency": "NGN"
+}
+```
+
+- Response (200): transaction object with `purchaseId`, `status`, `providerRef`, and `balance`.
+
+---
+
+### Data
+
+- Endpoint: `POST /data/purchase`
+- Headers: `Authorization: Bearer <token>`
+- Body:
+
+```json
+{
+  "phoneNumber": "+2348012345678",
+  "provider": "mtn",
+  "planCode": "MTN-1GB-7D",
+  "amount": "350",
+  "country": "NG"
+}
+```
+
+- Response (200): `{ purchaseId, status, planName, expiry, providerRef }`.
+
+---
+
+### Electricity
+
+- Endpoint: `POST /electricity/purchase`
+- Headers: `Authorization: Bearer <token>`
+- Body:
+
+```json
+{
+  "meterNumber": "1234567890",
+  "meterType": "prepaid",
+  "disco": "ikeja-lectric",
+  "amount": "2000",
+  "customerName": "John Doe"
+}
+```
+
+- Response (200): for prepaid returns `{ token, voucher, units, purchaseId, status }`.
+
+---
+
+### Fee Calculation
+
+- Endpoint: `GET /fee/calculate`
+- Headers: `Authorization: Bearer <token>` (optional for public fees)
+- Query params: `?chain=ethereum&network=testnet&amount=0.1&type=send`
+- Response (200): `{ networkFee, serviceFee, totalFee, currency }`.
+
+---
+
+### Fiat Orders (fiatController / paystackFiatController)
+
+- Endpoint: `POST /fiat/order`
+- Headers: `Authorization: Bearer <token>`
+- Body:
+
+```json
+{
+  "amount": "100.00",
+  "currency": "USD",
+  "paymentMethod": "card|bank_transfer|paystack",
+  "returnUrl": "https://merchant.com/return",
+  "callbackUrl": "https://merchant.com/webhook"
+}
+```
+
+- Response (201): `{ orderId, status, providerRedirectUrl?, paymentReference }`.
+
+---
+
+### Changelly (crypto exchange integration)
+
+- Endpoint: `POST /changelly/quote`
+- Body: `{ "from": "BTC", "to": "ETH", "amount": "0.01" }`
+- Response: `{ quoteId, rate, toAmount, expiresAt }`
+
+- Endpoint: `POST /changelly/execute`
+- Headers: `Authorization: Bearer <token>`
+- Body: `{ "quoteId": "...", "fromAddress": "...", "toAddress": "..." }`
+- Response: execution details with `conversionId` and tx hashes.
+
+---
+
+### Moonpay / Ramp (on/off-ramps)
+
+- Endpoint: `POST /moonpay/quote` or `POST /ramp/quote`
+- Body: `{ "fiatAmount": "100", "fiatCurrency": "USD", "crypto": "ETH", "walletAddress": "0x..." }`
+- Response: `{ providerQuoteId, amountCrypto, fees, expiresAt }`
+
+- Endpoint: `POST /moonpay/execute` or `POST /ramp/execute`
+- Body: provider-specific payload returned from quote; Response: `{ orderId, status, providerRef, redirectUrl? }`.
+
+---
+
+### Paystack Fiat (paystackFiatController)
+
+- Endpoint: `POST /paystack/initiate`
+- Body: `{ "amount": "10000", "email": "customer@example.com", "currency": "NGN", "callbackUrl": "https://..." }`
+- Response (200): `{ authorization_url, reference }`.
+
+- Webhook: `POST /paystack/webhook` (no auth) — handle `status` updates.
+
+---
+
+### Swap (swapController)
+
+- Endpoint: `GET /swap/quote?from=ETH&to=USDT&amount=1.0`
+- Response: `{ quoteId, fromAmount, toAmount, rate, fees, expiresAt }`
+
+- Endpoint: `POST /swap/execute`
+- Headers: `Authorization: Bearer <token>`
+- Body:
+
+```json
+{
+  "quoteId": "quote_abc",
+  "fromAddress": "0xFrom",
+  "toAddress": "0xTo"
+}
+```
+
+- Response (200): `{ swapId, status, fromTxHash, toTxHash }`.
+
+---
+
+### Unified Purchase (unifiedPurchaseController)
+
+- Endpoint: `POST /unified-purchase`
+- Headers: `Authorization: Bearer <token>`
+- Description: single endpoint to create purchases for airtime/data/electricity/provider-based products.
+- Body (example for airtime):
+
+```json
+{
+  "type": "airtime|data|electricity",
+  "payload": {
+    /* provider-specific fields */
+  }
+}
+```
+
+- Response: provider purchase object `{ purchaseId, status, providerRef, details }`.
+
+---
+
+### Transaction Controller (transactionController)
+
+- Endpoint: `POST /transaction/notify`
+- Headers: `Authorization: Bearer <token>`
+- Body: `{ "txHash": "0x..", "chain": "ethereum", "network": "testnet", "meta": {} }`
+- Description: manual/third-party transaction notification (used by provider webhooks or internal services).
+
+- Endpoint: `GET /transaction/:id` — get transaction details and status.
+
+---
+
+### Admin Endpoints (adminController)
+
+- Endpoint: `GET /admin/users`
+- Headers: `Authorization: Bearer <admin_token>`
+- Query: `?page=1&limit=20&status=active`
+- Response: paginated users list.
+
+- Endpoint: `PATCH /admin/user/:id/ban`
+- Body: `{ "reason": "fraud" }` — Response: `{ userId, status: "banned" }`.
+
+---
+
+### Deployment / Starknet (deployController / StrkDeploymentController)
+
+- Endpoint: `POST /strk/deploy`
+- Headers: `Authorization: Bearer <token>` (admin/deployer)
+- Body: `{ "contractName": "MyContract", "constructorArgs": [ ... ], "network": "mainnet|testnet" }`
+- Response: `{ deploymentId, txHash, contractAddress, status }`.
+
+---
