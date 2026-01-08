@@ -1,27 +1,41 @@
-import { Repository } from "typeorm";
-import { AppDataSource } from "../config/database";
-import { AirtimePurchase } from "../entities/AirtimePurchase";
-import { blockchainValidator } from "../services/blockchain/validators";
-import { exchangeRateService } from "../services/exchangeRateService";
-
-export enum Blockchain {
-    ETHEREUM = "ethereum",
-    BITCOIN = "bitcoin",
-    SOLANA = "solana",
-    STELLAR = "stellar",
-    POLKADOT = "polkadot",
-    STARKNET = "starknet",
-    USDT_ERC20 = "usdt-erc20",
-}
-
-export enum MobileNetwork {
-    MTN = "mtn",
-    GLO = "glo",
-    AIRTEL = "airtel",
-    ETISALAT = "9mobile",
-}
-
-export const SECURITY_CONSTANTS = {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SECURITY_CONSTANTS = exports.MobileNetwork = exports.Blockchain = void 0;
+exports.getBlockchainWallet = getBlockchainWallet;
+exports.getMockCryptoAmount = getMockCryptoAmount;
+exports.convertFiatToCrypto = convertFiatToCrypto;
+exports.validateBlockchainTransaction = validateBlockchainTransaction;
+exports.checkTransactionHashUniqueness = checkTransactionHashUniqueness;
+exports.markTransactionAsUsed = markTransactionAsUsed;
+exports.validateCommonInputs = validateCommonInputs;
+exports.mapNellobytesError = mapNellobytesError;
+exports.initiateRefund = initiateRefund;
+exports.logSecurityEvent = logSecurityEvent;
+exports.getSupportedBlockchains = getSupportedBlockchains;
+exports.getSupportedNetworks = getSupportedNetworks;
+exports.getSecurityLimits = getSecurityLimits;
+const database_1 = require("../config/database");
+const AirtimePurchase_1 = require("../entities/AirtimePurchase");
+const validators_1 = require("../services/blockchain/validators");
+const exchangeRateService_1 = require("../services/exchangeRateService");
+var Blockchain;
+(function (Blockchain) {
+    Blockchain["ETHEREUM"] = "ethereum";
+    Blockchain["BITCOIN"] = "bitcoin";
+    Blockchain["SOLANA"] = "solana";
+    Blockchain["STELLAR"] = "stellar";
+    Blockchain["POLKADOT"] = "polkadot";
+    Blockchain["STARKNET"] = "starknet";
+    Blockchain["USDT_ERC20"] = "usdt-erc20";
+})(Blockchain || (exports.Blockchain = Blockchain = {}));
+var MobileNetwork;
+(function (MobileNetwork) {
+    MobileNetwork["MTN"] = "mtn";
+    MobileNetwork["GLO"] = "glo";
+    MobileNetwork["AIRTEL"] = "airtel";
+    MobileNetwork["ETISALAT"] = "9mobile";
+})(MobileNetwork || (exports.MobileNetwork = MobileNetwork = {}));
+exports.SECURITY_CONSTANTS = {
     AMOUNT_TOLERANCE_PERCENT: 1.0,
     PURCHASE_EXPIRY_MS: 30 * 60 * 1000,
     MIN_AIRTIME_AMOUNT: 50,
@@ -31,8 +45,7 @@ export const SECURITY_CONSTANTS = {
     MIN_ELECTRICITY_AMOUNT: 1000,
     MAX_ELECTRICITY_AMOUNT: 200000,
 };
-
-const MOCK_CRYPTO_RATES: { [key in Blockchain]: number } = {
+const MOCK_CRYPTO_RATES = {
     [Blockchain.ETHEREUM]: 2000000,
     [Blockchain.BITCOIN]: 60000000,
     [Blockchain.SOLANA]: 269800,
@@ -41,8 +54,7 @@ const MOCK_CRYPTO_RATES: { [key in Blockchain]: number } = {
     [Blockchain.STARKNET]: 260.64,
     [Blockchain.USDT_ERC20]: 1430,
 };
-
-const CRYPTO_ID_MAP: { [key in Blockchain]: string } = {
+const CRYPTO_ID_MAP = {
     [Blockchain.ETHEREUM]: "eth",
     [Blockchain.BITCOIN]: "btc",
     [Blockchain.SOLANA]: "sol",
@@ -51,9 +63,8 @@ const CRYPTO_ID_MAP: { [key in Blockchain]: string } = {
     [Blockchain.STARKNET]: "strk",
     [Blockchain.USDT_ERC20]: "usdt",
 };
-
-export function getBlockchainWallet(blockchain: Blockchain): string {
-    const walletMap: { [key in Blockchain]: string | undefined } = {
+function getBlockchainWallet(blockchain) {
+    const walletMap = {
         [Blockchain.ETHEREUM]: process.env.VELO_TREASURY_ETH_MAINNET,
         [Blockchain.BITCOIN]: process.env.VELO_TREASURY_BTC_MAINNET,
         [Blockchain.SOLANA]: process.env.VELO_TREASURY_SOL_MAINNET,
@@ -62,212 +73,140 @@ export function getBlockchainWallet(blockchain: Blockchain): string {
         [Blockchain.STARKNET]: process.env.VELO_TREASURY_STRK_MAINNET,
         [Blockchain.USDT_ERC20]: process.env.VELO_TREASURY_USDT_MAINNET,
     };
-
-
     // Use fallbacks for dev if env vars missing
     const fallback = "0x0000000000000000000000000000000000000000";
     const walletAddress = walletMap[blockchain] || fallback;
-
     return walletAddress;
 }
-
-export function getMockCryptoAmount(
-    fiatAmount: number,
-    blockchain: Blockchain
-): number {
+function getMockCryptoAmount(fiatAmount, blockchain) {
     const rate = MOCK_CRYPTO_RATES[blockchain];
     if (!rate) {
         throw new Error(`Exchange rate not available for: ${blockchain}`);
     }
-
     const cryptoAmount = fiatAmount / rate;
     return Math.round(cryptoAmount * 100000000) / 100000000;
 }
-
-export async function convertFiatToCrypto(
-    fiatAmount: number,
-    blockchain: Blockchain
-): Promise<number> {
+async function convertFiatToCrypto(fiatAmount, blockchain) {
     try {
         const cryptoId = CRYPTO_ID_MAP[blockchain];
         if (!cryptoId) {
             throw new Error(`Exchange rate not available for: ${blockchain}`);
         }
-
-        const cryptoAmount = await exchangeRateService.convertFiatToCrypto(
-            fiatAmount,
-            cryptoId
-        );
-
-        console.log(
-            `💰 Exchange rate conversion: ${fiatAmount} NGN = ${cryptoAmount} ${cryptoId.toUpperCase()}`
-        );
+        const cryptoAmount = await exchangeRateService_1.exchangeRateService.convertFiatToCrypto(fiatAmount, cryptoId);
+        console.log(`💰 Exchange rate conversion: ${fiatAmount} NGN = ${cryptoAmount} ${cryptoId.toUpperCase()}`);
         return cryptoAmount;
-    } catch (error: any) {
+    }
+    catch (error) {
         console.error("❌ Exchange rate conversion failed:", error.message);
         console.log("⚠️ Using fallback mock rates");
         return getMockCryptoAmount(fiatAmount, blockchain);
     }
 }
-
-export async function validateBlockchainTransaction(
-    blockchain: Blockchain,
-    transactionHash: string,
-    expectedAmount: number,
-    expectedToAddress: string
-): Promise<boolean> {
+async function validateBlockchainTransaction(blockchain, transactionHash, expectedAmount, expectedToAddress) {
     console.log(`🔍 Validating ${blockchain} transaction...`);
-
     const MAX_RETRIES = 12; // Approx 1 minute total wait time
     const RETRY_DELAY_MS = 5000;
-
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
             if (attempt > 1) {
-                console.log(` Retry ${attempt}/${MAX_RETRIES} for ${blockchain} transaction...`);
+                console.log(`⏳ Retry ${attempt}/${MAX_RETRIES} for ${blockchain} transaction...`);
             }
-
-            const tolerance = expectedAmount * (SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT / 100);
+            const tolerance = expectedAmount * (exports.SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT / 100);
             const minAllowedAmount = expectedAmount - tolerance;
             const maxAllowedAmount = expectedAmount + tolerance;
-
             let isValid = false;
-
             switch (blockchain) {
                 case Blockchain.ETHEREUM:
-                    isValid = await blockchainValidator.validateEthereumTransaction(
-                        transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount
-                    );
+                    isValid = await validators_1.blockchainValidator.validateEthereumTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
                     break;
                 case Blockchain.BITCOIN:
-                    isValid = await blockchainValidator.validateBitcoinTransaction(
-                        transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount
-                    );
+                    isValid = await validators_1.blockchainValidator.validateBitcoinTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
                     break;
                 case Blockchain.SOLANA:
-                    isValid = await blockchainValidator.validateSolanaTransaction(
-                        transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount
-                    );
+                    isValid = await validators_1.blockchainValidator.validateSolanaTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
                     break;
                 case Blockchain.STELLAR:
-                    isValid = await blockchainValidator.validateStellarTransaction(
-                        transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount
-                    );
+                    isValid = await validators_1.blockchainValidator.validateStellarTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
                     break;
                 case Blockchain.POLKADOT:
-                    isValid = await blockchainValidator.validatePolkadotTransaction(
-                        transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount
-                    );
+                    isValid = await validators_1.blockchainValidator.validatePolkadotTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
                     break;
                 case Blockchain.STARKNET:
-                    isValid = await blockchainValidator.validateStarknetTransaction(
-                        transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount
-                    );
+                    isValid = await validators_1.blockchainValidator.validateStarknetTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
                     break;
                 case Blockchain.USDT_ERC20:
-                    isValid = await blockchainValidator.validateUsdtTransaction(
-                        transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount
-                    );
+                    isValid = await validators_1.blockchainValidator.validateUsdtTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
                     break;
                 default:
                     console.error(`Unsupported blockchain: ${blockchain}`);
                     return false;
             }
-
             if (isValid) {
-                console.log(` Transaction validated successfully on attempt ${attempt}`);
+                console.log(`✅ Transaction validated successfully on attempt ${attempt}`);
                 return true;
-            } else {
+            }
+            else {
                 // If it's the last attempt, log failure
                 if (attempt === MAX_RETRIES) {
-                    console.log(` Transaction validation failed after ${MAX_RETRIES} attempts`);
+                    console.log(`❌ Transaction validation failed after ${MAX_RETRIES} attempts`);
                 }
             }
-
-        } catch (error: any) {
-            console.error(` Blockchain validation error on attempt ${attempt}:`, error.message);
         }
-
+        catch (error) {
+            console.error(`❌ Blockchain validation error on attempt ${attempt}:`, error.message);
+        }
         // Wait before retrying, if not the last attempt
         if (attempt < MAX_RETRIES) {
             await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
         }
     }
-
     return false;
 }
-
-export async function checkTransactionHashUniqueness(
-    transactionHash: string
-): Promise<void> {
-    const airtimeRepo = AppDataSource.getRepository(AirtimePurchase);
-
+async function checkTransactionHashUniqueness(transactionHash) {
+    const airtimeRepo = database_1.AppDataSource.getRepository(AirtimePurchase_1.AirtimePurchase);
     const existingAirtime = await airtimeRepo.findOne({
         where: {
             transaction_hash: transactionHash,
-            status: "completed" as any,
+            status: "completed",
         },
     });
-
     if (existingAirtime) {
         logSecurityEvent("DUPLICATE_TRANSACTION_HASH", {
             transactionHash,
             existingType: "airtime",
             existingId: existingAirtime.id,
         });
-        throw new Error(
-            "This transaction has already been used for a successful airtime purchase"
-        );
+        throw new Error("This transaction has already been used for a successful airtime purchase");
     }
-
     console.log("✅ Transaction hash is unique");
 }
-
-export function markTransactionAsUsed(purchaseId: string, purchaseType: string) {
+function markTransactionAsUsed(purchaseId, purchaseType) {
     console.log(`✅ Transaction marked as used for ${purchaseType} purchase: ${purchaseId}`);
 }
-
-export function validateCommonInputs(data: {
-    phoneNumber: string;
-    chain: Blockchain;
-    transactionHash: string;
-    amount: number;
-    minAmount: number;
-    maxAmount: number;
-}) {
+function validateCommonInputs(data) {
     const { phoneNumber, chain, transactionHash, amount, minAmount, maxAmount } = data;
-
     if (typeof amount !== "number" || isNaN(amount)) {
         throw new Error("Amount must be a valid number");
     }
-
     if (amount < minAmount) {
         throw new Error(`Minimum amount is ${minAmount} NGN`);
     }
-
     if (amount > maxAmount) {
         throw new Error(`Maximum amount is ${maxAmount} NGN`);
     }
-
     const phoneRegex = /^234[7-9][0-9]{9}$/;
     if (!phoneRegex.test(phoneNumber)) {
         throw new Error("Invalid Nigerian phone number format. Use 234XXXXXXXXXX");
     }
-
     if (!Object.values(Blockchain).includes(chain)) {
         throw new Error(`Unsupported blockchain.`);
     }
-
     if (!transactionHash || typeof transactionHash !== "string") {
         throw new Error("Valid transaction hash is required");
     }
 }
-
-export function mapNellobytesError(
-    statusCode: string | undefined,
-    status: string
-): string {
-    const errorMap: { [key: string]: string } = {
+function mapNellobytesError(statusCode, status) {
+    const errorMap = {
         "400": "Nellobytes: Invalid API credentials.",
         "401": "Nellobytes: Invalid URL format.",
         "402": "Nellobytes: UserID is missing.",
@@ -277,24 +216,15 @@ export function mapNellobytesError(
         "200": "Transaction successful",
         // Add more mappings as needed
     };
-
-    if (statusCode && errorMap[statusCode]) return errorMap[statusCode];
-    if (errorMap[status]) return errorMap[status];
-
+    if (statusCode && errorMap[statusCode])
+        return errorMap[statusCode];
+    if (errorMap[status])
+        return errorMap[status];
     return `Nellobytes: ${status}`;
 }
-
-export async function initiateRefund<T extends { metadata?: any }>(
-    purchase: T,
-    repository: Repository<T>,
-    cryptoAmount: number,
-    cryptoCurrency: string,
-    reason: string,
-    purchaseId: string
-): Promise<void> {
+async function initiateRefund(purchase, repository, cryptoAmount, cryptoCurrency, reason, purchaseId) {
     try {
         console.log(`💸 Initiating refund for purchase ${purchaseId}: ${reason}`);
-
         purchase.metadata = {
             ...purchase.metadata,
             refund: {
@@ -306,42 +236,38 @@ export async function initiateRefund<T extends { metadata?: any }>(
                 status: "pending",
             },
         };
-
         await repository.save(purchase);
         console.log(`✅ Refund initiated for ${cryptoAmount} ${cryptoCurrency}`);
-    } catch (error) {
+    }
+    catch (error) {
         console.error("❌ Refund initiation failed:", error);
     }
 }
-
-export function logSecurityEvent(event: string, details: any) {
+function logSecurityEvent(event, details) {
     console.warn(`🔒 SECURITY EVENT: ${event}`, {
         timestamp: new Date().toISOString(),
         event,
         details,
     });
 }
-
-export function getSupportedBlockchains() {
+function getSupportedBlockchains() {
     return Object.values(Blockchain).map((chain) => ({
         chain: chain,
         symbol: chain.toUpperCase(),
         name: chain,
     }));
 }
-
-export function getSupportedNetworks() {
+function getSupportedNetworks() {
     return Object.values(MobileNetwork).map((network) => ({
         value: network,
         label: network.toUpperCase(),
     }));
 }
-
-export function getSecurityLimits() {
+function getSecurityLimits() {
     return {
         airtime: {
-            minAmount: SECURITY_CONSTANTS.MIN_AIRTIME_AMOUNT,
-            maxAmount: SECURITY_CONSTANTS.MAX_AIRTIME_AMOUNT,
+            minAmount: exports.SECURITY_CONSTANTS.MIN_AIRTIME_AMOUNT,
+            maxAmount: exports.SECURITY_CONSTANTS.MAX_AIRTIME_AMOUNT,
         },
     };
 }
