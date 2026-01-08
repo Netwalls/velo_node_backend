@@ -142,98 +142,116 @@ export async function validateBlockchainTransaction(
   );
   console.log(`   Tolerance: ${SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT}%`);
 
-  try {
-    const tolerance =
-      expectedAmount * (SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT / 100);
-    const minAllowedAmount = expectedAmount - tolerance;
-    const maxAllowedAmount = expectedAmount + tolerance;
+  const MAX_RETRIES = 12; // Approx 1 minute total wait time
+  const RETRY_DELAY_MS = 5000;
 
-    console.log(
-      `   Amount range: ${minAllowedAmount} - ${maxAllowedAmount} ${blockchain}`
-    );
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 1) {
+        console.log(`⏳ Retry ${attempt}/${MAX_RETRIES} for ${blockchain} transaction...`);
+      }
 
-    let isValid = false;
+      const tolerance =
+        expectedAmount * (SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT / 100);
+      const minAllowedAmount = expectedAmount - tolerance;
+      const maxAllowedAmount = expectedAmount + tolerance;
 
-    switch (blockchain) {
-      case Blockchain.ETHEREUM:
-        isValid = await blockchainValidator.validateEthereumTransaction(
-          transactionHash,
-          expectedToAddress,
-          minAllowedAmount,
-          maxAllowedAmount
-        );
-        break;
+      console.log(
+        `   Amount range: ${minAllowedAmount} - ${maxAllowedAmount} ${blockchain}`
+      );
 
-      case Blockchain.BITCOIN:
-        isValid = await blockchainValidator.validateBitcoinTransaction(
-          transactionHash,
-          expectedToAddress,
-          minAllowedAmount,
-          maxAllowedAmount
-        );
-        break;
+      let isValid = false;
 
-      case Blockchain.SOLANA:
-        isValid = await blockchainValidator.validateSolanaTransaction(
-          transactionHash,
-          expectedToAddress,
-          minAllowedAmount,
-          maxAllowedAmount
-        );
-        break;
+      switch (blockchain) {
+        case Blockchain.ETHEREUM:
+          isValid = await blockchainValidator.validateEthereumTransaction(
+            transactionHash,
+            expectedToAddress,
+            minAllowedAmount,
+            maxAllowedAmount
+          );
+          break;
 
-      case Blockchain.STELLAR:
-        isValid = await blockchainValidator.validateStellarTransaction(
-          transactionHash,
-          expectedToAddress,
-          minAllowedAmount,
-          maxAllowedAmount
-        );
-        break;
+        case Blockchain.BITCOIN:
+          isValid = await blockchainValidator.validateBitcoinTransaction(
+            transactionHash,
+            expectedToAddress,
+            minAllowedAmount,
+            maxAllowedAmount
+          );
+          break;
 
-      case Blockchain.POLKADOT:
-        isValid = await blockchainValidator.validatePolkadotTransaction(
-          transactionHash,
-          expectedToAddress,
-          minAllowedAmount,
-          maxAllowedAmount
-        );
-        break;
+        case Blockchain.SOLANA:
+          isValid = await blockchainValidator.validateSolanaTransaction(
+            transactionHash,
+            expectedToAddress,
+            minAllowedAmount,
+            maxAllowedAmount
+          );
+          break;
 
-      case Blockchain.STARKNET:
-        isValid = await blockchainValidator.validateStarknetTransaction(
-          transactionHash,
-          expectedToAddress,
-          minAllowedAmount,
-          maxAllowedAmount
-        );
-        break;
+        case Blockchain.STELLAR:
+          isValid = await blockchainValidator.validateStellarTransaction(
+            transactionHash,
+            expectedToAddress,
+            minAllowedAmount,
+            maxAllowedAmount
+          );
+          break;
 
-      case Blockchain.USDT_ERC20:
-        isValid = await blockchainValidator.validateUsdtTransaction(
-          transactionHash,
-          expectedToAddress,
-          minAllowedAmount,
-          maxAllowedAmount
-        );
-        break;
+        case Blockchain.POLKADOT:
+          isValid = await blockchainValidator.validatePolkadotTransaction(
+            transactionHash,
+            expectedToAddress,
+            minAllowedAmount,
+            maxAllowedAmount
+          );
+          break;
 
-      default:
-        console.error(`Unsupported blockchain: ${blockchain}`);
-        return false;
+        case Blockchain.STARKNET:
+          isValid = await blockchainValidator.validateStarknetTransaction(
+            transactionHash,
+            expectedToAddress,
+            minAllowedAmount,
+            maxAllowedAmount
+          );
+          break;
+
+        case Blockchain.USDT_ERC20:
+          isValid = await blockchainValidator.validateUsdtTransaction(
+            transactionHash,
+            expectedToAddress,
+            minAllowedAmount,
+            maxAllowedAmount
+          );
+          break;
+
+        default:
+          console.error(`Unsupported blockchain: ${blockchain}`);
+          return false;
+      }
+
+      if (isValid) {
+        console.log(`✅ Transaction validated successfully on attempt ${attempt}`);
+        return true;
+      } else {
+        // If it's the last attempt, log failure
+        if (attempt === MAX_RETRIES) {
+          console.log(`❌ Transaction validation failed after ${MAX_RETRIES} attempts`);
+        }
+      }
+
+    } catch (error: any) {
+      console.error(`❌ Blockchain validation error on attempt ${attempt}:`, error.message);
     }
 
-    if (isValid) {
-      console.log(`✅ Transaction validated successfully with amount tolerance`);
-    } else {
-      console.log(`❌ Transaction validation failed`);
+    // Wait before retrying, if not the last attempt
+    if (attempt < MAX_RETRIES) {
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
     }
-
-    return isValid;
-  } catch (error: any) {
-    console.error(`❌ Blockchain validation error:`, error);
-    return false;
   }
+
+  return false;
 }
 
 /**

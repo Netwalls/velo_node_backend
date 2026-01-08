@@ -80,9 +80,6 @@ interface GeneratedWallet {
  * Generate Starknet wallet for both mainnet and testnet
  */
 export declare function generateStrkWallet(customPrivateKey?: string): GeneratedWallet;
-/**
- * Check if address has sufficient balance
- */
 export declare function checkBalance(provider: RpcProvider, address: string, minBalance?: bigint, // 0.5 STRK minimum for deployment
 preferStrk?: boolean): Promise<{
     balance: bigint;

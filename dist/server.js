@@ -22,11 +22,14 @@ const adminRoute_1 = __importDefault(require("./routes/adminRoute"));
 const publicRoute_1 = __importDefault(require("./routes/publicRoute"));
 // import swapRoute from './routes/swapRoute';
 const feeRoute_1 = __importDefault(require("./routes/feeRoute"));
-// import changellyRoute from './routes/changellyRoute';
+const changellyRoute_1 = __importDefault(require("./routes/changellyRoute"));
+const moonpayRoute_1 = __importDefault(require("./routes/moonpayRoute"));
 const airtime_1 = __importDefault(require("./routes/airtime"));
 const data_1 = __importDefault(require("./routes/data"));
 const electricity_1 = __importDefault(require("./routes/electricity"));
-const changellyController_1 = __importDefault(require("./controllers/changellyController"));
+// Changelly routes are currently implemented in `src/routes/changellyRoute.ts` but
+// that file has its exports commented out while the feature is in progress.
+// Do not import controllers as routers — mount the routes file when it's ready.
 // Load environment variables
 dotenv_1.default.config();
 const app = (0, express_1.default)();
@@ -41,9 +44,9 @@ app.use(express_1.default.json());
 app.get('/', (req, res) => {
     res.send('Velo Backend Server is running!');
 });
-// app.use('/fiat', changellyRoute);
-// app.use('/fiat', fiatRoutes);
-app.use('/api/fiat/changelly', changellyController_1.default);
+// TODO: enable Changelly routes when `src/routes/changellyRoute.ts` exports a router
+app.use('/api/fiat', changellyRoute_1.default);
+app.use('/api/moonpay', moonpayRoute_1.default);
 app.use('/auth', authRoute_1.default);
 app.use('/user', userRoute_1.default);
 app.use('/wallet', walletRoute_1.default);

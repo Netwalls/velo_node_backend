@@ -126,50 +126,64 @@ async function validateBlockchainTransaction(blockchain, transactionHash, expect
     console.log(`   TX: ${transactionHash}`);
     console.log(`   Expected: ${expectedAmount} ${blockchain} to ${expectedToAddress}`);
     console.log(`   Tolerance: ${exports.SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT}%`);
-    try {
-        const tolerance = expectedAmount * (exports.SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT / 100);
-        const minAllowedAmount = expectedAmount - tolerance;
-        const maxAllowedAmount = expectedAmount + tolerance;
-        console.log(`   Amount range: ${minAllowedAmount} - ${maxAllowedAmount} ${blockchain}`);
-        let isValid = false;
-        switch (blockchain) {
-            case Blockchain.ETHEREUM:
-                isValid = await validators_1.blockchainValidator.validateEthereumTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                break;
-            case Blockchain.BITCOIN:
-                isValid = await validators_1.blockchainValidator.validateBitcoinTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                break;
-            case Blockchain.SOLANA:
-                isValid = await validators_1.blockchainValidator.validateSolanaTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                break;
-            case Blockchain.STELLAR:
-                isValid = await validators_1.blockchainValidator.validateStellarTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                break;
-            case Blockchain.POLKADOT:
-                isValid = await validators_1.blockchainValidator.validatePolkadotTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                break;
-            case Blockchain.STARKNET:
-                isValid = await validators_1.blockchainValidator.validateStarknetTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                break;
-            case Blockchain.USDT_ERC20:
-                isValid = await validators_1.blockchainValidator.validateUsdtTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
-                break;
-            default:
-                console.error(`Unsupported blockchain: ${blockchain}`);
-                return false;
+    const MAX_RETRIES = 12; // Approx 1 minute total wait time
+    const RETRY_DELAY_MS = 5000;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            if (attempt > 1) {
+                console.log(`⏳ Retry ${attempt}/${MAX_RETRIES} for ${blockchain} transaction...`);
+            }
+            const tolerance = expectedAmount * (exports.SECURITY_CONSTANTS.AMOUNT_TOLERANCE_PERCENT / 100);
+            const minAllowedAmount = expectedAmount - tolerance;
+            const maxAllowedAmount = expectedAmount + tolerance;
+            console.log(`   Amount range: ${minAllowedAmount} - ${maxAllowedAmount} ${blockchain}`);
+            let isValid = false;
+            switch (blockchain) {
+                case Blockchain.ETHEREUM:
+                    isValid = await validators_1.blockchainValidator.validateEthereumTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
+                    break;
+                case Blockchain.BITCOIN:
+                    isValid = await validators_1.blockchainValidator.validateBitcoinTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
+                    break;
+                case Blockchain.SOLANA:
+                    isValid = await validators_1.blockchainValidator.validateSolanaTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
+                    break;
+                case Blockchain.STELLAR:
+                    isValid = await validators_1.blockchainValidator.validateStellarTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
+                    break;
+                case Blockchain.POLKADOT:
+                    isValid = await validators_1.blockchainValidator.validatePolkadotTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
+                    break;
+                case Blockchain.STARKNET:
+                    isValid = await validators_1.blockchainValidator.validateStarknetTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
+                    break;
+                case Blockchain.USDT_ERC20:
+                    isValid = await validators_1.blockchainValidator.validateUsdtTransaction(transactionHash, expectedToAddress, minAllowedAmount, maxAllowedAmount);
+                    break;
+                default:
+                    console.error(`Unsupported blockchain: ${blockchain}`);
+                    return false;
+            }
+            if (isValid) {
+                console.log(`✅ Transaction validated successfully on attempt ${attempt}`);
+                return true;
+            }
+            else {
+                // If it's the last attempt, log failure
+                if (attempt === MAX_RETRIES) {
+                    console.log(`❌ Transaction validation failed after ${MAX_RETRIES} attempts`);
+                }
+            }
         }
-        if (isValid) {
-            console.log(`✅ Transaction validated successfully with amount tolerance`);
+        catch (error) {
+            console.error(`❌ Blockchain validation error on attempt ${attempt}:`, error.message);
         }
-        else {
-            console.log(`❌ Transaction validation failed`);
+        // Wait before retrying, if not the last attempt
+        if (attempt < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
         }
-        return isValid;
     }
-    catch (error) {
-        console.error(`❌ Blockchain validation error:`, error);
-        return false;
-    }
+    return false;
 }
 /**
  * SHARED: Check if transaction hash has been successfully used
