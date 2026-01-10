@@ -2512,7 +2512,57 @@ else if (chain === 'stellar') {
                         try { addr.lastKnownBalance = Number(dot); addressRepo.save(addr).catch(() => {}); } catch {}
                         return { chain: addr.chain, network: 'testnet', address: addr.address, balance: dot, symbol: 'DOT' };
                     } else if (addr.chain === 'usdt_erc20' || addr.chain === 'usdt_trc20') {
-                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: '0', symbol: 'USDT' };
+                        // Fetch actual USDT balance from blockchain
+                        try {
+                            let usdtBalance = '0';
+                            if (addr.chain === 'usdt_erc20') {
+                                // USDT ERC20 on Ethereum
+                                const url = addr.network === 'testnet'
+                                    ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                    : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
+                                const provider = new ethers.JsonRpcProvider(url);
+                                const usdtAddr = addr.network === 'testnet'
+                                    ? '0x' + ['516de3a7a567d817','37e3a46ec4ff9cfd','1fcb0136'].join('')
+                                    : '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+
+                                const abi = ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'];
+                                const contract = new ethers.Contract(usdtAddr, abi, provider as any);
+
+                                let userAddrChecksum = addr.address as string;
+                                try {
+                                    userAddrChecksum = ethers.getAddress(userAddrChecksum);
+                                } catch (checksumErr) {
+                                    console.warn('Invalid user address for USDT balanceOf:', addr.address);
+                                    usdtBalance = '0';
+                                }
+
+                                if (userAddrChecksum !== '0') {
+                                    try {
+                                        const bal = await contract.balanceOf(userAddrChecksum);
+                                        let decimals = 6; // USDT default
+                                        try {
+                                            const d = await contract.decimals();
+                                            decimals = Number(d.toString());
+                                        } catch (decErr) {
+                                            console.warn('Could not read USDT decimals, using default 6');
+                                        }
+                                        usdtBalance = ethers.formatUnits(bal, decimals);
+                                    } catch (callErr) {
+                                        console.warn('USDT balanceOf call failed:', (callErr as any)?.message || String(callErr));
+                                        usdtBalance = '0';
+                                    }
+                                }
+                            } else if (addr.chain === 'usdt_trc20') {
+                                // USDT TRC20 on Tron - for now return 0 as TRON integration may not be implemented
+                                usdtBalance = '0';
+                            }
+
+                            try { addr.lastKnownBalance = Number(usdtBalance); addressRepo.save(addr).catch(() => {}); } catch {}
+                            return { chain: addr.chain, network: addr.network, address: addr.address, balance: usdtBalance, symbol: 'USDT' };
+                        } catch (err) {
+                            console.warn('USDT balance fetch failed for', addr.address, (err as any)?.message || String(err));
+                            return { chain: addr.chain, network: addr.network, address: addr.address, balance: '0', symbol: 'USDT', error: 'Failed to fetch USDT balance' };
+                        }
                     }
 
                     return { chain: addr.chain, network: 'testnet', address: addr.address, balance: '0', symbol: 'UNKNOWN', error: 'Unsupported chain' };
@@ -2661,7 +2711,57 @@ else if (chain === 'stellar') {
                         try { addr.lastKnownBalance = Number(dot); addressRepo.save(addr).catch(() => {}); } catch {}
                         return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: dot, symbol: 'DOT' };
                     } else if (addr.chain === 'usdt_erc20' || addr.chain === 'usdt_trc20') {
-                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: 'USDT' };
+                        // Fetch actual USDT balance from blockchain
+                        try {
+                            let usdtBalance = '0';
+                            if (addr.chain === 'usdt_erc20') {
+                                // USDT ERC20 on Ethereum
+                                const url = addr.network === 'testnet'
+                                    ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                    : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
+                                const provider = new ethers.JsonRpcProvider(url);
+                                const usdtAddr = addr.network === 'testnet'
+                                    ? '0x' + ['516de3a7a567d817','37e3a46ec4ff9cfd','1fcb0136'].join('')
+                                    : '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+
+                                const abi = ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'];
+                                const contract = new ethers.Contract(usdtAddr, abi, provider as any);
+
+                                let userAddrChecksum = addr.address as string;
+                                try {
+                                    userAddrChecksum = ethers.getAddress(userAddrChecksum);
+                                } catch (checksumErr) {
+                                    console.warn('Invalid user address for USDT balanceOf:', addr.address);
+                                    usdtBalance = '0';
+                                }
+
+                                if (userAddrChecksum !== '0') {
+                                    try {
+                                        const bal = await contract.balanceOf(userAddrChecksum);
+                                        let decimals = 6; // USDT default
+                                        try {
+                                            const d = await contract.decimals();
+                                            decimals = Number(d.toString());
+                                        } catch (decErr) {
+                                            console.warn('Could not read USDT decimals, using default 6');
+                                        }
+                                        usdtBalance = ethers.formatUnits(bal, decimals);
+                                    } catch (callErr) {
+                                        console.warn('USDT balanceOf call failed:', (callErr as any)?.message || String(callErr));
+                                        usdtBalance = '0';
+                                    }
+                                }
+                            } else if (addr.chain === 'usdt_trc20') {
+                                // USDT TRC20 on Tron - for now return 0 as TRON integration may not be implemented
+                                usdtBalance = '0';
+                            }
+
+                            try { addr.lastKnownBalance = Number(usdtBalance); addressRepo.save(addr).catch(() => {}); } catch {}
+                            return { chain: addr.chain, network: addr.network, address: addr.address, balance: usdtBalance, symbol: 'USDT' };
+                        } catch (err) {
+                            console.warn('USDT balance fetch failed for', addr.address, (err as any)?.message || String(err));
+                            return { chain: addr.chain, network: addr.network, address: addr.address, balance: '0', symbol: 'USDT', error: 'Failed to fetch USDT balance' };
+                        }
                     }
                     return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: 'UNKNOWN', error: 'Unsupported chain' };
                 } catch (err: any) {
