@@ -394,6 +394,32 @@ export class WalletController {
         }
     }
 
+    // Helper function to get a working Starknet provider with fallbacks
+    static async getStarknetProvider(): Promise<RpcProvider> {
+        const providers = [
+            // Primary: Alchemy (if API key is available and valid)
+            process.env.ALCHEMY_STARKNET_KEY ? `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}` : null,
+            // Fallback: BlastAPI public endpoint
+            'https://starknet-mainnet.public.blastapi.io',
+            // Additional fallback: Nethermind public endpoint
+            'https://starknet-mainnet.public.zksync.io',
+        ].filter((url): url is string => url !== null); // Remove null values and type guard
+
+        for (const url of providers) {
+            try {
+                const provider = new RpcProvider({ nodeUrl: url });
+                // Test the provider with a simple call
+                await provider.getBlockNumber();
+                console.log(`Starknet provider working: ${url}`);
+                return provider;
+            } catch (error) {
+                console.warn(`Starknet provider failed: ${url}, error: ${(error as any)?.message || String(error)}`);
+                continue;
+            }
+        }
+        throw new Error('All Starknet providers failed');
+    }
+
     /**
      * Controller for wallet-related actions.
      * Provides endpoints to fetch balances for all supported blockchains (ETH, BTC, SOL, STRK) for the authenticated user.
@@ -411,10 +437,8 @@ export class WalletController {
                 if (addr.chain === 'starknet') {
                     // STRK (Starknet) balance using RpcProvider.callContract for more robust parsing
                     try {
-                        // Use Alchemy Starknet v0_9 mainnet endpoint (more current)
-                        const provider = new RpcProvider({
-                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
-                        });
+                        // Use fallback provider system for reliability
+                        const provider = await WalletController.getStarknetProvider();
                         const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
 
                         // Call the contract entrypoint directly to avoid ABI/Contract class mismatches.
@@ -2440,6 +2464,32 @@ else if (chain === 'stellar') {
                 });
             }
 
+            // Helper function to get a working Starknet testnet provider with fallbacks
+            async function getStarknetTestnetProvider(): Promise<RpcProvider> {
+                const providers = [
+                    // Primary: Alchemy Sepolia (if API key is available and valid)
+                    process.env.ALCHEMY_STARKNET_KEY ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}` : null,
+                    // Fallback: BlastAPI testnet endpoint
+                    'https://starknet-sepolia.public.blastapi.io',
+                    // Additional fallback: Other public testnet endpoints
+                    'https://starknet-sepolia.public.zksync.io',
+                ].filter((url): url is string => url !== null); // Remove null values and type guard
+
+                for (const url of providers) {
+                    try {
+                        const provider = new RpcProvider({ nodeUrl: url });
+                        // Test the provider with a simple call
+                        await withTimeout(provider.getBlockNumber(), 5000);
+                        console.log(`Starknet testnet provider working: ${url}`);
+                        return provider;
+                    } catch (error) {
+                        console.warn(`Starknet testnet provider failed: ${url}, error: ${(error as any)?.message || String(error)}`);
+                        continue;
+                    }
+                }
+                throw new Error('All Starknet testnet providers failed');
+            }
+
             // Reuse providers per-network for testnet
             const providers: any = {};
 
@@ -2448,8 +2498,7 @@ else if (chain === 'stellar') {
                     if (addr.chain === 'starknet') {
                         const key = 'starknet_test';
                         if (!providers[key]) {
-                            const starknetUrl = `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
-                            providers[key] = new RpcProvider({ nodeUrl: starknetUrl });
+                            providers[key] = await getStarknetTestnetProvider();
                         }
                         const provider = providers[key];
                         const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
@@ -2636,13 +2685,41 @@ else if (chain === 'stellar') {
                 });
             }
 
+            // Helper function to get a working Starknet provider with fallbacks
+            async function getStarknetProvider(): Promise<RpcProvider> {
+                const providers = [
+                    // Primary: Alchemy (if API key is available and valid)
+                    process.env.ALCHEMY_STARKNET_KEY ? `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}` : null,
+                    // Fallback: BlastAPI public endpoint
+                    'https://starknet-mainnet.public.blastapi.io',
+                    // Additional fallback: Nethermind public endpoint
+                    'https://starknet-mainnet.public.zksync.io',
+                ].filter((url): url is string => url !== null); // Remove null values and type guard
+
+                for (const url of providers) {
+                    try {
+                        const provider = new RpcProvider({ nodeUrl: url });
+                        // Test the provider with a simple call
+                        await withTimeoutMain(provider.getBlockNumber(), 5000);
+                        console.log(`Starknet provider working: ${url}`);
+                        return provider;
+                    } catch (error) {
+                        console.warn(`Starknet provider failed: ${url}, error: ${(error as any)?.message || String(error)}`);
+                        continue;
+                    }
+                }
+                throw new Error('All Starknet providers failed');
+            }
+
             const providersMain: any = {};
 
             const processMain = async (addr: any) => {
                 try {
                     if (addr.chain === 'starknet') {
                         const key = 'starknet_main';
-                        if (!providersMain[key]) providersMain[key] = new RpcProvider({ nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}` });
+                        if (!providersMain[key]) {
+                            providersMain[key] = await getStarknetProvider();
+                        }
                         const provider = providersMain[key];
                         const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
                         const result = await withTimeoutMain((provider.callContract({ contractAddress: strkTokenAddress, entrypoint: 'balanceOf', calldata: [padStarknetAddress(addr.address as string)] }) as any), 8000);
