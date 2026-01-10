@@ -53,7 +53,7 @@ export class NotificationController {
             const notificationRepo = AppDataSource.getRepository(Notification);
 
             const notification = await notificationRepo.findOne({
-                where: { id, userId: req.user!.id },
+                where: { id: typeof id === 'string' ? id : id[0], userId: req.user!.id },
             });
 
             if (!notification) {

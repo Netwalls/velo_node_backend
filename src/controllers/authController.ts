@@ -54,7 +54,7 @@ export class AuthController {
         return;
       }
       const userRepository = AppDataSource.getRepository(User);
-      const user = await userRepository.findOne({ where: { id } });
+      const user = await userRepository.findOne({ where: { id: typeof id === 'string' ? id : id[0] } });
       if (!user) {
         res.status(404).json({ error: "User not found" });
         return;

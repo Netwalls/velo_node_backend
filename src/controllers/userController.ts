@@ -27,7 +27,7 @@ export class UserController {
             const { userId } = req.params;
             const userRepository = AppDataSource.getRepository(User);
             const user = await userRepository.findOne({
-                where: { id: userId },
+                where: { id: typeof userId === 'string' ? userId : userId[0] },
                 relations: ['addresses', 'kycDocument'],
             });
 
@@ -257,10 +257,11 @@ export class UserController {
     static async removeAddress(req: AuthRequest, res: Response): Promise<void> {
         try {
             const { addressId } = req.params;
+            const addressIdStr = typeof addressId === 'string' ? addressId : addressId[0];
             const addressRepository = AppDataSource.getRepository(UserAddress);
 
             const result = await addressRepository.delete({
-                id: addressId,
+                id: addressIdStr,
                 userId: req.user!.id,
             });
 
@@ -299,7 +300,7 @@ export class UserController {
             const kycRepository = AppDataSource.getRepository(KYCDocument);
 
             const user = await userRepository.findOne({
-                where: { id: userId },
+                where: { id: typeof userId === 'string' ? userId : userId[0] },
                 relations: ['kycDocument'],
             });
 
@@ -350,15 +351,16 @@ export class UserController {
     ): Promise<void> {
         try {
             const { username } = req.params;
+            const usernameStr = typeof username === 'string' ? username : username[0];
 
-            if (!username) {
+            if (!usernameStr) {
                 res.status(400).json({ error: 'Username is required' });
                 return;
             }
 
             // Validate username format
             const formatValidation =
-                UsernameService.validateUsernameFormat(username);
+                UsernameService.validateUsernameFormat(usernameStr);
             if (!formatValidation.isValid) {
                 res.status(400).json({
                     error: formatValidation.error,
@@ -369,7 +371,7 @@ export class UserController {
 
             // Check availability
             const isAvailable = await UsernameService.isUsernameAvailable(
-                username
+                usernameStr
             );
 
             res.json({
@@ -543,7 +545,7 @@ export class UserController {
         try {
             const { userId } = req.params;
             const userRepo = AppDataSource.getRepository(User);
-            const user = await userRepo.findOne({ where: { id: userId } });
+            const user = await userRepo.findOne({ where: { id: typeof userId === 'string' ? userId : userId[0] } });
 
             if (!user) {
                 res.status(404).json({ error: 'User not found' });
@@ -568,8 +570,9 @@ export class UserController {
     ): Promise<void> {
         try {
             const { email } = req.params;
+            const emailStr = typeof email === 'string' ? email : email[0];
             const userRepo = AppDataSource.getRepository(User);
-            const user = await userRepo.findOne({ where: { email } });
+            const user = await userRepo.findOne({ where: { email: emailStr } });
 
             if (!user) {
                 res.status(404).json({ error: 'User not found' });

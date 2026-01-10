@@ -95,12 +95,13 @@ export class UnifiedPurchaseController {
             if (!requireAuth(req, res)) return;
 
             const { purchaseId } = req.params;
+            const purchaseIdStr = typeof purchaseId === 'string' ? purchaseId : purchaseId[0];
             const userId = getUserId(req)!;
 
             const purchase = await findInHistory(
                 res,
                 () => airtimeService.getUserAirtimeHistory(userId, 50),
-                purchaseId,
+                purchaseIdStr,
                 'Airtime purchase'
             );
 

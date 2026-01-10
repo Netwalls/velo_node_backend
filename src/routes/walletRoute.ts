@@ -39,8 +39,15 @@ router.get(
 );
 
 router.post('/check-deposits', async (req, res) => {
-    await WalletController.checkForDeposits();
-    res.json({ message: 'Deposit check complete' });
+    // Return immediately and process in background
+    res.json({ message: 'Deposit check started in background' });
+
+    // Process deposits in background
+    try {
+        await WalletController.checkForDeposits();
+    } catch (error) {
+        console.error('Background deposit check failed:', error);
+    }
 });
 
 router.post('/send', authMiddleware, async (req, res) => {

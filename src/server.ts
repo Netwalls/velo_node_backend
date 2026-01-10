@@ -50,6 +50,11 @@ app.get("/", (req, res) => {
        res.send("Velo Backend Server is running!");
 });
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+       res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 
 // app.use('/fiat', changellyRoute);
 // app.use('/fiat', fiatRoutes);

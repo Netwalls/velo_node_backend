@@ -475,10 +475,11 @@ static async createSplitPayment(req: AuthRequest, res: Response): Promise<void> 
 static async executeSplitPayment(req: AuthRequest, res: Response): Promise<void> {
     try {
         const { id } = req.params;
+        const paymentId = typeof id === 'string' ? id : id[0];
 
         const splitPaymentRepo = AppDataSource.getRepository(SplitPayment);
         const splitPayment = await splitPaymentRepo.findOne({
-            where: { id, userId: req.user!.id },
+            where: { id: paymentId, userId: req.user!.id },
             relations: ['recipients'],
         });
 
@@ -1705,12 +1706,13 @@ private static async processPolkadotBatch(
     ): Promise<void> {
         try {
             const { id } = req.params;
+            const paymentId = typeof id === 'string' ? id : id[0];
             const { page = 1, limit = 20 } = req.query;
 
             // Verify ownership
             const splitPaymentRepo = AppDataSource.getRepository(SplitPayment);
             const splitPayment = await splitPaymentRepo.findOne({
-                where: { id, userId: req.user!.id },
+                where: { id: paymentId, userId: req.user!.id },
             });
 
             if (!splitPayment) {
@@ -1774,10 +1776,11 @@ private static async processPolkadotBatch(
     ): Promise<void> {
         try {
             const { id } = req.params;
+            const paymentId = typeof id === 'string' ? id : id[0];
 
             const splitPaymentRepo = AppDataSource.getRepository(SplitPayment);
             const splitPayment = await splitPaymentRepo.findOne({
-                where: { id, userId: req.user!.id },
+                where: { id: paymentId, userId: req.user!.id },
             });
 
             if (!splitPayment) {

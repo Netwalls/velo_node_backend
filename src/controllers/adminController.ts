@@ -462,7 +462,7 @@ export class AdminController {
       }
 
       const userRepo = AppDataSource.getRepository(User);
-      const user = await userRepo.findOne({ where: { id } });
+      const user = await userRepo.findOne({ where: { id: typeof id === 'string' ? id : id[0] } });
       if (!user) {
         res.status(404).json({ error: 'User not found' });
         return;
@@ -474,7 +474,7 @@ export class AdminController {
         await userRepo.remove(user);
       } catch (removeErr) {
         console.warn('Remove failed, falling back to delete:', removeErr);
-        await userRepo.delete({ id });
+        await userRepo.delete({ id: typeof id === 'string' ? id : id[0] });
       }
 
       res.json({ message: 'User deleted successfully', userId: id });

@@ -351,7 +351,7 @@ export class MerchantController {
             const paymentRepo = AppDataSource.getRepository(MerchantPayment);
 
             const payment = await paymentRepo.findOne({
-                where: { id, userId },
+                where: { id: typeof id === 'string' ? id : id[0], userId },
             });
 
             if (!payment) {
@@ -376,7 +376,7 @@ export class MerchantController {
             const paymentRepo = AppDataSource.getRepository(MerchantPayment);
 
             const payment = await paymentRepo.findOne({
-                where: { id, userId },
+                where: { id: typeof id === 'string' ? id : id[0], userId },
             });
 
             if (!payment) {
@@ -430,7 +430,7 @@ export class MerchantController {
             const paymentRepo = AppDataSource.getRepository(MerchantPayment);
 
             const payment = await paymentRepo.findOne({
-                where: { id, userId },
+                where: { id: typeof id === 'string' ? id : id[0], userId },
             });
 
             if (!payment) {
