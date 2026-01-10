@@ -58,7 +58,7 @@ export const connectDB = async (): Promise<void> => {
 
     // Debug: Check if AirtimePurchase is registered
     const entityNames = AppDataSource.entityMetadatas.map((meta) => meta.name);
-    console.log('Registered entities:', entityNames);
+    // console.log('Registered entities:', entityNames);
   } catch (error) {
     console.error('Database connection failed:', error);
     process.exit(1);

@@ -22,6 +22,32 @@ import { Account, ec, stark, RpcProvider, hash, CallData } from 'starknet';
 import crypto from 'crypto';
 import { utils } from 'elliptic';
 
+interface UsdcWalletInfo {
+    address: string;
+    privateKey: string;
+    publicKey?: string;     // Optional, included for Starknet/EVM
+    note?: string;          // Helpful for your app/users
+}
+
+interface GeneratedUsdcWallet {
+    evm: UsdcWalletInfo;      // Covers Ethereum + all EVM L2s (same address)
+    solana: UsdcWalletInfo;
+    starknet: UsdcWalletInfo;
+}
+
+interface NetworkWalletInfo {
+    address: string;
+    privateKey: string;
+    publicKey: string;
+    classHash: string;
+    accountType: string;
+}
+
+interface GeneratedWallet {
+    mainnet: NetworkWalletInfo;
+    testnet: NetworkWalletInfo;
+}
+
 const ENCRYPTION_KEY =
     process.env.ENCRYPTION_KEY?.padEnd(32, '0').slice(0, 32) ||
     'velo_default_32_byte_key_123456789012'; // fallback string
@@ -48,6 +74,47 @@ export function decrypt(text: string): string {
     decrypted = Buffer.concat([decrypted, decipher.final()]);
     return decrypted.toString('utf8');
     // End of fil
+}
+
+/**
+ * Generate wallets capable of receiving USDC on all Rhino.fi supported chains.
+ * Production-ready: secure random keys, same structure as your other generators.
+ * Addresses are identical on mainnet/testnet for these chains.
+ */
+export function generateUsdcWallet(): GeneratedUsdcWallet {
+    // 1. EVM (Ethereum + all L2s like Arbitrum, Base, Optimism, Polygon, etc.)
+    const evmWallet = EthWallet.createRandom();
+    const evmInfo: UsdcWalletInfo = {
+        address: evmWallet.address,
+        privateKey: evmWallet.privateKey,
+        publicKey: evmWallet.publicKey,
+        note: 'USDC (ERC-20) - usable on Ethereum, Arbitrum, Base, Optimism, Polygon, Linea, Scroll, zkSync Era, etc.',
+    };
+
+    // 2. Solana
+    const solKeypair = SolKeypair.generate();
+    const solAddress = solKeypair.publicKey.toBase58();
+    const solInfo: UsdcWalletInfo = {
+        address: solAddress,
+        privateKey: Buffer.from(solKeypair.secretKey).toString('hex'),
+        note: 'USDC (SPL) - most wallets auto-create Associated Token Account on receive.',
+    };
+
+    // 3. Starknet (matches your generateStrkWallet style)
+    const starkPrivateKey = stark.randomAddress(); // Secure random private key
+    const starkPublicKey = ec.starkCurve.getStarkKey(starkPrivateKey);
+    const starkInfo: UsdcWalletInfo = {
+        address: starkPublicKey, // Starknet uses public key as address for OZ accounts
+        privateKey: starkPrivateKey,
+        publicKey: starkPublicKey,
+        note: 'USDC on Starknet - compatible with Argent X / Braavos wallets.',
+    };
+
+    return {
+        evm: evmInfo,
+        solana: solInfo,
+        starknet: starkInfo,
+    };
 }
 
 export function generateEthWallet() {
@@ -328,19 +395,6 @@ export function validatePaseoAddress(address: string): boolean {
     } catch {
         return false;
     }
-}
-
-interface NetworkWalletInfo {
-    address: string;
-    privateKey: string;
-    publicKey: string;
-    classHash: string;
-    accountType: string;
-}
-
-interface GeneratedWallet {
-    mainnet: NetworkWalletInfo;
-    testnet: NetworkWalletInfo;
 }
 
 /**
