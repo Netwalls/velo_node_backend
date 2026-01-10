@@ -12,6 +12,7 @@ import {
     PaymentResultStatus,
 } from '../entities/SplitPaymentExecutionResult';
 import { UserAddress } from '../entities/UserAddress';
+import { User } from '../entities/User';
 import { Notification } from '../entities/Notification';
 import { NotificationType } from '../types/index';
 import { ethers } from 'ethers';
@@ -276,12 +277,50 @@ static async createSplitPayment(req: AuthRequest, res: Response): Promise<void> 
             return;
         }
 
-        // Validate each recipient
+        // Resolve usernames (if provided) and validate each recipient
+        const userRepo = AppDataSource.getRepository(User);
         for (const recipient of recipients) {
-            if (!recipient.address || !recipient.amount) {
-                res.status(400).json({ error: 'Each recipient must have address and amount' });
+            // amount required
+            if (!recipient.amount) {
+                res.status(400).json({ error: 'Each recipient must have amount' });
                 return;
             }
+
+            // If address not provided but username is, attempt resolution
+            if (!recipient.address && recipient.username) {
+                const targetUser = await userRepo.findOne({ where: { username: recipient.username }, relations: ['addresses'] });
+                if (!targetUser) {
+                    res.status(404).json({ error: `Username not found: ${recipient.username}` });
+                    return;
+                }
+
+                const matchedAddresses = (targetUser.addresses || []).filter(a => {
+                    return String(a.chain) === String(chain) && String(a.network) === String(network) && a.address;
+                });
+
+                if (!matchedAddresses || matchedAddresses.length === 0) {
+                    res.status(404).json({ error: `Username ${recipient.username} has no address on ${chain}/${network}` });
+                    return;
+                }
+
+                if (matchedAddresses.length > 1) {
+                    res.status(409).json({
+                        error: `Multiple addresses found for username ${recipient.username} on ${chain}/${network}`,
+                        addresses: matchedAddresses.map(a => ({ id: a.id, address: a.address }))
+                    });
+                    return;
+                }
+
+                // set resolved address on recipient for downstream processing
+                recipient.address = matchedAddresses[0].address;
+            }
+
+            // After possible resolution, ensure address exists
+            if (!recipient.address) {
+                res.status(400).json({ error: 'Each recipient must have address or username and amount' });
+                return;
+            }
+
             if (Number(recipient.amount) <= 0) {
                 res.status(400).json({ error: 'All amounts must be positive' });
                 return;

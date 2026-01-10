@@ -23,10 +23,11 @@ const envSchema = z.object({
 
   FRONTEND_URL: z.string().url(),
 
-  // External
+  // External Services
   WALLET_SERVICE_URL: z.string(),
+  NOTIFICATION_SERVICE_URL: z.string(),
+  QRPAYMENT_SERVICE_URL: z.string(),
   GOOGLE_CLIENT_ID: z.string(),
-  // Control whether TypeORM prints SQL `query` logs. Helpful to silence noisy SQL in dev.
   TYPEORM_SHOW_QUERIES: z.coerce.boolean().default(false),
 });
 

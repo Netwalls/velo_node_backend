@@ -1,10 +1,6 @@
 {
   "name": "velo-backend",
   "version": "1.0.0",
-  "workspaces": [
-    "services/*",
-    "packages/*"
-  ],
   "overrides": {
     "@polkadot/util-crypto": "13.5.6"
   },
@@ -28,6 +24,7 @@
     "@changelly/fiat-api-sdk-node": "^1.0.3",
     "@polkadot/api": "^16.4.8",
     "@prisma/client": "^6.16.1",
+    "@rhino.fi/sdk": "^1.12.1",
     "@solana/web3.js": "^1.98.4",
     "@stellar/stellar-sdk": "^14.2.0",
     "@types/axios": "^0.9.36",
@@ -36,24 +33,25 @@
     "bitcoinjs-lib": "^6.1.7",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
-    "cloudinary": "^1.40.0",
+    "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.3.1",
-    "ecpair": "^3.0.0",
+    "ecpair": "^2.1.0",
     "elliptic": "^6.6.1",
     "ethers": "^6.15.0",
     "express": "^4.18.2",
-    "express-rate-limit": "^6.8.1",
+    "express-rate-limit": "^6.11.2",
     "google-auth-library": "^10.5.0",
     "helmet": "^7.0.0",
     "joi": "^17.9.2",
     "jsonwebtoken": "^9.0.2",
     "mailtrap": "^4.2.0",
     "multer": "^1.4.5-lts.1",
+    "nanoid": "^5.1.6",
     "node-cache": "^5.1.2",
     "node-fetch": "^3.3.2",
-    "nodemailer": "^6.9.4",
+    "nodemailer": "^7.0.11",
     "pg": "^8.11.3",
     "reflect-metadata": "^0.1.13",
     "resend": "^6.0.3",
@@ -61,14 +59,12 @@
     "starknet": "^7.6.4",
     "tiny-secp256k1": "^2.2.4",
     "typeorm": "^0.3.17",
-        "zod": "^4.1.13"
-
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.2",
     "@types/cors": "^2.8.13",
     "@types/elliptic": "^6.4.18",
-    "@types/express": "^4.17.17",
     "@types/joi": "^17.2.3",
     "@types/jsonwebtoken": "^9.0.2",
     "@types/multer": "^1.4.7",

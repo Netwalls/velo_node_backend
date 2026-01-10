@@ -1,0 +1,1 @@
+{"version":3,"file":"config.js","sourceRoot":"","sources":["../../../src/services/paystack/config.ts"],"names":[],"mappings":";;;;;;AAAA,oDAA2B;AAC3B,gBAAM,CAAC,MAAM,EAAE,CAAA;AAEF,QAAA,cAAc,GAAG;IAC1B,SAAS,EAAE,OAAO,CAAC,GAAG,CAAC,mBAAmB;IAC1C,SAAS,EAAE,OAAO,CAAC,GAAG,CAAC,mBAAmB;IAC1C,OAAO,EAAE,OAAO,CAAC,GAAG,CAAC,YAAY;CACpC,CAAA"}
