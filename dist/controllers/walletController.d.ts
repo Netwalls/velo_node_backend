@@ -1,5 +1,6 @@
-import { Request, Response } from 'express';
-import { AuthRequest } from '../types';
+import { Request, Response } from "express";
+import { AuthRequest } from "../types";
+import { RpcProvider } from "starknet";
 export declare class WalletController {
     /**
      * Get balances for a specific user by userId (admin or public endpoint).
@@ -12,6 +13,7 @@ export declare class WalletController {
      * GET /wallet/debug/alchemy-probe
      */
     static alchemyProbe(req: AuthRequest, res: Response): Promise<void>;
+    static getStarknetProvider(): Promise<RpcProvider>;
     /**
      * Controller for wallet-related actions.
      * Provides endpoints to fetch balances for all supported blockchains (ETH, BTC, SOL, STRK) for the authenticated user.

@@ -60,7 +60,7 @@ const connectDB = async () => {
         console.log('PostgreSQL Connected successfully');
         // Debug: Check if AirtimePurchase is registered
         const entityNames = exports.AppDataSource.entityMetadatas.map((meta) => meta.name);
-        console.log('Registered entities:', entityNames);
+        // console.log('Registered entities:', entityNames);
     }
     catch (error) {
         console.error('Database connection failed:', error);

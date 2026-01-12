@@ -43,6 +43,7 @@ const SplitPaymentRecipient_1 = require("../entities/SplitPaymentRecipient");
 const SplitPaymentExecution_1 = require("../entities/SplitPaymentExecution");
 const SplitPaymentExecutionResult_1 = require("../entities/SplitPaymentExecutionResult");
 const UserAddress_1 = require("../entities/UserAddress");
+const User_1 = require("../entities/User");
 const Notification_1 = require("../entities/Notification");
 const index_1 = require("../types/index");
 const ethers_1 = require("ethers");
@@ -273,10 +274,41 @@ class SplitPaymentController {
                 res.status(400).json({ error: 'Maximum 1000 recipients allowed per split' });
                 return;
             }
-            // Validate each recipient
+            // Resolve usernames (if provided) and validate each recipient
+            const userRepo = database_1.AppDataSource.getRepository(User_1.User);
             for (const recipient of recipients) {
-                if (!recipient.address || !recipient.amount) {
-                    res.status(400).json({ error: 'Each recipient must have address and amount' });
+                // amount required
+                if (!recipient.amount) {
+                    res.status(400).json({ error: 'Each recipient must have amount' });
+                    return;
+                }
+                // If address not provided but username is, attempt resolution
+                if (!recipient.address && recipient.username) {
+                    const targetUser = await userRepo.findOne({ where: { username: recipient.username }, relations: ['addresses'] });
+                    if (!targetUser) {
+                        res.status(404).json({ error: `Username not found: ${recipient.username}` });
+                        return;
+                    }
+                    const matchedAddresses = (targetUser.addresses || []).filter(a => {
+                        return String(a.chain) === String(chain) && String(a.network) === String(network) && a.address;
+                    });
+                    if (!matchedAddresses || matchedAddresses.length === 0) {
+                        res.status(404).json({ error: `Username ${recipient.username} has no address on ${chain}/${network}` });
+                        return;
+                    }
+                    if (matchedAddresses.length > 1) {
+                        res.status(409).json({
+                            error: `Multiple addresses found for username ${recipient.username} on ${chain}/${network}`,
+                            addresses: matchedAddresses.map(a => ({ id: a.id, address: a.address }))
+                        });
+                        return;
+                    }
+                    // set resolved address on recipient for downstream processing
+                    recipient.address = matchedAddresses[0].address;
+                }
+                // After possible resolution, ensure address exists
+                if (!recipient.address) {
+                    res.status(400).json({ error: 'Each recipient must have address or username and amount' });
                     return;
                 }
                 if (Number(recipient.amount) <= 0) {
@@ -419,9 +451,10 @@ class SplitPaymentController {
     static async executeSplitPayment(req, res) {
         try {
             const { id } = req.params;
+            const paymentId = typeof id === 'string' ? id : id[0];
             const splitPaymentRepo = database_1.AppDataSource.getRepository(SplitPayment_1.SplitPayment);
             const splitPayment = await splitPaymentRepo.findOne({
-                where: { id, userId: req.user.id },
+                where: { id: paymentId, userId: req.user.id },
                 relations: ['recipients'],
             });
             if (!splitPayment) {
@@ -1512,11 +1545,12 @@ class SplitPaymentController {
     static async getExecutionHistory(req, res) {
         try {
             const { id } = req.params;
+            const paymentId = typeof id === 'string' ? id : id[0];
             const { page = 1, limit = 20 } = req.query;
             // Verify ownership
             const splitPaymentRepo = database_1.AppDataSource.getRepository(SplitPayment_1.SplitPayment);
             const splitPayment = await splitPaymentRepo.findOne({
-                where: { id, userId: req.user.id },
+                where: { id: paymentId, userId: req.user.id },
             });
             if (!splitPayment) {
                 res.status(404).json({ error: 'Split payment not found' });
@@ -1572,9 +1606,10 @@ class SplitPaymentController {
     static async toggleSplitPayment(req, res) {
         try {
             const { id } = req.params;
+            const paymentId = typeof id === 'string' ? id : id[0];
             const splitPaymentRepo = database_1.AppDataSource.getRepository(SplitPayment_1.SplitPayment);
             const splitPayment = await splitPaymentRepo.findOne({
-                where: { id, userId: req.user.id },
+                where: { id: paymentId, userId: req.user.id },
             });
             if (!splitPayment) {
                 res.status(404).json({ error: 'Split payment not found' });

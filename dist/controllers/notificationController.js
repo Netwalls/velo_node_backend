@@ -46,7 +46,7 @@ class NotificationController {
             const { id } = req.params;
             const notificationRepo = database_1.AppDataSource.getRepository(Notification_1.Notification);
             const notification = await notificationRepo.findOne({
-                where: { id, userId: req.user.id },
+                where: { id: typeof id === 'string' ? id : id[0], userId: req.user.id },
             });
             if (!notification) {
                 res.status(404).json({ error: 'Notification not found' });

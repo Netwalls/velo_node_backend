@@ -74,8 +74,9 @@ class UnifiedPurchaseController {
             if (!(0, controlllerHelper_1.requireAuth)(req, res))
                 return;
             const { purchaseId } = req.params;
+            const purchaseIdStr = typeof purchaseId === 'string' ? purchaseId : purchaseId[0];
             const userId = (0, controlllerHelper_1.getUserId)(req);
-            const purchase = await (0, controlllerHelper_1.findInHistory)(res, () => airtimeService_1.airtimeService.getUserAirtimeHistory(userId, 50), purchaseId, 'Airtime purchase');
+            const purchase = await (0, controlllerHelper_1.findInHistory)(res, () => airtimeService_1.airtimeService.getUserAirtimeHistory(userId, 50), purchaseIdStr, 'Airtime purchase');
             if (!purchase)
                 return;
             (0, controlllerHelper_1.sendSuccess)(res, 'Airtime purchase retrieved successfully', purchase);

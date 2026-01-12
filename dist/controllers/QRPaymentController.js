@@ -292,7 +292,7 @@ class MerchantController {
             const { id } = req.params;
             const paymentRepo = database_1.AppDataSource.getRepository(MerchantPayment_1.MerchantPayment);
             const payment = await paymentRepo.findOne({
-                where: { id, userId },
+                where: { id: typeof id === 'string' ? id : id[0], userId },
             });
             if (!payment) {
                 return res.status(404).json({ error: 'Payment not found' });
@@ -313,7 +313,7 @@ class MerchantController {
             const { id } = req.params;
             const paymentRepo = database_1.AppDataSource.getRepository(MerchantPayment_1.MerchantPayment);
             const payment = await paymentRepo.findOne({
-                where: { id, userId },
+                where: { id: typeof id === 'string' ? id : id[0], userId },
             });
             if (!payment) {
                 return res.status(404).json({ error: 'Payment not found' });
@@ -360,7 +360,7 @@ class MerchantController {
             const { id } = req.params;
             const paymentRepo = database_1.AppDataSource.getRepository(MerchantPayment_1.MerchantPayment);
             const payment = await paymentRepo.findOne({
-                where: { id, userId },
+                where: { id: typeof id === 'string' ? id : id[0], userId },
             });
             if (!payment) {
                 return res.status(404).json({ error: 'Payment not found' });

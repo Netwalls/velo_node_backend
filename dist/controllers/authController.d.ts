@@ -1,5 +1,5 @@
-import { Request, Response } from 'express';
-import { AuthRequest } from '../types';
+import { Request, Response } from "express";
+import { AuthRequest } from "../types";
 export declare class AuthController {
     /**
      * Delete a user by ID (from route param).

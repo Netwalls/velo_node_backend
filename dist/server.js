@@ -12,7 +12,6 @@ const userRoute_1 = __importDefault(require("./routes/userRoute"));
 const walletRoute_1 = __importDefault(require("./routes/walletRoute"));
 const notificationRoute_1 = __importDefault(require("./routes/notificationRoute"));
 const historyRoute_1 = __importDefault(require("./routes/historyRoute"));
-// import paymentRouter from './routes/payment';
 // import fiatRoutes from './routes/fiatRoute';
 const transactionRoute_1 = __importDefault(require("./routes/transactionRoute"));
 const splitPaymentRoute_1 = __importDefault(require("./routes/splitPaymentRoute"));
@@ -21,6 +20,8 @@ const qrpaymentRoute_1 = __importDefault(require("./routes/qrpaymentRoute"));
 const adminRoute_1 = __importDefault(require("./routes/adminRoute"));
 const publicRoute_1 = __importDefault(require("./routes/publicRoute"));
 // import swapRoute from './routes/swapRoute';
+// import changellyRouter from './controllers/changellyController';
+const paymentRoute_1 = __importDefault(require("./routes/paymentRoute"));
 const feeRoute_1 = __importDefault(require("./routes/feeRoute"));
 const changellyRoute_1 = __importDefault(require("./routes/changellyRoute"));
 const moonpayRoute_1 = __importDefault(require("./routes/moonpayRoute"));
@@ -41,25 +42,38 @@ app.use(express_1.default.json());
 // Apply global rate limiter
 // Global rate limit: 60 requests per minute per IP
 // app.use(createRateLimiter({ windowMs: 60 * 1000, max: 30 }));
-app.get('/', (req, res) => {
-    res.send('Velo Backend Server is running!');
+app.get("/", (req, res) => {
+    res.send("Velo Backend Server is running!");
 });
+// Health check endpoint
+app.get("/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+// app.use('/fiat', changellyRoute);
+// app.use('/fiat', fiatRoutes);
+// app.use('/api/fiat/changelly', changellyRouter);
+app.use("/auth", authRoute_1.default);
+app.use("/user", userRoute_1.default);
+app.use("/wallet", walletRoute_1.default);
+app.use("/notification", notificationRoute_1.default);
+app.use("/history", historyRoute_1.default);
+app.use("/payment", paymentRoute_1.default);
 // TODO: enable Changelly routes when `src/routes/changellyRoute.ts` exports a router
 app.use('/api/fiat', changellyRoute_1.default);
 app.use('/api/moonpay', moonpayRoute_1.default);
-app.use('/auth', authRoute_1.default);
-app.use('/user', userRoute_1.default);
-app.use('/wallet', walletRoute_1.default);
+// app.use('/auth', authRouter);
+// app.use('/user', userRouter);
+// app.use('/wallet', walletRouter);
 app.use('/notification', notificationRoute_1.default);
 app.use('/history', historyRoute_1.default);
-app.use('/transactions', transactionRoute_1.default);
-app.use('/merchant', qrpaymentRoute_1.default);
-app.use('/split-payment', splitPaymentRoute_1.default);
-app.use('/checkdeploy', strkDeploymentRoute_1.default);
-app.use('/admin', adminRoute_1.default);
-app.use('/fees', feeRoute_1.default);
+app.use("/transactions", transactionRoute_1.default);
+app.use("/merchant", qrpaymentRoute_1.default);
+app.use("/split-payment", splitPaymentRoute_1.default);
+app.use("/checkdeploy", strkDeploymentRoute_1.default);
+app.use("/admin", adminRoute_1.default);
+app.use("/fees", feeRoute_1.default);
 // Public routes should be mounted last for clarity, but ensure no conflicts
-app.use('/', publicRoute_1.default);
+app.use("/", publicRoute_1.default);
 // app.use('/swap', swapRoute);
 // utility route
 app.use("/airtime", airtime_1.default);

@@ -61,10 +61,10 @@ const feeCollectionService_1 = __importDefault(require("../services/feeCollectio
 const treasury_1 = __importDefault(require("../config/treasury"));
 const priceFeedService_1 = require("../services/priceFeedService");
 function padStarknetAddress(address) {
-    if (!address.startsWith('0x'))
+    if (!address.startsWith("0x"))
         return address;
-    const hex = address.slice(2).padStart(64, '0');
-    return '0x' + hex;
+    const hex = address.slice(2).padStart(64, "0");
+    return "0x" + hex;
 }
 class WalletController {
     /**
@@ -77,48 +77,46 @@ class WalletController {
             const { userId } = req.params;
             const { network } = req.query;
             if (!userId) {
-                res.status(400).json({ error: 'userId param is required' });
+                res.status(400).json({ error: "userId param is required" });
                 return;
             }
             const addressRepo = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
             let where = { userId };
             if (network)
                 where.network = network;
-            console.log('[DEBUG] getBalancesByUserId:', { userId, network });
+            console.log("[DEBUG] getBalancesByUserId:", { userId, network });
             const addresses = await addressRepo.find({ where });
-            console.log('[DEBUG] Found addresses:', addresses);
+            console.log("[DEBUG] Found addresses:", addresses);
             const balances = [];
             for (const addr of addresses) {
                 // ETH endpoints
                 const ETH_MAINNET = `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                 const ETH_TESTNET = `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                 // BTC endpoints
-                const BTC_MAINNET = 'https://blockstream.info/api/address/';
-                const BTC_TESTNET = 'https://blockstream.info/testnet/api/address/';
+                const BTC_MAINNET = "https://blockstream.info/api/address/";
+                const BTC_TESTNET = "https://blockstream.info/testnet/api/address/";
                 // SOL endpoints
                 const SOL_MAINNET = `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                 const SOL_TESTNET = `https://solana-testnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
                 // STRK endpoints
                 const STRK_MAINNET = `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
                 const STRK_TESTNET = `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
-                if (addr.chain === 'starknet') {
+                if (addr.chain === "starknet") {
                     try {
                         const provider = new starknet_1.RpcProvider({
-                            nodeUrl: addr.network === 'testnet'
-                                ? STRK_TESTNET
-                                : STRK_MAINNET,
+                            nodeUrl: addr.network === "testnet" ? STRK_TESTNET : STRK_MAINNET,
                         });
-                        const tokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        const tokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
                         const erc20Abi = [
                             {
-                                name: 'balanceOf',
-                                type: 'function',
-                                inputs: [{ name: 'account', type: 'felt' }],
-                                outputs: [{ name: 'balance', type: 'felt' }],
+                                name: "balanceOf",
+                                type: "function",
+                                inputs: [{ name: "account", type: "felt" }],
+                                outputs: [{ name: "balance", type: "felt" }],
                             },
                         ];
                         // @ts-ignore
-                        const { Contract } = require('starknet');
+                        const { Contract } = require("starknet");
                         const contract = new Contract(erc20Abi, tokenAddress, provider);
                         const balanceResult = await contract.balanceOf(addr.address);
                         balances.push({
@@ -135,25 +133,23 @@ class WalletController {
                                 chain: addr.chain,
                                 network: addr.network,
                                 address: addr.address,
-                                balance: '0',
+                                balance: "0",
                             });
                         }
                         else {
-                            console.debug('Stellar balance fetch failed:', err?.message || err);
+                            console.debug("Stellar balance fetch failed:", err?.message || err);
                             balances.push({
                                 chain: addr.chain,
                                 network: addr.network,
                                 address: addr.address,
-                                balance: '0',
+                                balance: "0",
                             });
                         }
                     }
                 }
-                else if (addr.chain === 'ethereum') {
+                else if (addr.chain === "ethereum") {
                     try {
-                        const provider = new ethers_1.ethers.JsonRpcProvider(addr.network === 'testnet'
-                            ? ETH_TESTNET
-                            : ETH_MAINNET);
+                        const provider = new ethers_1.ethers.JsonRpcProvider(addr.network === "testnet" ? ETH_TESTNET : ETH_MAINNET);
                         const balance = await provider.getBalance(addr.address);
                         balances.push({
                             chain: addr.chain,
@@ -163,30 +159,28 @@ class WalletController {
                         });
                     }
                     catch (err) {
-                        console.debug('Polkadot balance fetch failed:', err?.message || err);
+                        console.debug("Polkadot balance fetch failed:", err?.message || err);
                         // Return zero balance without an error field to keep API responses clean
                         balances.push({
                             chain: addr.chain,
                             network: addr.network,
                             address: addr.address,
-                            balance: '0',
-                            symbol: 'DOT',
+                            balance: "0",
+                            symbol: "DOT",
                         });
                     }
                 }
-                else if (addr.chain === 'bitcoin') {
+                else if (addr.chain === "bitcoin") {
                     console.log(`[DEBUG] Checking BTC balance for address: ${addr.address}`);
                     console.log(`[DEBUG] Network: ${addr.network}`);
                     try {
-                        const url = (addr.network === 'testnet'
-                            ? BTC_TESTNET
-                            : BTC_MAINNET) + addr.address;
+                        const url = (addr.network === "testnet" ? BTC_TESTNET : BTC_MAINNET) +
+                            addr.address;
                         console.log(`[DEBUG] Fetching BTC balance from: ${url}`);
                         const resp = await axios_1.default.get(url);
                         const data = resp.data;
                         console.log(`[DEBUG] BTC API response for ${addr.address}:`, data);
-                        const balance = data.chain_stats.funded_txo_sum -
-                            data.chain_stats.spent_txo_sum;
+                        const balance = data.chain_stats.funded_txo_sum - data.chain_stats.spent_txo_sum;
                         console.log(`[DEBUG] Current balance: ${balance} satoshis = ${balance / 1e8} BTC`);
                         balances.push({
                             chain: addr.chain,
@@ -201,16 +195,14 @@ class WalletController {
                             chain: addr.chain,
                             network: addr.network,
                             address: addr.address,
-                            balance: '0',
-                            error: 'Failed to fetch',
+                            balance: "0",
+                            error: "Failed to fetch",
                         });
                     }
                 }
-                else if (addr.chain === 'solana') {
+                else if (addr.chain === "solana") {
                     try {
-                        const connection = new web3_js_1.Connection(addr.network === 'testnet'
-                            ? SOL_TESTNET
-                            : SOL_MAINNET);
+                        const connection = new web3_js_1.Connection(addr.network === "testnet" ? SOL_TESTNET : SOL_MAINNET);
                         const publicKey = new web3_js_1.PublicKey(addr.address);
                         const balance = await connection.getBalance(publicKey);
                         balances.push({
@@ -225,23 +217,23 @@ class WalletController {
                             chain: addr.chain,
                             network: addr.network,
                             address: addr.address,
-                            balance: '0',
-                            error: 'Failed to fetch',
+                            balance: "0",
+                            error: "Failed to fetch",
                         });
                     }
                 }
-                else if (addr.chain === 'stellar') {
+                else if (addr.chain === "stellar") {
                     // Stellar balance via Horizon
                     try {
-                        const HORIZON_MAIN = 'https://horizon.stellar.org';
-                        const HORIZON_TEST = 'https://horizon-testnet.stellar.org';
+                        const HORIZON_MAIN = "https://horizon.stellar.org";
+                        const HORIZON_TEST = "https://horizon-testnet.stellar.org";
                         if (!addr.address)
-                            throw new Error('No stellar address');
-                        const horizonUrl = addr.network === 'testnet' ? HORIZON_TEST : HORIZON_MAIN;
+                            throw new Error("No stellar address");
+                        const horizonUrl = addr.network === "testnet" ? HORIZON_TEST : HORIZON_MAIN;
                         const resp = await axios_1.default.get(`${horizonUrl}/accounts/${addr.address}`);
                         const data = resp.data;
-                        const native = (data.balances || []).find((b) => b.asset_type === 'native');
-                        const balanceStr = native ? native.balance : '0';
+                        const native = (data.balances || []).find((b) => b.asset_type === "native");
+                        const balanceStr = native ? native.balance : "0";
                         balances.push({
                             chain: addr.chain,
                             network: addr.network,
@@ -250,28 +242,34 @@ class WalletController {
                         });
                     }
                     catch (err) {
+                        console.error("Stellar balance fetch failed for", addr.address, "Error:", err?.message || String(err), "Status:", err?.response?.status);
                         balances.push({
                             chain: addr.chain,
                             network: addr.network,
                             address: addr.address,
-                            balance: '0',
-                            error: 'Failed to fetch',
+                            balance: "0",
+                            error: "Failed to fetch",
                         });
                     }
                 }
-                else if (addr.chain === 'polkadot') {
+                else if (addr.chain === "polkadot") {
                     // Polkadot balance via @polkadot/api (use derived balances so "transferable" matches polkadot.js UI)
                     try {
                         // @ts-ignore - dynamic require
-                        const { ApiPromise, WsProvider } = require('@polkadot/api');
-                        const wsUrl = addr.network === 'testnet'
-                            ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io')
-                            : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+                        const { ApiPromise, WsProvider } = require("@polkadot/api");
+                        const wsUrl = addr.network === "testnet"
+                            ? process.env.POLKADOT_WS_TESTNET ||
+                                "wss://pas-rpc.stakeworld.io"
+                            : process.env.POLKADOT_WS_MAINNET || "wss://rpc.polkadot.io";
                         const provider = new WsProvider(wsUrl);
                         const api = await ApiPromise.create({ provider });
                         // Use derived balances to match UI (available/transferable)
                         const derived = await api.derive.balances.account(addr.address);
-                        const available = (derived && (derived.availableBalance ?? derived.freeBalance ?? derived.free)) || 0;
+                        const available = (derived &&
+                            (derived.availableBalance ??
+                                derived.freeBalance ??
+                                derived.free)) ||
+                            0;
                         const PLANCK = BigInt(10 ** 10);
                         const availableBig = BigInt(String(available));
                         const dot = (availableBig / PLANCK).toString();
@@ -280,7 +278,7 @@ class WalletController {
                             network: addr.network,
                             address: addr.address,
                             balance: dot,
-                            symbol: 'DOT',
+                            symbol: "DOT",
                         });
                         try {
                             await api.disconnect();
@@ -288,14 +286,14 @@ class WalletController {
                         catch { }
                     }
                     catch (err) {
-                        console.debug('Polkadot balance fetch failed:', err?.message || err);
+                        console.debug("Polkadot balance fetch failed:", err?.message || err);
                         balances.push({
                             chain: addr.chain,
                             network: addr.network,
                             address: addr.address,
-                            balance: '0',
-                            symbol: 'DOT',
-                            error: 'Failed to fetch',
+                            balance: "0",
+                            symbol: "DOT",
+                            error: "Failed to fetch",
                         });
                     }
                 }
@@ -304,16 +302,16 @@ class WalletController {
                         chain: addr.chain,
                         network: addr.network,
                         address: addr.address,
-                        balance: '0',
-                        error: 'Unsupported chain',
+                        balance: "0",
+                        error: "Unsupported chain",
                     });
                 }
             }
             res.json({ balances });
         }
         catch (error) {
-            console.error('Get balances by userId error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Get balances by userId error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -322,66 +320,116 @@ class WalletController {
      */
     static async alchemyProbe(req, res) {
         try {
-            const key = process.env.ALCHEMY_STARKNET_KEY || '';
+            const key = process.env.ALCHEMY_STARKNET_KEY || "";
             const urls = {
                 ETH_MAINNET: `https://eth-mainnet.g.alchemy.com/v2/${key}`,
                 ETH_SEPOLIA: `https://eth-sepolia.g.alchemy.com/v2/${key}`,
-                STRK_MAINNET: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${key}`,
+                STRK_MAINNET: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${key}`,
                 STRK_SEPOLIA: `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${key}`,
                 SOL_MAINNET: `https://solana-mainnet.g.alchemy.com/v2/${key}`,
                 SOL_DEVNET: `https://solana-devnet.g.alchemy.com/v2/${key}`,
             };
-            console.debug('[DEBUG] alchemyProbe urls:', urls);
+            console.debug("[DEBUG] alchemyProbe urls:", urls);
             const probes = {};
             const timeoutMs = 5000;
             async function probeEth(url) {
                 try {
-                    const resp = await axios_1.default.post(url, { jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }, { timeout: timeoutMs });
+                    const resp = await axios_1.default.post(url, { jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }, { timeout: timeoutMs });
                     return { ok: true, status: resp.status, data: resp.data };
                 }
                 catch (err) {
-                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                    return {
+                        ok: false,
+                        error: err?.message || String(err),
+                        status: err?.response?.status,
+                        body: err?.response?.data,
+                    };
                 }
             }
             async function probeStark(url) {
                 try {
-                    const resp = await axios_1.default.post(url, { jsonrpc: '2.0', id: 1, method: 'starknet_blockNumber', params: [] }, { timeout: timeoutMs });
+                    const resp = await axios_1.default.post(url, {
+                        jsonrpc: "2.0",
+                        id: 1,
+                        method: "starknet_blockNumber",
+                        params: [],
+                    }, { timeout: timeoutMs });
                     return { ok: true, status: resp.status, data: resp.data };
                 }
                 catch (err) {
-                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                    return {
+                        ok: false,
+                        error: err?.message || String(err),
+                        status: err?.response?.status,
+                        body: err?.response?.data,
+                    };
                 }
             }
             async function probeSol(url) {
                 try {
-                    const resp = await axios_1.default.post(url, { jsonrpc: '2.0', id: 1, method: 'getVersion', params: [] }, { timeout: timeoutMs });
+                    const resp = await axios_1.default.post(url, { jsonrpc: "2.0", id: 1, method: "getVersion", params: [] }, { timeout: timeoutMs });
                     return { ok: true, status: resp.status, data: resp.data };
                 }
                 catch (err) {
-                    return { ok: false, error: err?.message || String(err), status: err?.response?.status, body: err?.response?.data };
+                    return {
+                        ok: false,
+                        error: err?.message || String(err),
+                        status: err?.response?.status,
+                        body: err?.response?.data,
+                    };
                 }
             }
             // Run probes in parallel
             const tasks = [
-                ['ETH_MAINNET', probeEth(urls.ETH_MAINNET)],
-                ['ETH_SEPOLIA', probeEth(urls.ETH_SEPOLIA)],
-                ['STRK_MAINNET', probeStark(urls.STRK_MAINNET)],
-                ['STRK_SEPOLIA', probeStark(urls.STRK_SEPOLIA)],
-                ['SOL_MAINNET', probeSol(urls.SOL_MAINNET)],
-                ['SOL_DEVNET', probeSol(urls.SOL_DEVNET)],
+                ["ETH_MAINNET", probeEth(urls.ETH_MAINNET)],
+                ["ETH_SEPOLIA", probeEth(urls.ETH_SEPOLIA)],
+                ["STRK_MAINNET", probeStark(urls.STRK_MAINNET)],
+                ["STRK_SEPOLIA", probeStark(urls.STRK_SEPOLIA)],
+                ["SOL_MAINNET", probeSol(urls.SOL_MAINNET)],
+                ["SOL_DEVNET", probeSol(urls.SOL_DEVNET)],
             ];
             const results = await Promise.all(tasks.map((t) => t[1]));
             for (let i = 0; i < tasks.length; i++) {
                 probes[tasks[i][0]] = results[i];
             }
             // Log summary
-            console.debug('[DEBUG] alchemyProbe results:', Object.keys(probes).reduce((acc, k) => { acc[k] = { ok: probes[k].ok, status: probes[k].status }; return acc; }, {}));
+            console.debug("[DEBUG] alchemyProbe results:", Object.keys(probes).reduce((acc, k) => {
+                acc[k] = { ok: probes[k].ok, status: probes[k].status };
+                return acc;
+            }, {}));
             res.json({ ok: true, keyPresent: !!key, probes });
         }
         catch (err) {
-            console.error('alchemyProbe error:', err);
+            console.error("alchemyProbe error:", err);
             res.status(500).json({ ok: false, error: err?.message || String(err) });
         }
+    }
+    // Helper function to get a working Starknet provider with fallbacks
+    static async getStarknetProvider() {
+        const providers = [
+            // Primary: Alchemy (if API key is available and valid)
+            process.env.ALCHEMY_STARKNET_KEY
+                ? `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                : null,
+            // Fallback: BlastAPI public endpoint
+            "https://starknet-mainnet.public.blastapi.io",
+            // Additional fallback: Nethermind public endpoint
+            "https://starknet-mainnet.public.zksync.io",
+        ].filter((url) => url !== null); // Remove null values and type guard
+        for (const url of providers) {
+            try {
+                const provider = new starknet_1.RpcProvider({ nodeUrl: url });
+                // Test the provider with a simple call
+                await provider.getBlockNumber();
+                console.log(`Starknet provider working: ${url}`);
+                return provider;
+            }
+            catch (error) {
+                console.warn(`Starknet provider failed: ${url}, error: ${error?.message || String(error)}`);
+                continue;
+            }
+        }
+        throw new Error("All Starknet providers failed");
     }
     /**
      * Controller for wallet-related actions.
@@ -397,24 +445,22 @@ class WalletController {
             const balances = [];
             // Loop through each address and fetch its balance based on chain type
             for (const addr of addresses) {
-                if (addr.chain === 'starknet') {
+                if (addr.chain === "starknet") {
                     // STRK (Starknet) balance using RpcProvider.callContract for more robust parsing
                     try {
-                        // Use Alchemy Starknet v0_9 mainnet endpoint (more current)
-                        const provider = new starknet_1.RpcProvider({
-                            nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
-                        });
-                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        // Use fallback provider system for reliability
+                        const provider = await WalletController.getStarknetProvider();
+                        const strkTokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
                         // Call the contract entrypoint directly to avoid ABI/Contract class mismatches.
                         // balanceOf usually returns a uint256 (low, high) pair or a single felt depending on the token.
                         const callResult = await provider.callContract({
                             contractAddress: strkTokenAddress,
-                            entrypoint: 'balanceOf',
+                            entrypoint: "balanceOf",
                             calldata: [padStarknetAddress(addr.address)],
-                        });
+                        }); // Use 'latest' block instead of 'pending' which isn't supported by Alchemy
                         // Normalize various shapes returned by different providers
                         let raw = callResult;
-                        if (raw && typeof raw === 'object' && 'result' in raw)
+                        if (raw && typeof raw === "object" && "result" in raw)
                             raw = raw.result;
                         let balanceBig = BigInt(0);
                         if (Array.isArray(raw)) {
@@ -429,7 +475,7 @@ class WalletController {
                                 balanceBig = (high << BigInt(128)) + low;
                             }
                         }
-                        else if (typeof raw === 'string') {
+                        else if (typeof raw === "string") {
                             balanceBig = BigInt(raw);
                         }
                         // Convert to STRK decimal (18 decimals)
@@ -448,16 +494,16 @@ class WalletController {
                     }
                     catch (err) {
                         // Handle errors for STRK balance fetch
-                        console.warn('Starknet balance fetch failed for', addr.address, (err?.message || String(err)));
+                        console.error("Starknet balance fetch failed for", addr.address, "Error:", err?.message || String(err), "Full:", JSON.stringify(err));
                         balances.push({
                             chain: addr.chain,
                             address: addr.address,
                             balance: null,
-                            error: 'Failed to fetch',
+                            error: "Failed to fetch",
                         });
                     }
                 }
-                else if (addr.chain === 'ethereum') {
+                else if (addr.chain === "ethereum") {
                     // ETH balance using ethers.js
                     try {
                         // Use a public Ethereum RPC provider
@@ -476,11 +522,11 @@ class WalletController {
                             chain: addr.chain,
                             address: addr.address,
                             balance: null,
-                            error: 'Failed to fetch',
+                            error: "Failed to fetch",
                         });
                     }
                 }
-                else if (addr.chain === 'bitcoin') {
+                else if (addr.chain === "bitcoin") {
                     // BTC balance using blockstream.info API
                     try {
                         // Use blockstream.info public API to get BTC address stats
@@ -488,8 +534,7 @@ class WalletController {
                         const resp = await axios_1.default.get(url);
                         // The API returns funded and spent satoshis; subtract to get current balance
                         const data = resp.data;
-                        const balance = data.chain_stats.funded_txo_sum -
-                            data.chain_stats.spent_txo_sum;
+                        const balance = data.chain_stats.funded_txo_sum - data.chain_stats.spent_txo_sum;
                         balances.push({
                             chain: addr.chain,
                             address: addr.address,
@@ -502,11 +547,11 @@ class WalletController {
                             chain: addr.chain,
                             address: addr.address,
                             balance: null,
-                            error: 'Failed to fetch',
+                            error: "Failed to fetch",
                         });
                     }
                 }
-                else if (addr.chain === 'solana') {
+                else if (addr.chain === "solana") {
                     // SOL balance using @solana/web3.js
                     try {
                         // Connect to Solana mainnet
@@ -526,7 +571,7 @@ class WalletController {
                             chain: addr.chain,
                             address: addr.address,
                             balance: null,
-                            error: 'Failed to fetch',
+                            error: "Failed to fetch",
                         });
                     }
                 }
@@ -536,15 +581,15 @@ class WalletController {
                         chain: addr.chain,
                         address: addr.address,
                         balance: null,
-                        error: 'Unsupported chain',
+                        error: "Unsupported chain",
                     });
                 }
             }
             res.json({ balances });
         }
         catch (error) {
-            console.error('Get balances error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Get balances error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -558,53 +603,59 @@ class WalletController {
             const forceSend = req.body && req.body.force === true;
             // Validate authenticated user
             if (!req.user || !req.user.id) {
-                res.status(401).json({ error: 'Unauthorized' });
+                res.status(401).json({ error: "Unauthorized" });
                 return;
             }
             const userId = req.user.id;
             // Validation
             if (!chain || !network || !toAddress || !amount) {
                 res.status(400).json({
-                    error: 'Missing required fields: chain, network, toAddress, amount',
+                    error: "Missing required fields: chain, network, toAddress, amount",
                 });
                 return;
             }
             // Enforce transaction PIN unless explicitly bypassed via env var
             try {
-                const skipPin = process.env.SKIP_TRANSACTION_PIN === 'true';
+                const skipPin = process.env.SKIP_TRANSACTION_PIN === "true";
                 if (!skipPin) {
                     // Accept either `transactionPin` or `pin` for backwards compatibility
                     const providedPinRaw = req.body?.transactionPin ?? req.body?.pin;
                     if (providedPinRaw === undefined || providedPinRaw === null) {
-                        res.status(400).json({ error: 'Missing transactionPin (or pin) in request body' });
+                        res.status(400).json({
+                            error: "Missing transactionPin (or pin) in request body",
+                        });
                         return;
                     }
                     const providedPin = String(providedPinRaw);
                     // Load fresh user record to get hashed PIN
-                    const userRepo = database_1.AppDataSource.getRepository('users');
-                    const userRecord = await userRepo.findOne({ where: { id: userId } });
+                    const userRepo = database_1.AppDataSource.getRepository("users");
+                    const userRecord = await userRepo.findOne({
+                        where: { id: userId },
+                    });
                     if (!userRecord) {
-                        res.status(401).json({ error: 'Unauthorized' });
+                        res.status(401).json({ error: "Unauthorized" });
                         return;
                     }
                     if (!userRecord.transactionPin) {
-                        res.status(400).json({ error: 'Transaction PIN not set. Please set a transaction PIN before sending funds.' });
+                        res.status(400).json({
+                            error: "Transaction PIN not set. Please set a transaction PIN before sending funds.",
+                        });
                         return;
                     }
                     const pinMatches = await bcryptjs_1.default.compare(providedPin, userRecord.transactionPin);
                     if (!pinMatches) {
-                        res.status(403).json({ error: 'Invalid transaction PIN' });
+                        res.status(403).json({ error: "Invalid transaction PIN" });
                         return;
                     }
                 }
             }
             catch (pinErr) {
-                console.error('Transaction PIN verification error:', pinErr);
-                res.status(500).json({ error: 'Failed to verify transaction PIN' });
+                console.error("Transaction PIN verification error:", pinErr);
+                res.status(500).json({ error: "Failed to verify transaction PIN" });
                 return;
             }
             if (Number(amount) <= 0) {
-                res.status(400).json({ error: 'Amount must be positive.' });
+                res.status(400).json({ error: "Amount must be positive." });
                 return;
             }
             // ===== FEE CALCULATION =====
@@ -613,15 +664,15 @@ class WalletController {
             // Map chain -> token symbol + decimals
             const tokenInfo = (() => {
                 const map = {
-                    starknet: { symbol: 'STRK', decimals: 18 },
-                    ethereum: { symbol: 'ETH', decimals: 18 },
-                    usdt_erc20: { symbol: 'USDT', decimals: 6 },
-                    solana: { symbol: 'SOL', decimals: 9 },
-                    bitcoin: { symbol: 'BTC', decimals: 8 },
-                    stellar: { symbol: 'XLM', decimals: 7 },
-                    polkadot: { symbol: 'DOT', decimals: 10 },
+                    starknet: { symbol: "STRK", decimals: 18 },
+                    ethereum: { symbol: "ETH", decimals: 18 },
+                    usdt_erc20: { symbol: "USDT", decimals: 6 },
+                    solana: { symbol: "SOL", decimals: 9 },
+                    bitcoin: { symbol: "BTC", decimals: 8 },
+                    stellar: { symbol: "XLM", decimals: 7 },
+                    polkadot: { symbol: "DOT", decimals: 10 },
                 };
-                return map[chain] || { symbol: (chain || 'USD').toUpperCase(), decimals: 18 };
+                return (map[chain] || { symbol: (chain || "USD").toUpperCase(), decimals: 18 });
             })();
             // Fetch USD price per token
             let pricePerTokenUSD = 1;
@@ -629,11 +680,11 @@ class WalletController {
                 pricePerTokenUSD = await priceFeedService_1.PriceFeedService.getPrice(tokenInfo.symbol);
             }
             catch (err) {
-                console.warn('Price lookup failed for', tokenInfo.symbol, err?.message || String(err));
+                console.warn("Price lookup failed for", tokenInfo.symbol, err?.message || String(err));
                 // fallback: if price fetch fails, let FeeService work on token amount as if it's USD-equivalent (not ideal)
                 pricePerTokenUSD = 1;
             }
-            const amountUSD = Math.round((amountNum * pricePerTokenUSD) * 100) / 100;
+            const amountUSD = Math.round(amountNum * pricePerTokenUSD * 100) / 100;
             const feeCalculation = feeService_1.FeeService.calculateFee(amountUSD);
             // Convert fee USD -> token units (round up to avoid shorting treasury)
             const rawFeeToken = feeCalculation.fee / (pricePerTokenUSD || 1);
@@ -653,32 +704,27 @@ class WalletController {
                 console.log(`💼 Treasury wallet (raw): ${treasuryWallet}`);
                 // Log the environment keys we might look up (helps debugging mismatched .env names)
                 const envKey1 = `${chain.toUpperCase()}_${network.toUpperCase()}_TREASURY`;
-                const envKey2 = `VELO_TREASURY_${(chain === 'solana' ? 'SOL' : chain.toUpperCase())}_${network.toUpperCase()}`;
+                const envKey2 = `VELO_TREASURY_${chain === "solana" ? "SOL" : chain.toUpperCase()}_${network.toUpperCase()}`;
                 console.log(`💼 Treasury env probes: ${envKey1}=${process.env[envKey1]} ${envKey2}=${process.env[envKey2]}`);
                 // Basic validation
                 if (!treasury_1.default.validateTreasuryAddress(treasuryWallet, chain)) {
                     console.warn(`⚠️ Treasury wallet format invalid for ${chain}/${network}: ${treasuryWallet}`);
                 }
-                // Defensive check: treasury should never equal the recipient address. If it does, try fallbacks and log.
-                if (treasuryWallet === toAddress) {
-                    console.warn('⚠️ Detected treasury wallet equal to recipient address — possible configuration/assignment bug. Attempting fallback probe.');
-                    const fallbackCandidates = [process.env[envKey1], process.env[envKey2], process.env.VELO_TREASURY_SOL_TESTNET, process.env.VELO_TREASURY_SOL_MAINNET];
-                    const validFallback = fallbackCandidates.find((c) => !!c && treasury_1.default.validateTreasuryAddress(c, chain));
-                    if (validFallback) {
-                        console.log('ℹ️ Using fallback treasury address from env:', validFallback);
-                        treasuryWallet = validFallback;
-                    }
-                    else {
-                        console.warn('⚠️ No valid fallback treasury found in environment variables. Aborting to avoid sending fee to recipient');
-                        res.status(500).json({ error: 'Treasury configuration invalid. Please set the correct treasury address for this chain/network.' });
-                        return;
-                    }
+                // Defensive check: For airtime purchases, toAddress SHOULD be treasury (user sends funds to Velo).
+                // For wallet-to-wallet transfers, treasury should differ from recipient.
+                // We detect airtime purchases by checking if toAddress matches a treasury pattern.
+                const isProbablyAirtimePurchase = treasuryWallet === toAddress;
+                if (isProbablyAirtimePurchase) {
+                    console.log("ℹ️ Detected payment TO treasury (likely airtime purchase). Fee will be 0 to avoid double-charging.");
+                    // For airtime purchases, Velo already receives the full amount, so no additional fee
+                    // This is correct behavior - don't treat it as an error
                 }
             }
             catch (error) {
                 res.status(500).json({
-                    error: 'Treasury configuration error',
-                    details: error?.message || 'Treasury wallet not configured for this chain/network'
+                    error: "Treasury configuration error",
+                    details: error?.message ||
+                        "Treasury wallet not configured for this chain/network",
                 });
                 return;
             }
@@ -691,31 +737,31 @@ class WalletController {
             const userAddress = await addressRepo.findOne({ where });
             if (!userAddress || !userAddress.encryptedPrivateKey) {
                 res.status(404).json({
-                    error: 'No wallet found for this chain/network. You can only send from wallets you created in Velo.',
+                    error: "No wallet found for this chain/network. You can only send from wallets you created in Velo.",
                 });
                 return;
             }
             // Defensive: ensure stored address exists (TypeORM sometimes returns undefined for optional fields)
             if (!userAddress.address) {
-                console.error('Stored userAddress record missing address field for userId=', userId, 'chain=', chain, 'network=', network);
-                res.status(500).json({ error: 'Stored wallet address missing' });
+                console.error("Stored userAddress record missing address field for userId=", userId, "chain=", chain, "network=", network);
+                res.status(500).json({ error: "Stored wallet address missing" });
                 return;
             }
             // Decrypt the private key
-            const { decrypt } = require('../utils/keygen');
+            const { decrypt } = require("../utils/keygen");
             const privateKey = decrypt(userAddress.encryptedPrivateKey);
-            let txHash = '';
+            let txHash = "";
             let txChainName = undefined;
             let feeAlreadySent = false;
             let feeTxHashForRecord = undefined;
             let earlyResponseSent = false;
             // ETH & USDT ERC20
-            if (chain === 'ethereum' || chain === 'usdt_erc20') {
-                const provider = new ethers_1.ethers.JsonRpcProvider(network === 'testnet'
+            if (chain === "ethereum" || chain === "usdt_erc20") {
+                const provider = new ethers_1.ethers.JsonRpcProvider(network === "testnet"
                     ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                     : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
                 const wallet = new ethers_1.ethers.Wallet(privateKey, provider);
-                if (chain === 'ethereum') {
+                if (chain === "ethereum") {
                     const tx = await wallet.sendTransaction({
                         to: toAddress,
                         value: ethers_1.ethers.parseEther(amount.toString()),
@@ -723,11 +769,13 @@ class WalletController {
                     txHash = tx.hash;
                 }
                 else {
-                    const sepoliaRaw = '0x' + '516de3a7a567d81737e3a46ec4ff9cfd1fcb0136';
-                    const usdtMainnetRaw = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
-                    const usdtAddress = network === 'testnet' ? ethers_1.ethers.getAddress(sepoliaRaw) : ethers_1.ethers.getAddress(usdtMainnetRaw);
+                    const sepoliaRaw = "0x" + "516de3a7a567d81737e3a46ec4ff9cfd1fcb0136";
+                    const usdtMainnetRaw = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+                    const usdtAddress = network === "testnet"
+                        ? ethers_1.ethers.getAddress(sepoliaRaw)
+                        : ethers_1.ethers.getAddress(usdtMainnetRaw);
                     const usdtAbi = [
-                        'function transfer(address to, uint256 value) public returns (bool)',
+                        "function transfer(address to, uint256 value) public returns (bool)",
                     ];
                     const usdtContract = new ethers_1.ethers.Contract(usdtAddress, usdtAbi, wallet);
                     const decimals = 6;
@@ -736,10 +784,10 @@ class WalletController {
                 }
             }
             // SOL
-            else if (chain === 'solana') {
-                const connection = new web3_js_1.Connection(network === 'testnet'
-                    ? 'https://api.devnet.solana.com'
-                    : 'https://api.mainnet-beta.solana.com');
+            else if (chain === "solana") {
+                const connection = new web3_js_1.Connection(network === "testnet"
+                    ? "https://api.devnet.solana.com"
+                    : "https://api.mainnet-beta.solana.com");
                 // Handle different private key formats
                 let secretKeyArray;
                 try {
@@ -749,15 +797,15 @@ class WalletController {
                         secretKeyArray = Uint8Array.from(parsed);
                     }
                     else {
-                        throw new Error('Not an array');
+                        throw new Error("Not an array");
                     }
                 }
                 catch {
                     // If JSON.parse fails, treat as hex string
-                    const cleanHex = privateKey.startsWith('0x')
+                    const cleanHex = privateKey.startsWith("0x")
                         ? privateKey.slice(2)
                         : privateKey;
-                    const buffer = Buffer.from(cleanHex, 'hex');
+                    const buffer = Buffer.from(cleanHex, "hex");
                     // Solana keypairs are 64 bytes (32 private + 32 public)
                     if (buffer.length === 32) {
                         // If only private key, we need to generate the full keypair
@@ -796,12 +844,13 @@ class WalletController {
             }
             // Add this to your sendTransaction method after the Solana section and before Bitcoin
             // STRK (Starknet)
-            else if (chain === 'starknet') {
-                const provider = new starknet_1.RpcProvider({
-                    nodeUrl: network === 'testnet'
-                        ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
-                        : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+            else if (chain === "starknet") {
+                // Try mainnet first, fallback to testnet if no funds
+                // Use v0_7 for better compatibility with Alchemy
+                let provider = new starknet_1.RpcProvider({
+                    nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
                 });
+                let actualNetwork = "mainnet";
                 // Decrypt the private key
                 const privateKey = decrypt(userAddress.encryptedPrivateKey);
                 // Get public key from private key
@@ -811,12 +860,42 @@ class WalletController {
                 try {
                     await provider.getClassHashAt(userAddress.address);
                     isDeployed = true;
-                    console.log(`[DEBUG] Starknet account ${userAddress.address} is deployed`);
+                    console.log(`[DEBUG] Starknet account ${userAddress.address} is deployed on mainnet`);
                 }
                 catch (error) {
-                    console.log(`[DEBUG] Starknet account ${userAddress.address} is NOT deployed`);
+                    console.log(`[DEBUG] Starknet account ${userAddress.address} is NOT deployed on mainnet`);
                     // Check if account has sufficient funds for deployment
-                    const { hasSufficientFunds, balance } = await (0, keygen_1.checkBalance)(provider, userAddress.address);
+                    console.log(`[DEBUG] Checking balance for Starknet account deployment...`);
+                    console.log(`[DEBUG] Trying mainnet first...`);
+                    console.log(`[DEBUG] Address to check: ${userAddress.address}`);
+                    const { hasSufficientFunds, balance, token } = await (0, keygen_1.checkBalance)(provider, userAddress.address);
+                    console.log(`[DEBUG] Mainnet balance check:`);
+                    console.log(`  - Token: ${token}`);
+                    console.log(`  - Balance: ${balance} wei (${Number(balance) / 1e18} ${token})`);
+                    console.log(`  - Has sufficient funds: ${hasSufficientFunds}`);
+                    // FALLBACK: If mainnet balance is 0, try testnet
+                    if (!hasSufficientFunds && Number(balance) === 0) {
+                        console.log(`[DEBUG] ⚠️  No funds on mainnet, attempting fallback to testnet...`);
+                        const testnetProvider = new starknet_1.RpcProvider({
+                            nodeUrl: `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`,
+                        });
+                        const { hasSufficientFunds: testnetHasFunds, balance: testnetBalance, token: testnetToken, } = await (0, keygen_1.checkBalance)(testnetProvider, userAddress.address);
+                        console.log(`[DEBUG] Testnet balance check:`);
+                        console.log(`  - Token: ${testnetToken}`);
+                        console.log(`  - Balance: ${testnetBalance} wei (${Number(testnetBalance) / 1e18} ${testnetToken})`);
+                        console.log(`  - Has sufficient funds: ${testnetHasFunds}`);
+                        if (testnetHasFunds) {
+                            console.log(`[DEBUG] ✅ Found sufficient funds on testnet! Switching to testnet...`);
+                            provider = testnetProvider;
+                            actualNetwork = "testnet";
+                            isDeployed = false; // Will check on testnet
+                            try {
+                                await testnetProvider.getClassHashAt(userAddress.address);
+                                isDeployed = true;
+                            }
+                            catch { }
+                        }
+                    }
                     if (hasSufficientFunds) {
                         console.log(`[DEBUG] Deploying Starknet account ${userAddress.address}...`);
                         try {
@@ -829,11 +908,11 @@ class WalletController {
                             await database_1.AppDataSource.getRepository(Notification_1.Notification).save({
                                 userId: req.user.id,
                                 type: index_1.NotificationType.DEPOSIT,
-                                title: 'Starknet Account Deployed',
+                                title: "Starknet Account Deployed",
                                 message: `Your Starknet ${network} account has been successfully deployed at ${userAddress.address}`,
                                 details: {
                                     address: userAddress.address,
-                                    chain: 'starknet',
+                                    chain: "starknet",
                                     network: network,
                                     balance: balance,
                                 },
@@ -852,15 +931,18 @@ class WalletController {
                     }
                 }
                 if (!isDeployed) {
-                    throw new Error('Starknet account must be deployed before sending transactions');
+                    throw new Error("Starknet account must be deployed before sending transactions");
                 }
                 // Create Account instance for sending transactions
                 const account = new starknet_1.Account(provider, userAddress.address, privateKey);
+                // For Starknet, override treasury wallet to use actualNetwork (which may differ from request network)
+                treasuryWallet = treasury_1.default.getTreasuryWallet("starknet", actualNetwork);
+                console.log(`💼 Starknet treasury wallet (using actualNetwork=${actualNetwork}): ${treasuryWallet}`);
                 // Determine which token to send (ETH or STRK)
                 // For simplicity, we'll send ETH on Starknet by default
                 // You can modify this to support STRK token transfers as well
-                const ethTokenAddress = '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7';
-                const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                const ethTokenAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+                const strkTokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
                 // Use STRK token by default, you can add logic to choose between ETH/STRK
                 const tokenAddress = strkTokenAddress;
                 // Convert amount to uint256 (18 decimals for STRK/ETH)
@@ -868,8 +950,12 @@ class WalletController {
                 // Call the transfer function on the token contract
                 const transferCall = {
                     contractAddress: tokenAddress,
-                    entrypoint: 'transfer',
-                    calldata: [toAddress, amountInWei.low, amountInWei.high],
+                    entrypoint: "transfer",
+                    calldata: [
+                        toAddress,
+                        amountInWei.low.toString(),
+                        amountInWei.high.toString(),
+                    ],
                 };
                 console.log(`[DEBUG] Sending ${amount} STRK from ${userAddress.address} to ${toAddress}`);
                 try {
@@ -879,8 +965,12 @@ class WalletController {
                         const feeUint = starknet_1.uint256.bnToUint256(BigInt(Math.floor(Number(feeTokenRounded) * 1e18)));
                         const feeCall = {
                             contractAddress: tokenAddress,
-                            entrypoint: 'transfer',
-                            calldata: [treasuryWallet, feeUint.low, feeUint.high],
+                            entrypoint: "transfer",
+                            calldata: [
+                                treasuryWallet,
+                                feeUint.low.toString(),
+                                feeUint.high.toString(),
+                            ],
                         };
                         calls.push(feeCall);
                     }
@@ -907,19 +997,19 @@ class WalletController {
             // Replace the Polkadot section (around line 440) with this improved version:
             // POLKADOT
             // POLKADOT - Fixed version
-            else if (chain === 'polkadot') {
+            else if (chain === "polkadot") {
                 try {
                     // @ts-ignore
-                    const { ApiPromise, WsProvider } = require('@polkadot/api');
+                    const { ApiPromise, WsProvider } = require("@polkadot/api");
                     // @ts-ignore
-                    const { Keyring } = require('@polkadot/keyring');
-                    // @ts-ignore  
-                    const { decodeAddress, encodeAddress } = require('@polkadot/util-crypto');
+                    const { Keyring } = require("@polkadot/keyring");
                     // @ts-ignore
-                    const { u8aToHex } = require('@polkadot/util');
-                    const wsUrl = network === 'testnet'
-                        ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io')
-                        : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
+                    const { decodeAddress, encodeAddress, } = require("@polkadot/util-crypto");
+                    // @ts-ignore
+                    const { u8aToHex } = require("@polkadot/util");
+                    const wsUrl = network === "testnet"
+                        ? process.env.POLKADOT_WS_TESTNET || "wss://pas-rpc.stakeworld.io"
+                        : process.env.POLKADOT_WS_MAINNET || "wss://rpc.polkadot.io";
                     const provider = new WsProvider(wsUrl);
                     const api = await ApiPromise.create({ provider });
                     // Query the node for its reported chain name
@@ -927,61 +1017,63 @@ class WalletController {
                         const reportedChain = (await api.rpc.system.chain()).toString();
                         txChainName = reportedChain;
                         console.log(`[DEBUG] Polkadot RPC chain reported: ${reportedChain}`);
-                        if (network === 'testnet' && !reportedChain.toLowerCase().includes('test') && !reportedChain.toLowerCase().includes('paseo')) {
+                        if (network === "testnet" &&
+                            !reportedChain.toLowerCase().includes("test") &&
+                            !reportedChain.toLowerCase().includes("paseo")) {
                             console.warn(`[WARN] Requested network=testnet but RPC reports chain: ${reportedChain}. This may be a network mismatch.`);
                         }
                     }
                     catch (chainErr) {
-                        console.warn('Unable to fetch Polkadot RPC chain name:', chainErr);
+                        console.warn("Unable to fetch Polkadot RPC chain name:", chainErr);
                     }
-                    const keyring = new Keyring({ type: 'sr25519' });
+                    const keyring = new Keyring({ type: "sr25519" });
                     let sender = null;
-                    const pkStr = typeof privateKey === 'string' ? privateKey : String(privateKey);
-                    console.log('[DEBUG] Raw private key format:', pkStr.substring(0, 100));
+                    const pkStr = typeof privateKey === "string" ? privateKey : String(privateKey);
+                    console.log("[DEBUG] Raw private key format:", pkStr.substring(0, 100));
                     // ✅ FIX: Handle JSON-formatted private key from generatePolkadotWallet()
                     try {
                         // Try to parse as JSON first (new format)
                         const keyData = JSON.parse(pkStr);
-                        console.log('[DEBUG] Parsed JSON private key data:', {
+                        console.log("[DEBUG] Parsed JSON private key data:", {
                             hasKey: !!keyData,
                             hasMnemonic: !!keyData.mnemonic,
                             hasSeed: !!keyData.seed,
-                            type: keyData.type
+                            type: keyData.type,
                         });
                         if (keyData.mnemonic) {
                             // Best option: use mnemonic
                             sender = keyring.addFromUri(keyData.mnemonic);
-                            console.log('[DEBUG] Loaded keypair from mnemonic (JSON format)');
+                            console.log("[DEBUG] Loaded keypair from mnemonic (JSON format)");
                         }
                         else if (keyData.seed) {
                             // Fallback: use seed
-                            const seedBuffer = Buffer.from(keyData.seed, 'hex');
+                            const seedBuffer = Buffer.from(keyData.seed, "hex");
                             if (seedBuffer.length !== 32) {
                                 throw new Error(`Invalid seed length: ${seedBuffer.length}, expected 32 bytes`);
                             }
                             sender = keyring.addFromSeed(seedBuffer);
-                            console.log('[DEBUG] Loaded keypair from seed (JSON format)');
+                            console.log("[DEBUG] Loaded keypair from seed (JSON format)");
                         }
                         else {
-                            throw new Error('JSON private key missing both mnemonic and seed');
+                            throw new Error("JSON private key missing both mnemonic and seed");
                         }
                     }
                     catch (jsonErr) {
                         // Not JSON format, try legacy formats
-                        console.log('[DEBUG] Not JSON format, trying legacy formats...');
+                        console.log("[DEBUG] Not JSON format, trying legacy formats...");
                         try {
                             // Try as mnemonic/URI directly
                             sender = keyring.addFromUri(pkStr);
-                            console.log('[DEBUG] Loaded keypair from URI/mnemonic (legacy format)');
+                            console.log("[DEBUG] Loaded keypair from URI/mnemonic (legacy format)");
                         }
                         catch (e1) {
                             try {
                                 // Try as hex seed
-                                const seedHex = pkStr.replace(/^0x/, '');
+                                const seedHex = pkStr.replace(/^0x/, "");
                                 if (seedHex.length === 64) {
-                                    const seed = Buffer.from(seedHex, 'hex');
+                                    const seed = Buffer.from(seedHex, "hex");
                                     sender = keyring.addFromSeed(seed);
-                                    console.log('[DEBUG] Loaded keypair from hex seed (legacy format)');
+                                    console.log("[DEBUG] Loaded keypair from hex seed (legacy format)");
                                 }
                                 else {
                                     throw new Error(`Invalid seed length: ${seedHex.length}, expected 64 hex chars`);
@@ -992,11 +1084,11 @@ class WalletController {
                                     await api.disconnect();
                                 }
                                 catch { }
-                                throw new Error('Failed to load Polkadot keypair from any format. ' +
-                                    'Ensure private key is either: ' +
-                                    '1) JSON format with mnemonic/seed (new format), ' +
-                                    '2) Mnemonic phrase, or ' +
-                                    '3) 32-byte hex seed (64 chars). ' +
+                                throw new Error("Failed to load Polkadot keypair from any format. " +
+                                    "Ensure private key is either: " +
+                                    "1) JSON format with mnemonic/seed (new format), " +
+                                    "2) Mnemonic phrase, or " +
+                                    "3) 32-byte hex seed (64 chars). " +
                                     `Error details: ${e2 instanceof Error ? e2.message : String(e2)}`);
                             }
                         }
@@ -1006,13 +1098,13 @@ class WalletController {
                             await api.disconnect();
                         }
                         catch { }
-                        throw new Error('Failed to initialize keypair');
+                        throw new Error("Failed to initialize keypair");
                     }
                     // Get public keys for comparison
                     const derivedPubKey = sender.publicKey;
                     const derivedPubKeyHex = u8aToHex(derivedPubKey);
                     let storedPubKey = null;
-                    let storedPubKeyHex = '';
+                    let storedPubKeyHex = "";
                     try {
                         storedPubKey = decodeAddress(userAddress.address);
                         storedPubKeyHex = u8aToHex(storedPubKey);
@@ -1024,10 +1116,10 @@ class WalletController {
                         catch { }
                         throw new Error(`Invalid stored address format: ${userAddress.address}`);
                     }
-                    console.log('[DEBUG] Derived public key:', derivedPubKeyHex);
-                    console.log('[DEBUG] Stored public key:', storedPubKeyHex);
-                    console.log('[DEBUG] Derived address (default):', sender.address);
-                    console.log('[DEBUG] Stored address:', userAddress.address);
+                    console.log("[DEBUG] Derived public key:", derivedPubKeyHex);
+                    console.log("[DEBUG] Stored public key:", storedPubKeyHex);
+                    console.log("[DEBUG] Derived address (default):", sender.address);
+                    console.log("[DEBUG] Stored address:", userAddress.address);
                     // Check if public keys match
                     if (derivedPubKeyHex !== storedPubKeyHex) {
                         try {
@@ -1041,11 +1133,11 @@ class WalletController {
                             `Stored pubkey: ${storedPubKeyHex}\n` +
                             `This private key belongs to a different account. Transaction aborted to prevent loss of funds.`);
                     }
-                    console.log('[DEBUG] ✅ Public key verification passed!');
+                    console.log("[DEBUG] ✅ Public key verification passed!");
                     // Public keys match! Now encode with the correct format
                     let correctFormat = 0; // Default to Polkadot format
                     // Try to find the format used in the stored address
-                    const formatsToTry = network === 'testnet'
+                    const formatsToTry = network === "testnet"
                         ? [0, 42, 2] // Polkadot, generic substrate, Kusama
                         : [0, 2, 42];
                     for (const format of formatsToTry) {
@@ -1076,7 +1168,7 @@ class WalletController {
                         }
                     }
                     catch (balErr) {
-                        console.warn('[WARN] Could not check balance:', balErr);
+                        console.warn("[WARN] Could not check balance:", balErr);
                     }
                     // Create transaction - use transferKeepAlive to prevent account reaping
                     const transfer = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
@@ -1085,7 +1177,7 @@ class WalletController {
                             await api.disconnect();
                         }
                         catch { }
-                        throw new Error('No transfer method available on this chain');
+                        throw new Error("No transfer method available on this chain");
                     }
                     const tx = transfer(toAddress, planck.toString());
                     // --- Polkadot preflight fee + existential deposit check ---
@@ -1094,28 +1186,33 @@ class WalletController {
                         let estimatedFeePlanck = BigInt(0);
                         try {
                             const paymentInfo = await tx.paymentInfo(sender);
-                            estimatedFeePlanck = BigInt((paymentInfo && paymentInfo.partialFee) ? paymentInfo.partialFee.toString() : '0');
-                            console.log('[DEBUG] Polkadot estimated partialFee (planck):', estimatedFeePlanck.toString());
+                            estimatedFeePlanck = BigInt(paymentInfo && paymentInfo.partialFee
+                                ? paymentInfo.partialFee.toString()
+                                : "0");
+                            console.log("[DEBUG] Polkadot estimated partialFee (planck):", estimatedFeePlanck.toString());
                         }
                         catch (pfErr) {
-                            console.warn('[WARN] Could not estimate Polkadot paymentInfo:', (pfErr?.message || String(pfErr)));
+                            console.warn("[WARN] Could not estimate Polkadot paymentInfo:", pfErr?.message || String(pfErr));
                         }
                         // Existential deposit (planck)
                         let existentialDepositPlanck = BigInt(0);
                         try {
                             existentialDepositPlanck = BigInt(api.consts.balances.existentialDeposit.toString());
-                            console.log('[DEBUG] Polkadot existentialDeposit (planck):', existentialDepositPlanck.toString());
+                            console.log("[DEBUG] Polkadot existentialDeposit (planck):", existentialDepositPlanck.toString());
                         }
                         catch (edErr) {
-                            console.warn('[WARN] Could not read existentialDeposit from chain constants:', (edErr?.message || String(edErr)));
+                            console.warn("[WARN] Could not read existentialDeposit from chain constants:", edErr?.message || String(edErr));
                         }
                         // Re-check account free balance (planck)
                         const freshAccount = await api.query.system.account(userAddress.address);
                         const freePlanck = BigInt(freshAccount.data.free.toString());
-                        console.log('[DEBUG] Polkadot fresh free balance (planck):', freePlanck.toString());
+                        console.log("[DEBUG] Polkadot fresh free balance (planck):", freePlanck.toString());
                         // small safety buffer: 0.01 DOT (in planck)
                         const safetyBufferPlanck = BigInt(Math.round(0.01 * 1e10));
-                        const requiredPlanck = planck + estimatedFeePlanck + existentialDepositPlanck + safetyBufferPlanck;
+                        const requiredPlanck = planck +
+                            estimatedFeePlanck +
+                            existentialDepositPlanck +
+                            safetyBufferPlanck;
                         if (freePlanck < requiredPlanck) {
                             const toDot = (p) => (Number(p) / 1e10).toFixed(8);
                             try {
@@ -1129,7 +1226,7 @@ class WalletController {
                         }
                     }
                     catch (preflightErr) {
-                        console.error('Polkadot preflight check failed:', preflightErr?.message || String(preflightErr));
+                        console.error("Polkadot preflight check failed:", preflightErr?.message || String(preflightErr));
                         throw preflightErr;
                     }
                     // Sign and send
@@ -1140,7 +1237,7 @@ class WalletController {
                                     const { status, dispatchError, events } = result;
                                     // Log transaction progress
                                     if (status.isReady) {
-                                        console.log('[DEBUG] Transaction is ready');
+                                        console.log("[DEBUG] Transaction is ready");
                                     }
                                     if (dispatchError) {
                                         // Decode module error if possible
@@ -1148,7 +1245,7 @@ class WalletController {
                                             if (dispatchError.isModule) {
                                                 const decoded = api.registry.findMetaError(dispatchError.asModule);
                                                 const { section, name, docs } = decoded;
-                                                const errorMsg = `${section}.${name}: ${docs.join(' ')}`;
+                                                const errorMsg = `${section}.${name}: ${docs.join(" ")}`;
                                                 reject(new Error(`Transaction failed: ${errorMsg}`));
                                             }
                                             else {
@@ -1183,7 +1280,9 @@ class WalletController {
                                 });
                             }
                             catch (sendErr) {
-                                reject(sendErr instanceof Error ? sendErr : new Error(String(sendErr)));
+                                reject(sendErr instanceof Error
+                                    ? sendErr
+                                    : new Error(String(sendErr)));
                             }
                         });
                         console.log(`[SUCCESS] Polkadot transaction successful: ${txHash}`);
@@ -1193,7 +1292,7 @@ class WalletController {
                             await api.disconnect();
                         }
                         catch { }
-                        console.error('Polkadot send error (dispatch/sign):', sendErr);
+                        console.error("Polkadot send error (dispatch/sign):", sendErr);
                         throw sendErr;
                     }
                     try {
@@ -1202,26 +1301,26 @@ class WalletController {
                     catch { }
                 }
                 catch (err) {
-                    console.error('Polkadot send error:', err);
-                    throw new Error('Failed to send DOT: ' + (err?.message || String(err)));
+                    console.error("Polkadot send error:", err);
+                    throw new Error("Failed to send DOT: " + (err?.message || String(err)));
                 }
             }
             // XLM / Stellar
             // STELLAR
-            else if (chain === 'stellar') {
+            else if (chain === "stellar") {
                 try {
                     // Try both import methods for compatibility
                     let StellarSdk;
                     try {
-                        StellarSdk = require('stellar-sdk');
+                        StellarSdk = require("stellar-sdk");
                     }
                     catch (e) {
                         // @ts-ignore
-                        StellarSdk = require('@stellar/stellar-sdk');
+                        StellarSdk = require("@stellar/stellar-sdk");
                     }
-                    const horizonUrl = network === 'testnet'
-                        ? 'https://horizon-testnet.stellar.org'
-                        : 'https://horizon.stellar.org';
+                    const horizonUrl = network === "testnet"
+                        ? "https://horizon-testnet.stellar.org"
+                        : "https://horizon.stellar.org";
                     // Use Horizon.Server or stellar-sdk.Horizon.Server
                     const Server = StellarSdk.Horizon?.Server || StellarSdk.Server;
                     const Keypair = StellarSdk.Keypair;
@@ -1230,7 +1329,7 @@ class WalletController {
                     const Operation = StellarSdk.Operation;
                     const Asset = StellarSdk.Asset;
                     if (!Server) {
-                        throw new Error('Unable to find Server constructor in stellar-sdk');
+                        throw new Error("Unable to find Server constructor in stellar-sdk");
                     }
                     const server = new Server(horizonUrl);
                     const sourceKeypair = Keypair.fromSecret(privateKey);
@@ -1241,11 +1340,11 @@ class WalletController {
                     }
                     catch (loadErr) {
                         // More helpful error if source account doesn't exist or is unfunded
-                        console.error('Failed to load source Stellar account:', loadErr?.response?.data || loadErr);
-                        throw new Error('Failed to load source Stellar account. Ensure the account exists and is funded.');
+                        console.error("Failed to load source Stellar account:", loadErr?.response?.data || loadErr);
+                        throw new Error("Failed to load source Stellar account. Ensure the account exists and is funded.");
                     }
                     const baseFee = await server.fetchBaseFee();
-                    const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
+                    const networkPassphrase = network === "testnet" ? Networks.TESTNET : Networks.PUBLIC;
                     // Check whether destination exists. If not, we must use createAccount operation
                     let destinationExists = true;
                     try {
@@ -1254,7 +1353,7 @@ class WalletController {
                     catch (destErr) {
                         // Horizon returns 404 if account not found
                         destinationExists = false;
-                        console.log('Stellar destination account does not exist; will use createAccount op');
+                        console.log("Stellar destination account does not exist; will use createAccount op");
                     }
                     // Check whether treasury exists on this network. If treasury account is missing on this network,
                     // we should NOT try to create it here — instead skip on-chain fee transfer and record for later sweep.
@@ -1266,12 +1365,16 @@ class WalletController {
                     }
                     catch (tErr) {
                         treasuryExists = false;
-                        console.warn('⚠️ Treasury account does not exist on this Stellar network. Skipping on-chain fee payment.');
+                        console.warn("⚠️ Treasury account does not exist on this Stellar network. Skipping on-chain fee payment.");
                     }
                     // Preflight: check source native balance is sufficient (amount + fee if treasury exists + small reserve)
-                    const nativeBalanceEntry = (account.balances || []).find((b) => b.asset_type === 'native');
-                    const sourceBalance = nativeBalanceEntry ? parseFloat(nativeBalanceEntry.balance) : 0;
-                    const required = Number(amount) + (treasuryExists ? (Number(feeTokenRounded) || 0) : 0) + 0.0001; // small safety buffer
+                    const nativeBalanceEntry = (account.balances || []).find((b) => b.asset_type === "native");
+                    const sourceBalance = nativeBalanceEntry
+                        ? parseFloat(nativeBalanceEntry.balance)
+                        : 0;
+                    const required = Number(amount) +
+                        (treasuryExists ? Number(feeTokenRounded) || 0 : 0) +
+                        0.0001; // small safety buffer
                     if (sourceBalance < required) {
                         throw new Error(`Insufficient XLM balance. Have: ${sourceBalance}, need: >= ${required}`);
                     }
@@ -1294,84 +1397,84 @@ class WalletController {
                         }));
                     }
                     // add treasury payment in same Stellar transaction when possible and if treasury exists on this network
-                    if (treasuryExists && feeTokenRounded && Number(feeTokenRounded) > 0) {
+                    if (treasuryExists &&
+                        feeTokenRounded &&
+                        Number(feeTokenRounded) > 0) {
                         txBuilder.addOperation(Operation.payment({
                             destination: treasuryWallet,
                             asset: Asset.native(),
                             amount: String(feeTokenRounded),
                         }));
                     }
-                    else if (!treasuryExists && feeTokenRounded && Number(feeTokenRounded) > 0) {
+                    else if (!treasuryExists &&
+                        feeTokenRounded &&
+                        Number(feeTokenRounded) > 0) {
                         // We'll skip on-chain fee send for now; the fee transfer record will be created and retried by a sweeper
-                        console.warn('⚠️ Skipping on-chain fee payment because treasury account is missing on this network. Fee will be recorded for later collection.');
+                        console.warn("⚠️ Skipping on-chain fee payment because treasury account is missing on this network. Fee will be recorded for later collection.");
                     }
                     txBuilder.setTimeout(30);
                     const tx = txBuilder.build();
                     tx.sign(sourceKeypair);
                     try {
-                        console.log('[DEBUG] Submitting Stellar transaction...');
+                        console.log("[DEBUG] Submitting Stellar transaction...");
                         const resp = await server.submitTransaction(tx);
-                        console.log('[DEBUG] Stellar submitTransaction response received');
+                        console.log("[DEBUG] Stellar submitTransaction response received");
                         txHash = resp.hash;
-                        console.log('[DEBUG] Stellar txHash:', txHash);
+                        console.log("[DEBUG] Stellar txHash:", txHash);
                         if (feeTokenRounded && Number(feeTokenRounded) > 0) {
                             feeAlreadySent = true;
                             feeTxHashForRecord = txHash;
-                            console.log('[DEBUG] feeAlreadySent set=true, feeTxHashForRecord=', feeTxHashForRecord);
+                            console.log("[DEBUG] feeAlreadySent set=true, feeTxHashForRecord=", feeTxHashForRecord);
                         }
                     }
                     catch (submitErr) {
                         // Log Horizon response body if available
-                        console.error('Stellar submitTransaction failed:', submitErr?.response?.data || submitErr?.toString());
+                        console.error("Stellar submitTransaction failed:", submitErr?.response?.data || submitErr?.toString());
                         const body = submitErr?.response?.data;
                         const errMsg = body && body.extras && body.extras.result_codes
                             ? JSON.stringify(body.extras.result_codes)
-                            : (submitErr?.message || String(submitErr));
-                        throw new Error('Failed to send XLM: ' + errMsg);
+                            : submitErr?.message || String(submitErr);
+                        throw new Error("Failed to send XLM: " + errMsg);
                     }
-                    console.log('[DEBUG] Proceeding after Stellar submitTransaction, about to save Transaction to DB');
+                    console.log("[DEBUG] Proceeding after Stellar submitTransaction, about to save Transaction to DB");
                 }
                 catch (err) {
-                    console.error('Stellar send error:', err);
+                    console.error("Stellar send error:", err);
                     throw err instanceof Error ? err : new Error(String(err));
                 }
             }
             // BTC
-            else if (chain === 'bitcoin') {
-                console.log('[DEBUG] Bitcoin transaction start');
-                console.log('[DEBUG] Bitcoin address:', userAddress.address);
+            else if (chain === "bitcoin") {
+                console.log("[DEBUG] Bitcoin transaction start");
+                console.log("[DEBUG] Bitcoin address:", userAddress.address);
                 if (!privateKey) {
-                    throw new Error('Private key is undefined after decryption');
+                    throw new Error("Private key is undefined after decryption");
                 }
-                let privateKeyStr = typeof privateKey === 'string'
-                    ? privateKey
-                    : String(privateKey);
+                let privateKeyStr = typeof privateKey === "string" ? privateKey : String(privateKey);
                 // Fetch UTXOs
-                const apiUrl = network === 'testnet'
+                const apiUrl = network === "testnet"
                     ? `https://blockstream.info/testnet/api/address/${userAddress.address}/utxo`
                     : `https://blockstream.info/api/address/${userAddress.address}/utxo`;
-                console.log('[DEBUG] Fetching UTXOs from:', apiUrl);
+                console.log("[DEBUG] Fetching UTXOs from:", apiUrl);
                 let utxos;
                 try {
                     const utxoResponse = await axios_1.default.get(apiUrl);
                     utxos = utxoResponse.data;
-                    console.log('[DEBUG] Raw UTXO response:', JSON.stringify(utxos, null, 2));
+                    console.log("[DEBUG] Raw UTXO response:", JSON.stringify(utxos, null, 2));
                 }
                 catch (utxoError) {
-                    throw new Error(`Failed to fetch UTXOs: ${utxoError instanceof Error
-                        ? utxoError.message
-                        : String(utxoError)}`);
+                    throw new Error(`Failed to fetch UTXOs: ${utxoError instanceof Error ? utxoError.message : String(utxoError)}`);
                 }
                 if (!Array.isArray(utxos) || utxos.length === 0) {
-                    throw new Error('No UTXOs available for this address');
+                    throw new Error("No UTXOs available for this address");
                 }
                 // Filter confirmed UTXOs
                 const confirmedUtxos = utxos.filter((utxo) => utxo.status?.confirmed === true);
-                console.log('[DEBUG] Confirmed UTXOs:', confirmedUtxos.length);
+                console.log("[DEBUG] Confirmed UTXOs:", confirmedUtxos.length);
                 if (confirmedUtxos.length === 0) {
-                    throw new Error('No confirmed UTXOs available');
+                    throw new Error("No confirmed UTXOs available");
                 }
-                const networkParams = network === 'testnet'
+                const networkParams = network === "testnet"
                     ? bitcoin.networks.testnet
                     : bitcoin.networks.bitcoin;
                 const psbt = new bitcoin.Psbt({ network: networkParams });
@@ -1379,34 +1482,34 @@ class WalletController {
                 let addedInputs = 0;
                 const targetAmount = Math.round(Number(amount) * 1e8);
                 // feeTokenRounded is in BTC tokens for bitcoin chain; convert to satoshis
-                const feeSats = Math.round((chain === 'bitcoin' ? feeTokenRounded : 0) * 1e8);
+                const feeSats = Math.round((chain === "bitcoin" ? feeTokenRounded : 0) * 1e8);
                 const estimatedFee = 1000;
-                console.log('[DEBUG] Target:', targetAmount, 'Fee:', estimatedFee, 'Total needed:', targetAmount + feeSats + estimatedFee);
+                console.log("[DEBUG] Target:", targetAmount, "Fee:", estimatedFee, "Total needed:", targetAmount + feeSats + estimatedFee);
                 // Create keypair first
                 let keyPair;
                 try {
                     keyPair = ECPair.fromWIF(privateKeyStr, networkParams);
-                    console.log('[DEBUG] Loaded keypair from WIF');
+                    console.log("[DEBUG] Loaded keypair from WIF");
                 }
                 catch {
-                    const cleanHex = privateKeyStr.startsWith('0x')
+                    const cleanHex = privateKeyStr.startsWith("0x")
                         ? privateKeyStr.slice(2)
                         : privateKeyStr;
                     if (cleanHex.length !== 64) {
                         throw new Error(`Invalid hex private key length: ${cleanHex.length}, expected 64`);
                     }
-                    const buffer = Buffer.from(cleanHex, 'hex');
+                    const buffer = Buffer.from(cleanHex, "hex");
                     keyPair = ECPair.fromPrivateKey(buffer, {
                         network: networkParams,
                     });
-                    console.log('[DEBUG] Loaded keypair from hex');
+                    console.log("[DEBUG] Loaded keypair from hex");
                 }
                 // Process each confirmed UTXO
                 for (const utxo of confirmedUtxos) {
                     try {
                         console.log(`[DEBUG] Processing UTXO: ${utxo.txid}:${utxo.vout}, value: ${utxo.value}`);
                         // Get full transaction data
-                        const txUrl = network === 'testnet'
+                        const txUrl = network === "testnet"
                             ? `https://blockstream.info/testnet/api/tx/${utxo.txid}`
                             : `https://blockstream.info/api/tx/${utxo.txid}`;
                         const txResp = await axios_1.default.get(txUrl);
@@ -1423,21 +1526,21 @@ class WalletController {
                             continue;
                         }
                         // Add input based on type
-                        if (output.scriptpubkey_type === 'v0_p2wpkh') {
+                        if (output.scriptpubkey_type === "v0_p2wpkh") {
                             // SegWit input
                             psbt.addInput({
                                 hash: utxo.txid,
                                 index: utxo.vout,
                                 witnessUtxo: {
-                                    script: Buffer.from(scriptHex, 'hex'),
+                                    script: Buffer.from(scriptHex, "hex"),
                                     value: utxo.value,
                                 },
                             });
-                            console.log('[DEBUG] Added SegWit input');
+                            console.log("[DEBUG] Added SegWit input");
                         }
-                        else if (output.scriptpubkey_type === 'p2pkh') {
+                        else if (output.scriptpubkey_type === "p2pkh") {
                             // Legacy P2PKH input - needs full transaction hex
-                            const txHexUrl = network === 'testnet'
+                            const txHexUrl = network === "testnet"
                                 ? `https://blockstream.info/testnet/api/tx/${utxo.txid}/hex`
                                 : `https://blockstream.info/api/tx/${utxo.txid}/hex`;
                             const txHexResp = await axios_1.default.get(txHexUrl);
@@ -1445,9 +1548,9 @@ class WalletController {
                             psbt.addInput({
                                 hash: utxo.txid,
                                 index: utxo.vout,
-                                nonWitnessUtxo: Buffer.from(txHex, 'hex'),
+                                nonWitnessUtxo: Buffer.from(txHex, "hex"),
                             });
-                            console.log('[DEBUG] Added P2PKH input');
+                            console.log("[DEBUG] Added P2PKH input");
                         }
                         else {
                             console.log(`[DEBUG] Unsupported script type: ${output.scriptpubkey_type}`);
@@ -1458,27 +1561,27 @@ class WalletController {
                         console.log(`[DEBUG] Added input ${addedInputs}, total: ${inputSum} satoshis`);
                         // Check if we have enough (include treasury output)
                         if (inputSum >= targetAmount + feeSats + estimatedFee) {
-                            console.log('[DEBUG] Sufficient inputs collected');
+                            console.log("[DEBUG] Sufficient inputs collected");
                             break;
                         }
                         // Save transaction details to the database
                         await database_1.AppDataSource.getRepository(Transaction_1.Transaction).save({
                             userId: req.user.id,
-                            type: 'send',
+                            type: "send",
                             amount,
                             chain: chain,
                             network: network, // ✅ Add network field
                             toAddress,
                             fromAddress: userAddress.address,
                             txHash,
-                            status: 'confirmed',
+                            status: "confirmed",
                             createdAt: new Date(),
                         });
                         // Create a notification for the sent transaction
                         await database_1.AppDataSource.getRepository(Notification_1.Notification).save({
                             userId: req.user.id,
                             type: index_1.NotificationType.SEND,
-                            title: 'Tokens Sent',
+                            title: "Tokens Sent",
                             message: `You sent ${amount} ${chain.toUpperCase()} to ${toAddress}`,
                             details: {
                                 amount,
@@ -1498,7 +1601,7 @@ class WalletController {
                     }
                 }
                 if (addedInputs === 0) {
-                    throw new Error('No valid UTXOs could be added to transaction');
+                    throw new Error("No valid UTXOs could be added to transaction");
                 }
                 if (inputSum < targetAmount + estimatedFee) {
                     throw new Error(`Insufficient balance. Have: ${inputSum / 1e8} BTC, Need: ${(targetAmount + estimatedFee) / 1e8} BTC`);
@@ -1526,7 +1629,7 @@ class WalletController {
                 // Sign all inputs
                 // Replace the Bitcoin signing section (around lines 760-790) with this fixed version:
                 // Sign all inputs
-                console.log('[DEBUG] Signing inputs...');
+                console.log("[DEBUG] Signing inputs...");
                 try {
                     // Create a compatible signer wrapper that converts Uint8Array to Buffer
                     const signer = {
@@ -1545,32 +1648,30 @@ class WalletController {
                     }
                 }
                 catch (signError) {
-                    console.error('[DEBUG] Signing error:', signError);
-                    throw new Error(`Failed to sign inputs: ${signError instanceof Error
-                        ? signError.message
-                        : String(signError)}`);
+                    console.error("[DEBUG] Signing error:", signError);
+                    throw new Error(`Failed to sign inputs: ${signError instanceof Error ? signError.message : String(signError)}`);
                 }
                 // Validate signatures
-                console.log('[DEBUG] Validating signatures...');
+                console.log("[DEBUG] Validating signatures...");
                 const validated = psbt.validateSignaturesOfAllInputs((pubkey, msghash, signature) => {
                     return ECPair.fromPublicKey(pubkey, {
                         network: networkParams,
                     }).verify(msghash, signature);
                 });
                 if (!validated) {
-                    throw new Error('Signature validation failed');
+                    throw new Error("Signature validation failed");
                 }
-                console.log('[DEBUG] All signatures validated');
+                console.log("[DEBUG] All signatures validated");
                 // Finalize
                 psbt.finalizeAllInputs();
-                console.log('[DEBUG] Inputs finalized');
+                console.log("[DEBUG] Inputs finalized");
                 const rawTx = psbt.extractTransaction().toHex();
-                const broadcastUrl = network === 'testnet'
-                    ? 'https://blockstream.info/testnet/api/tx'
-                    : 'https://blockstream.info/api/tx';
-                console.log('[DEBUG] Broadcasting transaction...');
+                const broadcastUrl = network === "testnet"
+                    ? "https://blockstream.info/testnet/api/tx"
+                    : "https://blockstream.info/api/tx";
+                console.log("[DEBUG] Broadcasting transaction...");
                 const resp = await axios_1.default.post(broadcastUrl, rawTx, {
-                    headers: { 'Content-Type': 'text/plain' },
+                    headers: { "Content-Type": "text/plain" },
                 });
                 txHash = resp.data;
                 // For Bitcoin we included treasury output in the PSBT, mark feeAlreadySent
@@ -1578,7 +1679,7 @@ class WalletController {
                     feeAlreadySent = true;
                     feeTxHashForRecord = txHash;
                 }
-                console.log('[DEBUG] Transaction broadcast successful:', txHash);
+                console.log("[DEBUG] Transaction broadcast successful:", txHash);
             }
             // Immediately respond to client now that the on-chain transaction succeeded
             // This prevents UI spinners while DB writes and background fee work continue.
@@ -1586,7 +1687,7 @@ class WalletController {
                 if (txHash && !res.headersSent) {
                     const earlyPayload = {
                         success: true,
-                        message: 'Transaction submitted (on-chain). Persisting details in background',
+                        message: "Transaction submitted (on-chain). Persisting details in background",
                         txHash,
                         fromAddress: userAddress.address,
                         toAddress,
@@ -1594,44 +1695,44 @@ class WalletController {
                         network,
                     };
                     try {
-                        res.setHeader('X-Transaction-Sent', txHash);
+                        res.setHeader("X-Transaction-Sent", txHash);
                     }
                     catch { }
                     try {
                         res.status(200).json(earlyPayload);
-                        console.log('[DEBUG] Early response dispatched to client, res.finished=', res.finished);
+                        console.log("[DEBUG] Early response dispatched to client, res.finished=", res.finished);
                         earlyResponseSent = true;
                     }
                     catch (e) {
-                        console.warn('[DEBUG] Failed to send early response:', e?.message || String(e));
+                        console.warn("[DEBUG] Failed to send early response:", e?.message || String(e));
                     }
                 }
             }
             catch (e) {
-                console.warn('[DEBUG] Early response instrumentation error:', e?.message || String(e));
+                console.warn("[DEBUG] Early response instrumentation error:", e?.message || String(e));
             }
             // Save transaction details to the database
-            console.log('[DEBUG] Saving transaction to DB...');
+            console.log("[DEBUG] Saving transaction to DB...");
             const savedTransaction = await database_1.AppDataSource.getRepository(Transaction_1.Transaction).save({
                 userId: req.user.id,
-                type: 'send',
+                type: "send",
                 amount: feeCalculation.recipientReceives, // Recipient gets exact amount
                 chain: chain,
                 network: network,
                 toAddress,
                 fromAddress: userAddress.address,
                 txHash,
-                status: 'confirmed',
+                status: "confirmed",
                 details: {
                     recipientReceives: feeCalculation.recipientReceives,
                     fee: feeCalculation.fee,
                     senderPays: feeCalculation.senderPays,
                     tier: feeCalculation.tier,
-                    treasuryWallet: treasuryWallet
+                    treasuryWallet: treasuryWallet,
                 },
                 createdAt: new Date(),
             });
-            console.log('[DEBUG] Transaction saved. id=', savedTransaction.id);
+            console.log("[DEBUG] Transaction saved. id=", savedTransaction.id);
             // ===== Create pending fee transfer record and attempt on-chain fee transfer =====
             let feeTxRecord = null;
             try {
@@ -1646,7 +1747,7 @@ class WalletController {
                 });
             }
             catch (err) {
-                console.warn('Failed to create fee transfer record:', err?.message || String(err));
+                console.warn("Failed to create fee transfer record:", err?.message || String(err));
             }
             // perform chain-specific fee transfer
             let feeTxHash = undefined;
@@ -1657,27 +1758,29 @@ class WalletController {
                 // Fee was already sent as part of the recipient transaction (batched). Mark complete.
                 feeTxHash = feeTxHashForRecord;
                 if (feeTxRecord && feeTxHash) {
-                    console.log('[DEBUG] Scheduling fee transfer completion for feeTxRecord.id=', feeTxRecord.id, 'hash=', feeTxHash);
+                    console.log("[DEBUG] Scheduling fee transfer completion for feeTxRecord.id=", feeTxRecord.id, "hash=", feeTxHash);
                     // Do not block the HTTP response waiting for DB updates - run in background
-                    feeCollectionService_1.default.completeFeeTransfer(feeTxRecord.id, feeTxHash).then(() => {
-                        console.log('[DEBUG] Fee transfer marked complete (async)');
-                    }).catch((e) => {
-                        console.warn('Failed to mark fee transfer complete (async):', e?.message || String(e));
+                    feeCollectionService_1.default.completeFeeTransfer(feeTxRecord.id, feeTxHash)
+                        .then(() => {
+                        console.log("[DEBUG] Fee transfer marked complete (async)");
+                    })
+                        .catch((e) => {
+                        console.warn("Failed to mark fee transfer complete (async):", e?.message || String(e));
                     });
                 }
                 else if (feeTxRecord && !feeTxHash) {
-                    feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, 'Fee sent but txHash missing').catch(() => { });
+                    feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, "Fee sent but txHash missing").catch(() => { });
                 }
             }
             else {
                 // ADD THE MISSING try { HERE
                 try {
-                    if (chain === 'ethereum' || chain === 'usdt_erc20') {
-                        const provider = new ethers_1.ethers.JsonRpcProvider(network === 'testnet'
+                    if (chain === "ethereum" || chain === "usdt_erc20") {
+                        const provider = new ethers_1.ethers.JsonRpcProvider(network === "testnet"
                             ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                             : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
                         const wallet = new ethers_1.ethers.Wallet(privateKey, provider);
-                        if (chain === 'ethereum') {
+                        if (chain === "ethereum") {
                             const feeTx = await wallet.sendTransaction({
                                 to: treasuryWallet,
                                 value: ethers_1.ethers.parseEther(feeTokenRounded.toString()),
@@ -1689,11 +1792,13 @@ class WalletController {
                             catch { }
                         }
                         else {
-                            const sepoliaRaw = '0x' + '516de3a7a567d81737e3a46ec4ff9cfd1fcb0136';
-                            const usdtMainnetRaw = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
-                            const usdtAddress = network === 'testnet' ? ethers_1.ethers.getAddress(sepoliaRaw) : ethers_1.ethers.getAddress(usdtMainnetRaw);
+                            const sepoliaRaw = "0x" + "516de3a7a567d81737e3a46ec4ff9cfd1fcb0136";
+                            const usdtMainnetRaw = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+                            const usdtAddress = network === "testnet"
+                                ? ethers_1.ethers.getAddress(sepoliaRaw)
+                                : ethers_1.ethers.getAddress(usdtMainnetRaw);
                             const usdtAbi = [
-                                'function transfer(address to, uint256 value) public returns (bool)',
+                                "function transfer(address to, uint256 value) public returns (bool)",
                             ];
                             const usdtContract = new ethers_1.ethers.Contract(usdtAddress, usdtAbi, wallet);
                             const feeUnits = ethers_1.ethers.parseUnits(feeTokenRounded.toString(), 6);
@@ -1705,18 +1810,18 @@ class WalletController {
                             catch { }
                         }
                     }
-                    else if (chain === 'starknet') {
+                    else if (chain === "starknet") {
                         const provider = new starknet_1.RpcProvider({
-                            nodeUrl: network === 'testnet'
+                            nodeUrl: network === "testnet"
                                 ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
                                 : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
                         });
                         const account = new starknet_1.Account(provider, userAddress.address, privateKey);
-                        const tokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        const tokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
                         const feeUint = starknet_1.uint256.bnToUint256(BigInt(Math.floor(feeTokenRounded * 1e18)));
                         const feeCall = {
                             contractAddress: tokenAddress,
-                            entrypoint: 'transfer',
+                            entrypoint: "transfer",
                             calldata: [treasuryWallet, feeUint.low, feeUint.high],
                         };
                         const r = await account.execute(feeCall);
@@ -1726,10 +1831,10 @@ class WalletController {
                         }
                         catch { }
                     }
-                    else if (chain === 'solana') {
-                        const connection = new web3_js_1.Connection(network === 'testnet'
-                            ? 'https://api.devnet.solana.com'
-                            : 'https://api.mainnet-beta.solana.com');
+                    else if (chain === "solana") {
+                        const connection = new web3_js_1.Connection(network === "testnet"
+                            ? "https://api.devnet.solana.com"
+                            : "https://api.mainnet-beta.solana.com");
                         // rebuild keypair
                         let secretKeyArray;
                         try {
@@ -1737,11 +1842,13 @@ class WalletController {
                             if (Array.isArray(parsed))
                                 secretKeyArray = Uint8Array.from(parsed);
                             else
-                                throw new Error('Not array');
+                                throw new Error("Not array");
                         }
                         catch {
-                            const cleanHex = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
-                            const buffer = Buffer.from(cleanHex, 'hex');
+                            const cleanHex = privateKey.startsWith("0x")
+                                ? privateKey.slice(2)
+                                : privateKey;
+                            const buffer = Buffer.from(cleanHex, "hex");
                             if (buffer.length === 32) {
                                 secretKeyArray = web3_js_1.Keypair.fromSeed(buffer).secretKey;
                             }
@@ -1749,23 +1856,30 @@ class WalletController {
                                 secretKeyArray = new Uint8Array(buffer);
                             }
                             else
-                                throw new Error('Invalid Solana key');
+                                throw new Error("Invalid Solana key");
                         }
                         const fromKeypair = web3_js_1.Keypair.fromSecretKey(secretKeyArray);
-                        const tx = new web3_js_1.Transaction()
-                            .add(web3_js_1.SystemProgram.transfer({ fromPubkey: fromKeypair.publicKey, toPubkey: new web3_js_1.PublicKey(treasuryWallet), lamports: Math.round(feeTokenRounded * 1e9) }));
-                        const sig = await (0, web3_js_1.sendAndConfirmTransaction)(connection, tx, [fromKeypair]);
+                        const tx = new web3_js_1.Transaction().add(web3_js_1.SystemProgram.transfer({
+                            fromPubkey: fromKeypair.publicKey,
+                            toPubkey: new web3_js_1.PublicKey(treasuryWallet),
+                            lamports: Math.round(feeTokenRounded * 1e9),
+                        }));
+                        const sig = await (0, web3_js_1.sendAndConfirmTransaction)(connection, tx, [
+                            fromKeypair,
+                        ]);
                         feeTxHash = sig;
                     }
-                    else if (chain === 'stellar') {
+                    else if (chain === "stellar") {
                         let StellarSdk;
                         try {
-                            StellarSdk = require('stellar-sdk');
+                            StellarSdk = require("stellar-sdk");
                         }
                         catch {
-                            StellarSdk = require('@stellar/stellar-sdk');
+                            StellarSdk = require("@stellar/stellar-sdk");
                         }
-                        const horizonUrl = network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
+                        const horizonUrl = network === "testnet"
+                            ? "https://horizon-testnet.stellar.org"
+                            : "https://horizon.stellar.org";
                         const Server = StellarSdk.Horizon?.Server || StellarSdk.Server;
                         const Keypair = StellarSdk.Keypair;
                         const TransactionBuilder = StellarSdk.TransactionBuilder;
@@ -1776,22 +1890,36 @@ class WalletController {
                         const sourceKeypair = Keypair.fromSecret(privateKey);
                         const account = await server.loadAccount(sourceKeypair.publicKey());
                         const feeBase = await server.fetchBaseFee();
-                        const networkPassphrase = network === 'testnet' ? Networks.TESTNET : Networks.PUBLIC;
-                        const txBuilder = new TransactionBuilder(account, { fee: String(feeBase), networkPassphrase })
-                            .addOperation(Operation.payment({ destination: treasuryWallet, asset: Asset.native(), amount: String(feeTokenRounded) }))
+                        const networkPassphrase = network === "testnet" ? Networks.TESTNET : Networks.PUBLIC;
+                        const txBuilder = new TransactionBuilder(account, {
+                            fee: String(feeBase),
+                            networkPassphrase,
+                        })
+                            .addOperation(Operation.payment({
+                            destination: treasuryWallet,
+                            asset: Asset.native(),
+                            amount: String(feeTokenRounded),
+                        }))
                             .setTimeout(30);
                         const tx = txBuilder.build();
                         tx.sign(sourceKeypair);
                         const resp = await server.submitTransaction(tx);
                         feeTxHash = resp.hash;
                     }
-                    else if (chain === 'polkadot') {
+                    else if (chain === "polkadot") {
                         // @ts-ignore
-                        const { ApiPromise, WsProvider } = require('@polkadot/api');
-                        const wsUrl = network === 'testnet' ? (process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io') : (process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io');
-                        const provider = new (require('@polkadot/api').WsProvider)(wsUrl);
-                        const api = await (require('@polkadot/api').ApiPromise).create({ provider });
-                        const keyring = new (require('@polkadot/keyring')).Keyring({ type: 'sr25519' });
+                        const { ApiPromise, WsProvider } = require("@polkadot/api");
+                        const wsUrl = network === "testnet"
+                            ? process.env.POLKADOT_WS_TESTNET ||
+                                "wss://pas-rpc.stakeworld.io"
+                            : process.env.POLKADOT_WS_MAINNET || "wss://rpc.polkadot.io";
+                        const provider = new (require("@polkadot/api").WsProvider)(wsUrl);
+                        const api = await require("@polkadot/api").ApiPromise.create({
+                            provider,
+                        });
+                        const keyring = new (require("@polkadot/keyring").Keyring)({
+                            type: "sr25519",
+                        });
                         let sender = null;
                         try {
                             sender = keyring.addFromUri(JSON.parse(privateKey).mnemonic);
@@ -1804,12 +1932,16 @@ class WalletController {
                         }
                         const planckFee = BigInt(Math.round(feeTokenRounded * 1e10));
                         const tx = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
-                        const batch = api.tx.utility ? api.tx.utility.batch([tx(treasuryWallet, planckFee.toString())]) : tx(treasuryWallet, planckFee.toString());
+                        const batch = api.tx.utility
+                            ? api.tx.utility.batch([tx(treasuryWallet, planckFee.toString())])
+                            : tx(treasuryWallet, planckFee.toString());
                         feeTxHash = await new Promise(async (resolve, reject) => {
                             try {
                                 const unsub = await batch.signAndSend(sender, (result) => {
                                     if (result.status.isInBlock || result.status.isFinalized) {
-                                        resolve(result.status.isInBlock ? result.status.asInBlock.toString() : result.status.asFinalized.toString());
+                                        resolve(result.status.isInBlock
+                                            ? result.status.asInBlock.toString()
+                                            : result.status.asFinalized.toString());
                                         try {
                                             unsub();
                                         }
@@ -1831,11 +1963,11 @@ class WalletController {
                         await feeCollectionService_1.default.completeFeeTransfer(feeTxRecord.id, feeTxHash);
                     }
                     else if (feeTxRecord && !feeTxHash) {
-                        await feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, 'Fee transfer not completed');
+                        await feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, "Fee transfer not completed");
                     }
                 }
                 catch (feeErr) {
-                    console.error('Fee transfer error (non-fatal):', feeErr);
+                    console.error("Fee transfer error (non-fatal):", feeErr);
                     try {
                         if (feeTxRecord)
                             await feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, feeErr instanceof Error ? feeErr.message : String(feeErr));
@@ -1846,7 +1978,7 @@ class WalletController {
             // Respond to the client immediately (do not block on non-critical background work)
             const responsePayload = {
                 success: true,
-                message: 'Transaction sent successfully',
+                message: "Transaction sent successfully",
                 txHash,
                 fromAddress: userAddress.address,
                 toAddress,
@@ -1859,13 +1991,13 @@ class WalletController {
                     senderPays: feeCalculation.senderPays,
                     tier: feeCalculation.tier,
                     feePercentage: feeCalculation.feePercentage,
-                    treasuryWallet: treasuryWallet
-                }
+                    treasuryWallet: treasuryWallet,
+                },
             };
             // Start background tasks (fee recording and notification) but don't await them here
             (async () => {
                 if (!req.user?.id) {
-                    console.error('⚠️ Background tasks skipped: user not authenticated');
+                    console.error("⚠️ Background tasks skipped: user not authenticated");
                     return;
                 }
                 try {
@@ -1875,19 +2007,19 @@ class WalletController {
                         calculation: feeCalculation,
                         chain: chain,
                         network: network,
-                        feeType: 'normal_transaction',
-                        description: `Transaction fee for sending ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress}`
+                        feeType: "normal_transaction",
+                        description: `Transaction fee for sending ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress}`,
                     });
                     console.log(`✅ Fee recorded (background): $${feeCalculation.fee} (${feeCalculation.tier})`);
                 }
                 catch (feeError) {
-                    console.error('⚠️ Fee recording failed (background):', feeError);
+                    console.error("⚠️ Fee recording failed (background):", feeError);
                 }
                 try {
                     await database_1.AppDataSource.getRepository(Notification_1.Notification).save({
                         userId: req.user.id,
                         type: index_1.NotificationType.SEND,
-                        title: 'Tokens Sent',
+                        title: "Tokens Sent",
                         message: `You sent ${feeCalculation.recipientReceives} ${chain.toUpperCase()} to ${toAddress} (+ $${feeCalculation.fee} fee)`,
                         details: {
                             recipientReceives: feeCalculation.recipientReceives,
@@ -1899,69 +2031,73 @@ class WalletController {
                             toAddress,
                             fromAddress: userAddress.address,
                             txHash,
-                            treasuryWallet: treasuryWallet
+                            treasuryWallet: treasuryWallet,
                         },
                         isRead: false,
                         createdAt: new Date(),
                     });
-                    console.log('✅ Notification created (background)');
+                    console.log("✅ Notification created (background)");
                 }
                 catch (notifErr) {
-                    console.error('⚠️ Notification creation failed (background):', notifErr);
+                    console.error("⚠️ Notification creation failed (background):", notifErr);
                 }
             })();
             // Instrument the response to confirm when the HTTP response is fully sent/closed.
             try {
                 // Add a debug header so clients or curl -v can see that the server processed and included txHash
                 if (txHash)
-                    res.setHeader('X-Transaction-Sent', txHash);
+                    res.setHeader("X-Transaction-Sent", txHash);
                 // Log when response is finished (all bytes flushed) or closed prematurely
-                res.on('finish', () => {
-                    console.log('[DEBUG] res.finish event: response fully sent to client, res.finished=', res.finished);
+                res.on("finish", () => {
+                    console.log("[DEBUG] res.finish event: response fully sent to client, res.finished=", res.finished);
                 });
-                res.on('close', () => {
-                    console.log('[DEBUG] res.close event: connection closed before finish, res.finished=', res.finished);
+                res.on("close", () => {
+                    console.log("[DEBUG] res.close event: connection closed before finish, res.finished=", res.finished);
                 });
                 // Flush headers early (if supported) and send JSON payload
                 try {
                     res.flushHeaders?.();
                 }
-                catch (e) { /* ignore if not available */ }
+                catch (e) {
+                    /* ignore if not available */
+                }
             }
             catch (e) {
-                console.warn('[DEBUG] Failed to attach response instrumentation:', e?.message || String(e));
+                console.warn("[DEBUG] Failed to attach response instrumentation:", e?.message || String(e));
             }
             if (!earlyResponseSent) {
                 // Instrument the response to confirm when the HTTP response is fully sent/closed.
                 try {
                     if (txHash)
-                        res.setHeader('X-Transaction-Sent', txHash);
-                    res.on('finish', () => {
-                        console.log('[DEBUG] res.finish event: response fully sent to client, res.finished=', res.finished);
+                        res.setHeader("X-Transaction-Sent", txHash);
+                    res.on("finish", () => {
+                        console.log("[DEBUG] res.finish event: response fully sent to client, res.finished=", res.finished);
                     });
-                    res.on('close', () => {
-                        console.log('[DEBUG] res.close event: connection closed before finish, res.finished=', res.finished);
+                    res.on("close", () => {
+                        console.log("[DEBUG] res.close event: connection closed before finish, res.finished=", res.finished);
                     });
                     try {
                         res.flushHeaders?.();
                     }
-                    catch (e) { /* ignore */ }
+                    catch (e) {
+                        /* ignore */
+                    }
                 }
                 catch (e) {
-                    console.warn('[DEBUG] Failed to attach response instrumentation:', e?.message || String(e));
+                    console.warn("[DEBUG] Failed to attach response instrumentation:", e?.message || String(e));
                 }
                 res.status(200).json(responsePayload);
-                console.log('[DEBUG] Response dispatched to client, res.finished=', res.finished);
+                console.log("[DEBUG] Response dispatched to client, res.finished=", res.finished);
             }
             else {
-                console.log('[DEBUG] Early response already sent; skipping final res.json');
+                console.log("[DEBUG] Early response already sent; skipping final res.json");
             }
             return;
         }
         catch (error) {
-            console.error('Send transaction error:', error);
+            console.error("Send transaction error:", error);
             res.status(500).json({
-                error: 'Failed to send transaction',
+                error: "Failed to send transaction",
                 details: error instanceof Error ? error.message : String(error),
             });
         }
@@ -1977,30 +2113,36 @@ class WalletController {
         try {
             const { username, chain, network, amount } = req.body;
             if (!req.user || !req.user.id) {
-                res.status(401).json({ error: 'Unauthorized' });
+                res.status(401).json({ error: "Unauthorized" });
                 return;
             }
             if (!username || !chain || !network || !amount) {
-                res.status(400).json({ error: 'Missing required fields: username, chain, network, amount' });
+                res.status(400).json({
+                    error: "Missing required fields: username, chain, network, amount",
+                });
                 return;
             }
             // Resolve username -> user
             const userRepo = database_1.AppDataSource.getRepository(User_1.User);
             const recipient = await userRepo.findOne({ where: { username } });
             if (!recipient) {
-                res.status(404).json({ error: 'Recipient username not found' });
+                res.status(404).json({ error: "Recipient username not found" });
                 return;
             }
             // Prevent sending to self
             if (recipient.id === req.user.id) {
-                res.status(400).json({ error: 'Cannot send to your own username' });
+                res.status(400).json({ error: "Cannot send to your own username" });
                 return;
             }
             // Resolve recipient address for chain/network
             const addressRepo = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
-            const recipientAddr = await addressRepo.findOne({ where: { userId: recipient.id, chain, network } });
+            const recipientAddr = await addressRepo.findOne({
+                where: { userId: recipient.id, chain, network },
+            });
             if (!recipientAddr || !recipientAddr.address) {
-                res.status(404).json({ error: 'Recipient does not have a wallet for the requested chain/network' });
+                res.status(404).json({
+                    error: "Recipient does not have a wallet for the requested chain/network",
+                });
                 return;
             }
             // Inject resolved toAddress into request body and delegate to existing sendTransaction
@@ -2014,45 +2156,55 @@ class WalletController {
                     const addressRepo = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
                     let senderAddress = req.body?.fromAddress;
                     if (!senderAddress) {
-                        const senderAddrRec = await addressRepo.findOne({ where: { userId: req.user.id, chain, network } });
+                        const senderAddrRec = await addressRepo.findOne({
+                            where: { userId: req.user.id, chain, network },
+                        });
                         if (senderAddrRec)
                             senderAddress = senderAddrRec.address;
                     }
                     // Currency label -- simple mapping similar to sendTransaction
                     const currency = (() => {
                         const map = {
-                            starknet: 'STRK',
-                            ethereum: 'ETH',
-                            usdt_erc20: 'USDT',
-                            solana: 'SOL',
-                            bitcoin: 'BTC',
-                            stellar: 'XLM',
-                            polkadot: 'DOT',
+                            starknet: "STRK",
+                            ethereum: "ETH",
+                            usdt_erc20: "USDT",
+                            solana: "SOL",
+                            bitcoin: "BTC",
+                            stellar: "XLM",
+                            polkadot: "DOT",
                         };
                         return map[chain] || chain.toUpperCase();
                     })();
                     // Best-effort notify recipient that they will receive / have received funds
                     try {
                         if (!recipient || !recipient.id) {
-                            console.warn('Recipient record missing id; skipping receive notification');
+                            console.warn("Recipient record missing id; skipping receive notification");
                         }
                         else {
-                            await notificationService_1.NotificationService.notifyReceiveMoney(recipient.id, String(amount), currency, senderAddress || 'unknown', undefined, { chain, network, toAddress: recipientAddr.address, fromUserId: req.user.id });
+                            await notificationService_1.NotificationService.notifyReceiveMoney(recipient.id, String(amount), currency, senderAddress || "unknown", undefined, {
+                                chain,
+                                network,
+                                toAddress: recipientAddr.address,
+                                fromUserId: req.user.id,
+                            });
                         }
                     }
                     catch (notifyErr) {
-                        console.warn('Failed to notify recipient after sendByUsername:', notifyErr?.message || String(notifyErr));
+                        console.warn("Failed to notify recipient after sendByUsername:", notifyErr?.message || String(notifyErr));
                     }
                 }
                 catch (bgErr) {
-                    console.warn('Background recipient notification failed (sendByUsername):', bgErr?.message || String(bgErr));
+                    console.warn("Background recipient notification failed (sendByUsername):", bgErr?.message || String(bgErr));
                 }
             })();
             return;
         }
         catch (err) {
-            console.error('sendByUsername error:', err);
-            res.status(500).json({ error: 'Failed to send by username', details: err?.message || String(err) });
+            console.error("sendByUsername error:", err);
+            res.status(500).json({
+                error: "Failed to send by username",
+                details: err?.message || String(err),
+            });
         }
     }
     /**
@@ -2064,17 +2216,17 @@ class WalletController {
         try {
             const userId = req.user?.id;
             if (!userId) {
-                res.status(401).json({ error: 'Unauthorized' });
+                res.status(401).json({ error: "Unauthorized" });
                 return;
             }
             const userAddressRepository = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
             const addresses = await userAddressRepository.find({
                 where: { userId },
-                select: ['id', 'chain', 'network', 'address', 'addedAt'],
+                select: ["id", "chain", "network", "address", "addedAt"],
             });
             if (!addresses || addresses.length === 0) {
                 res.status(404).json({
-                    error: 'No wallet addresses found for this user',
+                    error: "No wallet addresses found for this user",
                     addresses: [],
                 });
                 return;
@@ -2082,7 +2234,7 @@ class WalletController {
             // Group addresses by chain for better organization
             const addressesByChain = addresses.reduce((acc, addr) => {
                 // Ensure we always use a string key (fallback to 'unknown' when chain is undefined)
-                const chainKey = String(addr.chain ?? 'unknown');
+                const chainKey = String(addr.chain ?? "unknown");
                 if (!acc[chainKey]) {
                     acc[chainKey] = [];
                 }
@@ -2096,14 +2248,14 @@ class WalletController {
                 return acc;
             }, {});
             res.status(200).json({
-                message: 'Wallet addresses retrieved successfully',
+                message: "Wallet addresses retrieved successfully",
                 addresses: addressesByChain,
                 totalCount: addresses.length,
             });
         }
         catch (error) {
-            console.error('Get wallet addresses error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Get wallet addresses error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -2114,17 +2266,17 @@ class WalletController {
         try {
             const userId = req.user?.id;
             if (!userId) {
-                res.status(401).json({ error: 'Unauthorized' });
+                res.status(401).json({ error: "Unauthorized" });
                 return;
             }
             const userAddressRepository = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
             const addresses = await userAddressRepository.find({
                 where: { userId, network: types_1.NetworkType.TESTNET },
-                select: ['chain', 'address'],
+                select: ["chain", "address"],
             });
             if (!addresses || addresses.length === 0) {
                 res.status(404).json({
-                    error: 'No testnet addresses found for this user',
+                    error: "No testnet addresses found for this user",
                     addresses: [],
                 });
                 return;
@@ -2137,13 +2289,13 @@ class WalletController {
             // Sort addresses before sending
             const sortedAddresses = sortAddressesByChainOrder(simplifiedAddresses);
             res.status(200).json({
-                message: 'Testnet addresses retrieved successfully',
+                message: "Testnet addresses retrieved successfully",
                 addresses: sortedAddresses,
             });
         }
         catch (error) {
-            console.error('Get testnet addresses error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Get testnet addresses error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -2154,17 +2306,17 @@ class WalletController {
         try {
             const userId = req.user?.id;
             if (!userId) {
-                res.status(401).json({ error: 'Unauthorized' });
+                res.status(401).json({ error: "Unauthorized" });
                 return;
             }
             const userAddressRepository = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
             const addresses = await userAddressRepository.find({
                 where: { userId, network: types_1.NetworkType.MAINNET },
-                select: ['chain', 'address'],
+                select: ["chain", "address"],
             });
             if (!addresses || addresses.length === 0) {
                 res.status(404).json({
-                    error: 'No mainnet addresses found for this user',
+                    error: "No mainnet addresses found for this user",
                     addresses: [],
                 });
                 return;
@@ -2175,13 +2327,13 @@ class WalletController {
                 address: addr.address,
             }));
             res.status(200).json({
-                message: 'Mainnet addresses retrieved successfully',
+                message: "Mainnet addresses retrieved successfully",
                 addresses: simplifiedAddresses,
             });
         }
         catch (error) {
-            console.error('Get mainnet addresses error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Get mainnet addresses error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -2202,7 +2354,9 @@ class WalletController {
             async function runWithLimit(items, limit, iterator) {
                 let i = 0;
                 const results = [];
-                const workers = Array.from({ length: Math.min(limit, items.length) }).map(async () => {
+                const workers = Array.from({
+                    length: Math.min(limit, items.length),
+                }).map(async () => {
                     while (true) {
                         const idx = i++;
                         if (idx >= items.length)
@@ -2221,7 +2375,7 @@ class WalletController {
             // Small wrapper to add timeouts to promises
             function withTimeout(p, ms = 8000) {
                 return new Promise((resolve, reject) => {
-                    const t = setTimeout(() => reject(new Error('timeout')), ms);
+                    const t = setTimeout(() => reject(new Error("timeout")), ms);
                     p.then((v) => {
                         clearTimeout(t);
                         resolve(v);
@@ -2231,20 +2385,53 @@ class WalletController {
                     });
                 });
             }
+            // Helper function to get a working Starknet testnet provider with fallbacks
+            async function getStarknetTestnetProvider() {
+                const providers = [
+                    // Primary: Alchemy Sepolia (if API key is available and valid)
+                    process.env.ALCHEMY_STARKNET_KEY
+                        ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                        : null,
+                    // Fallback: BlastAPI testnet endpoint
+                    "https://starknet-sepolia.public.blastapi.io",
+                    // Additional fallback: Other public testnet endpoints
+                    "https://starknet-sepolia.public.zksync.io",
+                ].filter((url) => url !== null); // Remove null values and type guard
+                for (const url of providers) {
+                    try {
+                        const provider = new starknet_1.RpcProvider({ nodeUrl: url });
+                        // Test the provider with a simple call
+                        await withTimeout(provider.getBlockNumber(), 5000);
+                        console.log(`Starknet testnet provider working: ${url}`);
+                        return provider;
+                    }
+                    catch (error) {
+                        console.warn(`Starknet testnet provider failed: ${url}, error: ${error?.message || String(error)}`);
+                        continue;
+                    }
+                }
+                throw new Error("All Starknet testnet providers failed");
+            }
             // Reuse providers per-network for testnet
             const providers = {};
             const processAddr = async (addr) => {
                 try {
-                    if (addr.chain === 'starknet') {
-                        const key = 'starknet_test';
+                    if (addr.chain === "starknet") {
+                        const key = "starknet_test";
                         if (!providers[key]) {
-                            const starknetUrl = `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
-                            providers[key] = new starknet_1.RpcProvider({ nodeUrl: starknetUrl });
+                            providers[key] = await getStarknetTestnetProvider();
                         }
                         const provider = providers[key];
-                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-                        const result = await withTimeout(provider.callContract({ contractAddress: strkTokenAddress, entrypoint: 'balanceOf', calldata: [padStarknetAddress(addr.address)] }), 7000);
-                        const balanceHex = result && result[0] ? result[0] : '0x0';
+                        const strkTokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+                        const result = await withTimeout(provider.callContract({
+                            contractAddress: strkTokenAddress,
+                            entrypoint: "balanceOf",
+                            calldata: [padStarknetAddress(addr.address)],
+                            blockIdentifier: "latest",
+                        }), 7000);
+                        const balanceHex = result && result[0]
+                            ? result[0]
+                            : "0x0";
                         const balanceDecimal = parseInt(String(balanceHex), 16);
                         const balanceInSTRK = (balanceDecimal / 1e18).toString();
                         // fire-and-forget save
@@ -2253,10 +2440,16 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: balanceInSTRK, symbol: 'STRK' };
+                        return {
+                            chain: addr.chain,
+                            network: "testnet",
+                            address: addr.address,
+                            balance: balanceInSTRK,
+                            symbol: "STRK",
+                        };
                     }
-                    else if (addr.chain === 'ethereum') {
-                        const key = 'eth_test';
+                    else if (addr.chain === "ethereum") {
+                        const key = "eth_test";
                         if (!providers[key])
                             providers[key] = new ethers_1.ethers.JsonRpcProvider(`https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
                         const provider = providers[key];
@@ -2267,9 +2460,15 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: formatted, symbol: 'ETH' };
+                        return {
+                            chain: addr.chain,
+                            network: "testnet",
+                            address: addr.address,
+                            balance: formatted,
+                            symbol: "ETH",
+                        };
                     }
-                    else if (addr.chain === 'bitcoin') {
+                    else if (addr.chain === "bitcoin") {
                         const url = `https://blockstream.info/testnet/api/address/${addr.address}`;
                         const resp = await withTimeout(axios_1.default.get(url, { timeout: 7000 }), 8000);
                         const balanceInSatoshis = resp.data.chain_stats?.funded_txo_sum || 0;
@@ -2279,10 +2478,16 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: balanceInBTC.toString(), symbol: 'BTC' };
+                        return {
+                            chain: addr.chain,
+                            network: "testnet",
+                            address: addr.address,
+                            balance: balanceInBTC.toString(),
+                            symbol: "BTC",
+                        };
                     }
-                    else if (addr.chain === 'solana') {
-                        const key = 'sol_test';
+                    else if (addr.chain === "solana") {
+                        const key = "sol_test";
                         if (!providers[key])
                             providers[key] = new web3_js_1.Connection(`https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
                         const connection = providers[key];
@@ -2294,32 +2499,51 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: balanceInSOL.toString(), symbol: 'SOL' };
+                        return {
+                            chain: addr.chain,
+                            network: "testnet",
+                            address: addr.address,
+                            balance: balanceInSOL.toString(),
+                            symbol: "SOL",
+                        };
                     }
-                    else if (addr.chain === 'stellar') {
-                        const horizon = 'https://horizon-testnet.stellar.org';
-                        const resp = await withTimeout(axios_1.default.get(`${horizon}/accounts/${addr.address}`, { timeout: 7000 }), 8000);
+                    else if (addr.chain === "stellar") {
+                        const horizon = "https://horizon-testnet.stellar.org";
+                        const resp = await withTimeout(axios_1.default.get(`${horizon}/accounts/${addr.address}`, {
+                            timeout: 7000,
+                        }), 8000);
                         const data = resp.data;
-                        const native = (data.balances || []).find((b) => b.asset_type === 'native');
-                        const balanceStr = native ? native.balance : '0';
+                        const native = (data.balances || []).find((b) => b.asset_type === "native");
+                        const balanceStr = native ? native.balance : "0";
                         try {
                             addr.lastKnownBalance = Number(balanceStr);
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: balanceStr, symbol: 'XLM' };
+                        return {
+                            chain: addr.chain,
+                            network: "testnet",
+                            address: addr.address,
+                            balance: balanceStr,
+                            symbol: "XLM",
+                        };
                     }
-                    else if (addr.chain === 'polkadot') {
-                        const key = 'polka_test';
+                    else if (addr.chain === "polkadot") {
+                        const key = "polka_test";
                         if (!providers[key]) {
-                            const { ApiPromise, WsProvider } = require('@polkadot/api');
-                            const wsUrl = process.env.POLKADOT_WS_TESTNET || 'wss://pas-rpc.stakeworld.io';
+                            const { ApiPromise, WsProvider } = require("@polkadot/api");
+                            const wsUrl = process.env.POLKADOT_WS_TESTNET ||
+                                "wss://pas-rpc.stakeworld.io";
                             const provider = new WsProvider(wsUrl);
                             providers[key] = await ApiPromise.create({ provider });
                         }
-                        const api = providers['polka_test'];
+                        const api = providers["polka_test"];
                         const derived = await withTimeout(api.derive.balances.account(addr.address), 7000);
-                        const available = (derived && (derived.availableBalance ?? derived.freeBalance ?? derived.free)) || 0;
+                        const available = (derived &&
+                            (derived.availableBalance ??
+                                derived.freeBalance ??
+                                derived.free)) ||
+                            0;
                         const PLANCK = BigInt(10 ** 10);
                         const availableBig = BigInt(String(available));
                         const dot = (availableBig / PLANCK).toString();
@@ -2328,25 +2552,56 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: dot, symbol: 'DOT' };
+                        return {
+                            chain: addr.chain,
+                            network: "testnet",
+                            address: addr.address,
+                            balance: dot,
+                            symbol: "DOT",
+                        };
                     }
-                    else if (addr.chain === 'usdt_erc20' || addr.chain === 'usdt_trc20') {
-                        return { chain: addr.chain, network: 'testnet', address: addr.address, balance: '0', symbol: 'USDT' };
+                    else if (addr.chain === "usdt_erc20" ||
+                        addr.chain === "usdt_trc20") {
+                        // SKIP USDT for now - contract issues on testnet
+                        console.log(`[SKIP] USDT balance check skipped for ${addr.chain} on testnet`);
+                        return {
+                            chain: addr.chain,
+                            network: "testnet",
+                            address: addr.address,
+                            balance: "0",
+                            symbol: "USDT",
+                            error: "USDT balance check skipped",
+                        };
                     }
-                    return { chain: addr.chain, network: 'testnet', address: addr.address, balance: '0', symbol: 'UNKNOWN', error: 'Unsupported chain' };
+                    return {
+                        chain: addr.chain,
+                        network: "testnet",
+                        address: addr.address,
+                        balance: "0",
+                        symbol: "UNKNOWN",
+                        error: "Unsupported chain",
+                    };
                 }
                 catch (err) {
-                    console.warn('Balance fetch failed for', addr.address, 'chain', addr.chain, err && (err.message || String(err)));
-                    return { chain: addr.chain, network: 'testnet', address: addr.address, balance: '0', symbol: (addr.chain || 'UNK').toUpperCase(), error: 'Failed to fetch balance' };
+                    console.warn("Balance fetch failed for", addr.address, "chain", addr.chain, err && (err.message || String(err)));
+                    return {
+                        chain: addr.chain,
+                        network: "testnet",
+                        address: addr.address,
+                        balance: "0",
+                        symbol: (addr.chain || "UNK").toUpperCase(),
+                        error: "Failed to fetch balance",
+                    };
                 }
             };
             // Run with controlled concurrency
             const concurrency = 6; // tune this value based on server capacity
             const results = await runWithLimit(addresses, concurrency, processAddr);
             // Close any created long-lived providers (polkadot ApiPromise) - disconnect gracefully
-            if (providers['polka_test'] && typeof providers['polka_test'].disconnect === 'function') {
+            if (providers["polka_test"] &&
+                typeof providers["polka_test"].disconnect === "function") {
                 try {
-                    await providers['polka_test'].disconnect();
+                    await providers["polka_test"].disconnect();
                 }
                 catch { }
             }
@@ -2355,11 +2610,15 @@ class WalletController {
                 if (r)
                     balances.push(r);
             }
-            res.status(200).json({ message: 'Testnet balances retrieved successfully', balances, totalAddresses: addresses.length });
+            res.status(200).json({
+                message: "Testnet balances retrieved successfully",
+                balances,
+                totalAddresses: addresses.length,
+            });
         }
         catch (error) {
-            console.error('Get testnet balances error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Get testnet balances error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -2381,7 +2640,9 @@ class WalletController {
             async function runWithLimitMain(items, limit, iterator) {
                 let i = 0;
                 const results = [];
-                const workers = Array.from({ length: Math.min(limit, items.length) }).map(async () => {
+                const workers = Array.from({
+                    length: Math.min(limit, items.length),
+                }).map(async () => {
                     while (true) {
                         const idx = i++;
                         if (idx >= items.length)
@@ -2399,21 +2660,62 @@ class WalletController {
             }
             function withTimeoutMain(p, ms = 8000) {
                 return new Promise((resolve, reject) => {
-                    const t = setTimeout(() => reject(new Error('timeout')), ms);
-                    p.then((v) => { clearTimeout(t); resolve(v); }, (err) => { clearTimeout(t); reject(err); });
+                    const t = setTimeout(() => reject(new Error("timeout")), ms);
+                    p.then((v) => {
+                        clearTimeout(t);
+                        resolve(v);
+                    }, (err) => {
+                        clearTimeout(t);
+                        reject(err);
+                    });
                 });
+            }
+            // Helper function to get a working Starknet provider with fallbacks
+            async function getStarknetProvider() {
+                const providers = [
+                    // Primary: Alchemy (if API key is available and valid)
+                    process.env.ALCHEMY_STARKNET_KEY
+                        ? `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                        : null,
+                    // Fallback: BlastAPI public endpoint
+                    "https://starknet-mainnet.public.blastapi.io",
+                    // Additional fallback: Nethermind public endpoint
+                    "https://starknet-mainnet.public.zksync.io",
+                ].filter((url) => url !== null); // Remove null values and type guard
+                for (const url of providers) {
+                    try {
+                        const provider = new starknet_1.RpcProvider({ nodeUrl: url });
+                        // Test the provider with a simple call
+                        await withTimeoutMain(provider.getBlockNumber(), 5000);
+                        console.log(`Starknet provider working: ${url}`);
+                        return provider;
+                    }
+                    catch (error) {
+                        console.warn(`Starknet provider failed: ${url}, error: ${error?.message || String(error)}`);
+                        continue;
+                    }
+                }
+                throw new Error("All Starknet providers failed");
             }
             const providersMain = {};
             const processMain = async (addr) => {
                 try {
-                    if (addr.chain === 'starknet') {
-                        const key = 'starknet_main';
-                        if (!providersMain[key])
-                            providersMain[key] = new starknet_1.RpcProvider({ nodeUrl: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}` });
+                    if (addr.chain === "starknet") {
+                        const key = "starknet_main";
+                        if (!providersMain[key]) {
+                            providersMain[key] = await getStarknetProvider();
+                        }
                         const provider = providersMain[key];
-                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
-                        const result = await withTimeoutMain(provider.callContract({ contractAddress: strkTokenAddress, entrypoint: 'balanceOf', calldata: [padStarknetAddress(addr.address)] }), 8000);
-                        const balanceHex = result && result[0] ? result[0] : '0x0';
+                        const strkTokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+                        const result = await withTimeoutMain(provider.callContract({
+                            contractAddress: strkTokenAddress,
+                            entrypoint: "balanceOf",
+                            calldata: [padStarknetAddress(addr.address)],
+                            blockIdentifier: "latest",
+                        }), 8000);
+                        const balanceHex = result && result[0]
+                            ? result[0]
+                            : "0x0";
                         const balanceDecimal = parseInt(String(balanceHex), 16);
                         const balanceInSTRK = (balanceDecimal / 1e18).toString();
                         try {
@@ -2421,10 +2723,16 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: balanceInSTRK, symbol: 'STRK' };
+                        return {
+                            chain: addr.chain,
+                            network: "mainnet",
+                            address: addr.address,
+                            balance: balanceInSTRK,
+                            symbol: "STRK",
+                        };
                     }
-                    else if (addr.chain === 'ethereum') {
-                        const key = 'eth_main';
+                    else if (addr.chain === "ethereum") {
+                        const key = "eth_main";
                         if (!providersMain[key])
                             providersMain[key] = new ethers_1.ethers.JsonRpcProvider(`https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
                         const provider = providersMain[key];
@@ -2435,19 +2743,26 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: formatted, symbol: 'ETH' };
+                        return {
+                            chain: addr.chain,
+                            network: "mainnet",
+                            address: addr.address,
+                            balance: formatted,
+                            symbol: "ETH",
+                        };
                     }
-                    else if (addr.chain === 'bitcoin') {
+                    else if (addr.chain === "bitcoin") {
                         try {
                             let balanceInBTC = 0;
-                            let apiUsed = '';
+                            let apiUsed = "";
                             try {
                                 const url = `https://blockstream.info/api/address/${addr.address}`;
                                 const response = await withTimeoutMain(axios_1.default.get(url, { timeout: 8000 }), 9000);
                                 const data = response.data;
-                                const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) - (data.chain_stats?.spent_txo_sum || 0);
+                                const balanceInSatoshis = (data.chain_stats?.funded_txo_sum || 0) -
+                                    (data.chain_stats?.spent_txo_sum || 0);
                                 balanceInBTC = balanceInSatoshis / 1e8;
-                                apiUsed = 'blockstream';
+                                apiUsed = "blockstream";
                             }
                             catch (bsErr) {
                                 try {
@@ -2455,7 +2770,7 @@ class WalletController {
                                     const fallbackResp = await withTimeoutMain(axios_1.default.get(fallbackUrl, { timeout: 8000 }), 9000);
                                     const balanceInSatoshis = parseInt(String(fallbackResp.data), 10);
                                     balanceInBTC = balanceInSatoshis / 1e8;
-                                    apiUsed = 'blockchain.info';
+                                    apiUsed = "blockchain.info";
                                 }
                                 catch (fbErr) {
                                     throw new Error(`Both APIs failed: ${bsErr?.message}, ${fbErr?.message}`);
@@ -2466,14 +2781,27 @@ class WalletController {
                                 addressRepo.save(addr).catch(() => { });
                             }
                             catch { }
-                            return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: balanceInBTC.toString(), symbol: 'BTC' };
+                            return {
+                                chain: addr.chain,
+                                network: "mainnet",
+                                address: addr.address,
+                                balance: balanceInBTC.toString(),
+                                symbol: "BTC",
+                            };
                         }
                         catch (err) {
-                            return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: 'BTC', error: 'Failed to fetch balance' };
+                            return {
+                                chain: addr.chain,
+                                network: "mainnet",
+                                address: addr.address,
+                                balance: "0",
+                                symbol: "BTC",
+                                error: "Failed to fetch balance",
+                            };
                         }
                     }
-                    else if (addr.chain === 'solana') {
-                        const key = 'sol_main';
+                    else if (addr.chain === "solana") {
+                        const key = "sol_main";
                         if (!providersMain[key])
                             providersMain[key] = new web3_js_1.Connection(`https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
                         const connection = providersMain[key];
@@ -2485,32 +2813,48 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: balanceInSOL.toString(), symbol: 'SOL' };
+                        return {
+                            chain: addr.chain,
+                            network: "mainnet",
+                            address: addr.address,
+                            balance: balanceInSOL.toString(),
+                            symbol: "SOL",
+                        };
                     }
-                    else if (addr.chain === 'stellar') {
-                        const horizon = 'https://horizon.stellar.org';
+                    else if (addr.chain === "stellar") {
+                        const horizon = "https://horizon.stellar.org";
                         const resp = await withTimeoutMain(axios_1.default.get(`${horizon}/accounts/${addr.address}`), 8000);
                         const data = resp.data;
-                        const native = (data.balances || []).find((b) => b.asset_type === 'native');
-                        const balanceStr = native ? native.balance : '0';
+                        const native = (data.balances || []).find((b) => b.asset_type === "native");
+                        const balanceStr = native ? native.balance : "0";
                         try {
                             addr.lastKnownBalance = Number(balanceStr);
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: balanceStr, symbol: 'XLM' };
+                        return {
+                            chain: addr.chain,
+                            network: "mainnet",
+                            address: addr.address,
+                            balance: balanceStr,
+                            symbol: "XLM",
+                        };
                     }
-                    else if (addr.chain === 'polkadot') {
-                        const key = 'polka_main';
+                    else if (addr.chain === "polkadot") {
+                        const key = "polka_main";
                         if (!providersMain[key]) {
-                            const { ApiPromise, WsProvider } = require('@polkadot/api');
-                            const wsUrl = process.env.POLKADOT_WS_MAINNET || 'wss://rpc.polkadot.io';
+                            const { ApiPromise, WsProvider } = require("@polkadot/api");
+                            const wsUrl = process.env.POLKADOT_WS_MAINNET || "wss://rpc.polkadot.io";
                             const provider = new WsProvider(wsUrl);
                             providersMain[key] = await ApiPromise.create({ provider });
                         }
-                        const api = providersMain['polka_main'];
+                        const api = providersMain["polka_main"];
                         const derived = await withTimeoutMain(api.derive.balances.account(addr.address), 8000);
-                        const available = (derived && (derived.availableBalance ?? derived.freeBalance ?? derived.free)) || 0;
+                        const available = (derived &&
+                            (derived.availableBalance ??
+                                derived.freeBalance ??
+                                derived.free)) ||
+                            0;
                         const PLANCK = BigInt(10 ** 10);
                         const availableBig = BigInt(String(available));
                         const dot = (availableBig / PLANCK).toString();
@@ -2519,34 +2863,69 @@ class WalletController {
                             addressRepo.save(addr).catch(() => { });
                         }
                         catch { }
-                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: dot, symbol: 'DOT' };
+                        return {
+                            chain: addr.chain,
+                            network: "mainnet",
+                            address: addr.address,
+                            balance: dot,
+                            symbol: "DOT",
+                        };
                     }
-                    else if (addr.chain === 'usdt_erc20' || addr.chain === 'usdt_trc20') {
-                        return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: 'USDT' };
+                    else if (addr.chain === "usdt_erc20" ||
+                        addr.chain === "usdt_trc20") {
+                        // SKIP USDT for now - focusing on STRK/ETH
+                        console.log(`[SKIP] USDT balance check skipped for ${addr.chain} on mainnet`);
+                        return {
+                            chain: addr.chain,
+                            network: "mainnet",
+                            address: addr.address,
+                            balance: "0",
+                            symbol: "USDT",
+                            error: "USDT balance check skipped",
+                        };
                     }
-                    return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: 'UNKNOWN', error: 'Unsupported chain' };
+                    return {
+                        chain: addr.chain,
+                        network: "mainnet",
+                        address: addr.address,
+                        balance: "0",
+                        symbol: "UNKNOWN",
+                        error: "Unsupported chain",
+                    };
                 }
                 catch (err) {
-                    console.warn('Mainnet balance fetch failed for', addr.address, 'chain', addr.chain, err && (err.message || String(err)));
-                    return { chain: addr.chain, network: 'mainnet', address: addr.address, balance: '0', symbol: (addr.chain || 'UNK').toUpperCase(), error: 'Failed to fetch balance' };
+                    console.warn("Mainnet balance fetch failed for", addr.address, "chain", addr.chain, err && (err.message || String(err)));
+                    return {
+                        chain: addr.chain,
+                        network: "mainnet",
+                        address: addr.address,
+                        balance: "0",
+                        symbol: (addr.chain || "UNK").toUpperCase(),
+                        error: "Failed to fetch balance",
+                    };
                 }
             };
             const concurrencyMain = 6;
             const mainResults = await runWithLimitMain(addresses, concurrencyMain, processMain);
-            if (providersMain['polka_main'] && typeof providersMain['polka_main'].disconnect === 'function') {
+            if (providersMain["polka_main"] &&
+                typeof providersMain["polka_main"].disconnect === "function") {
                 try {
-                    await providersMain['polka_main'].disconnect();
+                    await providersMain["polka_main"].disconnect();
                 }
                 catch { }
             }
             for (const r of mainResults)
                 if (r)
                     balances.push(r);
-            res.status(200).json({ message: 'Mainnet balances retrieved successfully', balances, totalAddresses: addresses.length });
+            res.status(200).json({
+                message: "Mainnet balances retrieved successfully",
+                balances,
+                totalAddresses: addresses.length,
+            });
         }
         catch (error) {
-            console.error('Get mainnet balances error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Get mainnet balances error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -2560,135 +2939,68 @@ class WalletController {
         for (const addr of allAddresses) {
             let currentBalance = 0;
             try {
-                if (addr.chain === 'ethereum') {
-                    const provider = new ethers_1.ethers.JsonRpcProvider(addr.network === 'testnet'
+                if (addr.chain === "ethereum") {
+                    const provider = new ethers_1.ethers.JsonRpcProvider(addr.network === "testnet"
                         ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                         : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
                     currentBalance = parseFloat(ethers_1.ethers.formatEther(await provider.getBalance(addr.address)));
                 }
-                else if (addr.chain === 'bitcoin') {
-                    const url = (addr.network === 'testnet'
-                        ? 'https://blockstream.info/testnet/api/address/'
-                        : 'https://blockstream.info/api/address/') +
-                        addr.address;
+                else if (addr.chain === "bitcoin") {
+                    const url = (addr.network === "testnet"
+                        ? "https://blockstream.info/testnet/api/address/"
+                        : "https://blockstream.info/api/address/") + addr.address;
                     const resp = await axios_1.default.get(url);
                     const data = resp.data;
                     const balance = (data.chain_stats.funded_txo_sum || 0) -
                         (data.chain_stats.spent_txo_sum || 0);
                     currentBalance = balance / 1e8;
                 }
-                else if (addr.chain === 'solana') {
-                    const connection = new web3_js_1.Connection(addr.network === 'testnet'
+                else if (addr.chain === "solana") {
+                    const connection = new web3_js_1.Connection(addr.network === "testnet"
                         ? `https://solana-devnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
                         : `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
                     const publicKey = new web3_js_1.PublicKey(addr.address);
                     const balance = await connection.getBalance(publicKey);
                     currentBalance = balance / 1e9;
                 }
-                else if (addr.chain === 'starknet') {
+                else if (addr.chain === "starknet") {
                     try {
-                        const STRK_MAINNET = `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`;
+                        const STRK_MAINNET = `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/${process.env.ALCHEMY_STARKNET_KEY}`;
                         const STRK_TESTNET = `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`;
                         const provider = new starknet_1.RpcProvider({
-                            nodeUrl: addr.network === 'testnet' ? STRK_TESTNET : STRK_MAINNET,
+                            nodeUrl: addr.network === "testnet" ? STRK_TESTNET : STRK_MAINNET,
                         });
-                        const strkTokenAddress = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d';
+                        const strkTokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
                         const res = await provider.callContract({
                             contractAddress: strkTokenAddress,
-                            entrypoint: 'balanceOf',
+                            entrypoint: "balanceOf",
                             calldata: [addr.address],
-                        }, 'latest');
-                        const hex = res && res[0] ? res[0] : '0x0';
+                        }, "latest");
+                        const hex = res && res[0] ? res[0] : "0x0";
                         const val = BigInt(hex);
                         currentBalance = Number(val) / 1e18;
                     }
                     catch (e) {
-                        console.warn('Starknet deposit check failed for', addr.address, e?.message || String(e));
+                        console.warn("Starknet deposit check failed for", addr.address, e?.message || String(e));
                         continue;
                     }
                 }
-                else if (addr.chain === 'usdt_erc20') {
-                    // Check USDT ERC20 balance on Ethereum
-                    try {
-                        const url = addr.network === 'testnet'
-                            ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                            : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`;
-                        const provider = new ethers_1.ethers.JsonRpcProvider(url);
-                        const usdtAddr = addr.network === 'testnet'
-                            ? '0x' + ['516de3a7a567d817', '37e3a46ec4ff9cfd', '1fcb0136'].join('')
-                            : '0xdAC17F958D2ee523a2206206994597C13D831ec7';
-                        // Defensive check: ensure the USDT contract actually exists at the address
-                        let code = null;
-                        try {
-                            code = await provider.getCode(usdtAddr);
-                        }
-                        catch (codeErr) {
-                            console.warn('Failed to fetch contract code for USDT address:', usdtAddr, codeErr?.message || String(codeErr));
-                        }
-                        if (!code || code === '0x' || code === '0x0') {
-                            console.warn('USDT contract not found at', usdtAddr, 'on network', addr.network);
-                            continue;
-                        }
-                        const abi = ['function balanceOf(address) view returns (uint256)', 'function decimals() view returns (uint8)'];
-                        const contract = new ethers_1.ethers.Contract(usdtAddr, abi, provider);
-                        // Use checksum address for the user address when calling the contract
-                        let userAddrChecksum = addr.address;
-                        try {
-                            userAddrChecksum = ethers_1.ethers.getAddress(userAddrChecksum);
-                        }
-                        catch (checksumErr) {
-                            console.warn('Invalid user address for ERC20 balanceOf, skipping:', addr.address, checksumErr?.message || String(checksumErr));
-                            continue;
-                        }
-                        // Call balanceOf and decimals with defensive error handling
-                        let bal;
-                        try {
-                            bal = await contract.balanceOf(userAddrChecksum);
-                        }
-                        catch (callErr) {
-                            // ethers throws BAD_DATA when RPC returns empty result ("0x"). Log and skip this address.
-                            console.warn('USDT balanceOf call failed for', userAddrChecksum, 'contract:', usdtAddr, 'error:', callErr?.message || String(callErr));
-                            continue;
-                        }
-                        let decimals = 6; // default to 6 for USDT
-                        try {
-                            const d = await contract.decimals();
-                            if (typeof d === 'number' || typeof d === 'bigint' || (d && d.toString)) {
-                                decimals = Number(d.toString());
-                            }
-                        }
-                        catch (decErr) {
-                            // If decimals lookup fails, default to 6 (USDT standard)
-                            console.warn('Could not read decimals() from USDT contract, defaulting to 6', decErr?.message || String(decErr));
-                            decimals = 6;
-                        }
-                        if (bal === undefined || bal === null) {
-                            console.warn('USDT balance call returned empty for', userAddrChecksum);
-                            continue;
-                        }
-                        try {
-                            currentBalance = Number(ethers_1.ethers.formatUnits(bal, decimals));
-                        }
-                        catch (fmtErr) {
-                            console.warn('Failed to format USDT balance for', userAddrChecksum, fmtErr?.message || String(fmtErr));
-                            continue;
-                        }
-                    }
-                    catch (e) {
-                        console.warn('USDT balance check failed for', addr.address, e?.message || String(e));
-                        continue;
-                    }
+                else if (addr.chain === "usdt_erc20") {
+                    // Skip USDT checks - not supported
+                    continue;
                 }
-                else if (addr.chain === 'stellar') {
+                else if (addr.chain === "stellar") {
                     try {
-                        const horizon = addr.network === 'testnet' ? 'https://horizon-testnet.stellar.org' : 'https://horizon.stellar.org';
+                        const horizon = addr.network === "testnet"
+                            ? "https://horizon-testnet.stellar.org"
+                            : "https://horizon.stellar.org";
                         const resp = await axios_1.default.get(`${horizon}/accounts/${addr.address}`);
                         const data = resp.data;
-                        const native = (data.balances || []).find((b) => b.asset_type === 'native');
+                        const native = (data.balances || []).find((b) => b.asset_type === "native");
                         currentBalance = native ? Number(native.balance) : 0;
                     }
                     catch (e) {
-                        console.warn('Stellar balance check failed for', addr.address, e?.message || String(e));
+                        console.warn("Stellar balance check failed for", addr.address, e?.message || String(e));
                         continue;
                     }
                 }
@@ -2700,7 +3012,7 @@ class WalletController {
             const lastKnown = Number(addr.lastKnownBalance ?? 0);
             if (currentBalance > lastKnown) {
                 const amount = currentBalance - lastKnown;
-                const chainLabel = String(addr.chain ?? 'unknown').toUpperCase();
+                const chainLabel = String(addr.chain ?? "unknown").toUpperCase();
                 try {
                     await notificationService_1.NotificationService.notifyDeposit(addr.userId, amount.toString(), chainLabel, {
                         address: addr.address,
@@ -2710,7 +3022,7 @@ class WalletController {
                     });
                 }
                 catch (e) {
-                    console.error('Failed to create deposit notification (NotificationService) for', addr.address, e?.message || String(e));
+                    console.error("Failed to create deposit notification (NotificationService) for", addr.address, e?.message || String(e));
                 }
             }
             // Update last known balance
@@ -2722,26 +3034,25 @@ class WalletController {
 exports.WalletController = WalletController;
 //// Helper function
 function sortAddressesByChainOrder(addresses) {
-    const order = ['eth', 'btc', 'sol', 'strk', 'usdterc20', 'usdttrc20'];
+    const order = ["eth", "btc", "sol", "strk", "usdterc20", "usdttrc20"];
     const normalize = (chain) => {
         switch (chain) {
-            case 'ethereum':
-                return 'eth';
-            case 'bitcoin':
-                return 'btc';
-            case 'solana':
-                return 'sol';
-            case 'starknet':
-                return 'strk';
-            case 'usdt_erc20':
-                return 'usdterc20';
-            case 'usdt_trc20':
-                return 'usdttrc20';
+            case "ethereum":
+                return "eth";
+            case "bitcoin":
+                return "btc";
+            case "solana":
+                return "sol";
+            case "starknet":
+                return "strk";
+            case "usdt_erc20":
+                return "usdterc20";
+            case "usdt_trc20":
+                return "usdttrc20";
             default:
                 return chain;
         }
     };
-    return addresses.sort((a, b) => order.indexOf(normalize(a.chain)) -
-        order.indexOf(normalize(b.chain)));
+    return addresses.sort((a, b) => order.indexOf(normalize(a.chain)) - order.indexOf(normalize(b.chain)));
 }
 //# sourceMappingURL=walletController.js.map

@@ -1,6 +1,34 @@
-import { Account, RpcProvider } from 'starknet';
+import { Account, RpcProvider } from "starknet";
+interface UsdcWalletInfo {
+    address: string;
+    privateKey: string;
+    publicKey?: string;
+    note?: string;
+}
+interface GeneratedUsdcWallet {
+    evm: UsdcWalletInfo;
+    solana: UsdcWalletInfo;
+    starknet: UsdcWalletInfo;
+}
+interface NetworkWalletInfo {
+    address: string;
+    privateKey: string;
+    publicKey: string;
+    classHash: string;
+    accountType: string;
+}
+interface GeneratedWallet {
+    mainnet: NetworkWalletInfo;
+    testnet: NetworkWalletInfo;
+}
 export declare function encrypt(text: string): string;
 export declare function decrypt(text: string): string;
+/**
+ * Generate wallets capable of receiving USDC on all Rhino.fi supported chains.
+ * Production-ready: secure random keys, same structure as your other generators.
+ * Addresses are identical on mainnet/testnet for these chains.
+ */
+export declare function generateUsdcWallet(): GeneratedUsdcWallet;
 export declare function generateEthWallet(): {
     mainnet: {
         address: string;
@@ -65,17 +93,6 @@ export declare function recoverPolkadotWallet(privateKeyJson: string): Promise<a
  * Helper to check if an address is valid for Paseo
  */
 export declare function validatePaseoAddress(address: string): boolean;
-interface NetworkWalletInfo {
-    address: string;
-    privateKey: string;
-    publicKey: string;
-    classHash: string;
-    accountType: string;
-}
-interface GeneratedWallet {
-    mainnet: NetworkWalletInfo;
-    testnet: NetworkWalletInfo;
-}
 /**
  * Generate Starknet wallet for both mainnet and testnet
  */
@@ -84,7 +101,7 @@ export declare function checkBalance(provider: RpcProvider, address: string, min
 preferStrk?: boolean): Promise<{
     balance: bigint;
     hasSufficientFunds: boolean;
-    token: 'STRK' | 'ETH';
+    token: "STRK" | "ETH";
 }>;
 /**
  * Deploy Starknet wallet

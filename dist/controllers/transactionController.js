@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TransactionController = void 0;
 const database_1 = require("../config/database");
 const Transaction_1 = require("../entities/Transaction");
+const User_1 = require("../entities/User");
 const feeService_1 = require("../services/feeService");
 const feeCollectionService_1 = __importDefault(require("../services/feeCollectionService"));
 const treasury_1 = __importDefault(require("../config/treasury"));
@@ -37,14 +38,46 @@ class TransactionController {
     }
     static async sendTransaction(req, res) {
         try {
-            const { amount, currency, toAddress, chain = 'ethereum', network = 'mainnet' } = req.body;
+            const { amount, currency, toAddress: rawToAddress, toUsername, chain = 'ethereum', network = 'mainnet' } = req.body;
+            let toAddress = rawToAddress;
             if (!req.user) {
                 res.status(401).json({ error: 'Unauthorized' });
                 return;
             }
             // Validate required fields
-            if (!amount || !toAddress) {
-                res.status(400).json({ error: 'Amount and recipient address are required' });
+            if (!amount) {
+                res.status(400).json({ error: 'Amount is required' });
+                return;
+            }
+            // If recipient address not provided but username is, attempt to resolve
+            if (!toAddress && toUsername) {
+                const userRepo = database_1.AppDataSource.getRepository(User_1.User);
+                const targetUser = await userRepo.findOne({ where: { username: toUsername }, relations: ['addresses'] });
+                if (!targetUser) {
+                    res.status(404).json({ error: 'Username not found' });
+                    return;
+                }
+                const matchedAddresses = (targetUser.addresses || []).filter(a => {
+                    // compare chain and network as strings to be tolerant of enums
+                    return String(a.chain) === String(chain) && String(a.network) === String(network) && a.address;
+                });
+                if (!matchedAddresses || matchedAddresses.length === 0) {
+                    res.status(404).json({ error: 'Username not found for requested chain/network' });
+                    return;
+                }
+                if (matchedAddresses.length > 1) {
+                    // ambiguous - client must pick an address explicitly
+                    res.status(409).json({
+                        error: 'Multiple addresses found for username on requested chain/network',
+                        addresses: matchedAddresses.map(a => ({ id: a.id, address: a.address }))
+                    });
+                    return;
+                }
+                // exactly one match
+                toAddress = matchedAddresses[0].address;
+            }
+            if (!toAddress) {
+                res.status(400).json({ error: 'Recipient address or username is required' });
                 return;
             }
             const amountNum = parseFloat(amount);
@@ -76,7 +109,7 @@ class TransactionController {
             // STEP 3: Validate sender has sufficient balance (amount + fee)
             // TODO: Implement actual balance check from blockchain/wallet
             // For now, we'll assume validation happens on blockchain side
-            console.log(`Transaction breakdown:
+            console.log(`Transaction breakdown:\n
                 - Recipient receives: $${feeCalculation.recipientReceives}
                 - Fee: $${feeCalculation.fee}
                 - Sender pays total: $${feeCalculation.senderPays}
@@ -162,6 +195,42 @@ class TransactionController {
                 error: 'Transaction failed',
                 details: error instanceof Error ? error.message : 'Internal server error'
             });
+        }
+    }
+    static async sendTransactionByUsername(req, res) {
+        try {
+            const { toUsername, chain = 'ethereum', network = 'mainnet' } = req.body || {};
+            if (!toUsername) {
+                res.status(400).json({ error: 'toUsername is required' });
+                return;
+            }
+            const userRepo = database_1.AppDataSource.getRepository(User_1.User);
+            const targetUser = await userRepo.findOne({ where: { username: toUsername }, relations: ['addresses'] });
+            if (!targetUser) {
+                res.status(404).json({ error: 'Username not found' });
+                return;
+            }
+            const matchedAddresses = (targetUser.addresses || []).filter(a => {
+                return String(a.chain) === String(chain) && String(a.network) === String(network) && a.address;
+            });
+            if (!matchedAddresses || matchedAddresses.length === 0) {
+                res.status(404).json({ error: 'Username not found for requested chain/network' });
+                return;
+            }
+            if (matchedAddresses.length > 1) {
+                res.status(409).json({
+                    error: 'Multiple addresses found for username on requested chain/network',
+                    addresses: matchedAddresses.map(a => ({ id: a.id, address: a.address }))
+                });
+                return;
+            }
+            // Attach resolved address to request body and delegate to existing sendTransaction
+            req.body = { ...(req.body || {}), toAddress: matchedAddresses[0].address };
+            await TransactionController.sendTransaction(req, res);
+        }
+        catch (error) {
+            console.error('sendTransactionByUsername error:', error);
+            res.status(500).json({ error: 'Internal server error' });
         }
     }
 }

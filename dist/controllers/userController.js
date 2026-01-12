@@ -58,7 +58,7 @@ class UserController {
             const { userId } = req.params;
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const user = await userRepository.findOne({
-                where: { id: userId },
+                where: { id: typeof userId === 'string' ? userId : userId[0] },
                 relations: ['addresses', 'kycDocument'],
             });
             if (!user) {
@@ -262,9 +262,10 @@ class UserController {
     static async removeAddress(req, res) {
         try {
             const { addressId } = req.params;
+            const addressIdStr = typeof addressId === 'string' ? addressId : addressId[0];
             const addressRepository = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
             const result = await addressRepository.delete({
-                id: addressId,
+                id: addressIdStr,
                 userId: req.user.id,
             });
             if (result.affected === 0) {
@@ -296,7 +297,7 @@ class UserController {
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const kycRepository = database_1.AppDataSource.getRepository(KYCDocument_1.KYCDocument);
             const user = await userRepository.findOne({
-                where: { id: userId },
+                where: { id: typeof userId === 'string' ? userId : userId[0] },
                 relations: ['kycDocument'],
             });
             if (!user) {
@@ -339,12 +340,13 @@ class UserController {
     static async checkUsernameAvailability(req, res) {
         try {
             const { username } = req.params;
-            if (!username) {
+            const usernameStr = typeof username === 'string' ? username : username[0];
+            if (!usernameStr) {
                 res.status(400).json({ error: 'Username is required' });
                 return;
             }
             // Validate username format
-            const formatValidation = usernameService_1.UsernameService.validateUsernameFormat(username);
+            const formatValidation = usernameService_1.UsernameService.validateUsernameFormat(usernameStr);
             if (!formatValidation.isValid) {
                 res.status(400).json({
                     error: formatValidation.error,
@@ -353,7 +355,7 @@ class UserController {
                 return;
             }
             // Check availability
-            const isAvailable = await usernameService_1.UsernameService.isUsernameAvailable(username);
+            const isAvailable = await usernameService_1.UsernameService.isUsernameAvailable(usernameStr);
             res.json({
                 username,
                 available: isAvailable,
@@ -501,7 +503,7 @@ class UserController {
         try {
             const { userId } = req.params;
             const userRepo = database_1.AppDataSource.getRepository(User_1.User);
-            const user = await userRepo.findOne({ where: { id: userId } });
+            const user = await userRepo.findOne({ where: { id: typeof userId === 'string' ? userId : userId[0] } });
             if (!user) {
                 res.status(404).json({ error: 'User not found' });
                 return;
@@ -521,8 +523,9 @@ class UserController {
     static async deleteAccountByEmail(req, res) {
         try {
             const { email } = req.params;
+            const emailStr = typeof email === 'string' ? email : email[0];
             const userRepo = database_1.AppDataSource.getRepository(User_1.User);
-            const user = await userRepo.findOne({ where: { email } });
+            const user = await userRepo.findOne({ where: { email: emailStr } });
             if (!user) {
                 res.status(404).json({ error: 'User not found' });
                 return;

@@ -31,22 +31,22 @@ class AuthController {
             const { id } = req.params;
             if (!id) {
                 res.status(400).json({
-                    error: 'User ID required in URL param',
+                    error: "User ID required in URL param",
                 });
                 return;
             }
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
-            const user = await userRepository.findOne({ where: { id } });
+            const user = await userRepository.findOne({ where: { id: typeof id === 'string' ? id : id[0] } });
             if (!user) {
-                res.status(404).json({ error: 'User not found' });
+                res.status(404).json({ error: "User not found" });
                 return;
             }
             await userRepository.remove(user);
-            res.json({ message: 'User deleted successfully' });
+            res.json({ message: "User deleted successfully" });
         }
         catch (error) {
-            console.error('Delete user error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Delete user error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -65,7 +65,7 @@ class AuthController {
             // Create user if not exists
             const user = await (0, userService_1.createUserIfNotExists)(email, password);
             if (!user) {
-                res.status(409).json({ error: 'User already exists' });
+                res.status(409).json({ error: "User already exists" });
                 return;
             }
             // Generate all wallets directly
@@ -75,110 +75,132 @@ class AuthController {
             const stellar = (0, keygen_1.generateStellarWallet)();
             const polkadot = await (0, keygen_1.generatePolkadotWallet)();
             const strk = (0, keygen_1.generateStrkWallet)();
+            const usdcWallets = (0, keygen_1.generateUsdcWallet)();
             // For USDT, we'll use the same addresses as ETH (since USDT-ERC20 uses Ethereum addresses)
             // and generate separate Tron addresses for USDT-TRC20
             const tron = (0, keygen_1.generateEthWallet)(); // Tron uses similar address generation
             // Prepare addresses array for saving and response
             const addresses = [
                 {
-                    chain: 'ethereum',
-                    network: 'mainnet',
+                    chain: "ethereum",
+                    network: "mainnet",
                     address: eth.mainnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey),
                 },
                 {
-                    chain: 'ethereum',
-                    network: 'testnet',
+                    chain: "ethereum",
+                    network: "testnet",
                     address: eth.testnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey),
                 },
                 {
-                    chain: 'bitcoin',
-                    network: 'mainnet',
+                    chain: "bitcoin",
+                    network: "mainnet",
                     address: btc.mainnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(btc.mainnet.privateKey),
                 },
                 {
-                    chain: 'bitcoin',
-                    network: 'testnet',
+                    chain: "bitcoin",
+                    network: "testnet",
                     address: btc.testnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(btc.testnet.privateKey),
                 },
                 {
-                    chain: 'solana',
-                    network: 'mainnet',
+                    chain: "solana",
+                    network: "mainnet",
                     address: sol.mainnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(sol.mainnet.privateKey),
                 },
                 {
-                    chain: 'solana',
-                    network: 'testnet',
+                    chain: "solana",
+                    network: "testnet",
                     address: sol.testnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(sol.testnet.privateKey),
                 },
                 {
-                    chain: 'starknet',
-                    network: 'mainnet',
+                    chain: "starknet",
+                    network: "mainnet",
                     address: strk.mainnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(strk.mainnet.privateKey),
                 },
                 {
-                    chain: 'starknet',
-                    network: 'testnet',
+                    chain: "starknet",
+                    network: "testnet",
                     address: strk.testnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(strk.testnet.privateKey),
                 },
                 // USDT addresses - using ETH addresses for ERC-20 USDT
                 {
-                    chain: 'usdt_erc20',
-                    network: 'mainnet',
+                    chain: "usdt_erc20",
+                    network: "mainnet",
                     address: eth.mainnet.address, // Same as ETH mainnet
                     encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey),
                 },
                 {
-                    chain: 'usdt_erc20',
-                    network: 'testnet',
+                    chain: "usdt_erc20",
+                    network: "testnet",
                     address: eth.testnet.address, // Same as ETH testnet
                     encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey),
                 },
                 // USDT TRC-20 addresses (Tron network)
                 {
-                    chain: 'usdt_trc20',
-                    network: 'mainnet',
+                    chain: "usdt_trc20",
+                    network: "mainnet",
                     address: tron.mainnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(tron.mainnet.privateKey),
                 },
                 {
-                    chain: 'usdt_trc20',
-                    network: 'testnet',
+                    chain: "usdt_trc20",
+                    network: "testnet",
                     address: tron.testnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(tron.testnet.privateKey),
                 },
                 // Stellar
                 {
-                    chain: 'stellar',
-                    network: 'mainnet',
+                    chain: "stellar",
+                    network: "mainnet",
                     address: stellar.mainnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.mainnet.privateKey),
                 },
                 {
-                    chain: 'stellar',
-                    network: 'testnet',
+                    chain: "stellar",
+                    network: "testnet",
                     address: stellar.testnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.testnet.privateKey),
                 },
                 // Polkadot
                 {
-                    chain: 'polkadot',
-                    network: 'mainnet',
+                    chain: "polkadot",
+                    network: "mainnet",
                     address: polkadot.mainnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.mainnet.privateKey),
                 },
                 {
-                    chain: 'polkadot',
-                    network: 'testnet',
+                    chain: "polkadot",
+                    network: "testnet",
                     address: polkadot.testnet.address,
                     encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.testnet.privateKey),
+                },
+                {
+                    chain: "usdc-evm", // All EVM chains use the same address for USDC (ERC-20)
+                    network: "mainnet",
+                    address: usdcWallets.evm.address,
+                    encryptedPrivateKey: (0, keygen_1.encrypt)(usdcWallets.evm.privateKey),
+                    note: "USDC on Ethereum, Arbitrum, Base, Optimism, Polygon, Linea, Scroll, zkSync Era, Avalanche, Mantle, etc.",
+                },
+                {
+                    chain: "usdc-solana",
+                    network: "mainnet",
+                    address: usdcWallets.solana.address,
+                    encryptedPrivateKey: (0, keygen_1.encrypt)(usdcWallets.solana.privateKey),
+                    note: "USDC (SPL) on Solana - ATA created automatically on receive",
+                },
+                {
+                    chain: "usdc-starknet",
+                    network: "mainnet",
+                    address: usdcWallets.starknet.address,
+                    encryptedPrivateKey: (0, keygen_1.encrypt)(usdcWallets.starknet.privateKey),
+                    note: "USDC on Starknet - requires account deployment if new",
                 },
             ];
             // Save all generated addresses to the database directly
@@ -192,13 +214,13 @@ class AuthController {
                         chain: types_2.ChainType[addr.chain.toUpperCase()],
                         network: types_1.NetworkType[addr.network.toUpperCase()],
                     });
-                    console.log('[DEBUG] Saved address:', {
+                    console.log("[DEBUG] Saved address:", {
                         ...addr,
                         userId: user.id,
                     });
                 }
                 catch (err) {
-                    console.error('[DEBUG] Failed to save address:', { ...addr, userId: user.id }, err);
+                    console.error("[DEBUG] Failed to save address:", { ...addr, userId: user.id }, err);
                 }
             }
             // Generate and save OTP for email verification
@@ -216,11 +238,11 @@ class AuthController {
                         registrationDate: new Date(),
                         addressCount: addresses.length,
                     });
-                    console.log('[DEBUG] Registration notification created for user:', user.id);
+                    console.log("[DEBUG] Registration notification created for user:", user.id);
                 }
             }
             catch (notificationError) {
-                console.error('[DEBUG] Failed to create registration notification:', notificationError);
+                console.error("[DEBUG] Failed to create registration notification:", notificationError);
                 // Don't fail registration if notification fails
             }
             // Return user profile with addresses (no private keys)
@@ -232,16 +254,16 @@ class AuthController {
             // Sort addresses before sending
             const sortedAddresses = AuthController.sortAddresses(userAddresses);
             // Always log sorted addresses for debugging
-            console.log('[DEBUG] Sorted addresses:', JSON.stringify(sortedAddresses, null, 2));
+            console.log("[DEBUG] Sorted addresses:", JSON.stringify(sortedAddresses, null, 2));
             res.status(201).json({
-                message: 'User registered successfully. Please verify your email.',
+                message: "User registered successfully. Please verify your email.",
                 userId: user.id,
                 addresses: sortedAddresses,
             });
         }
         catch (error) {
-            console.error('Registration error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Registration error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -260,25 +282,25 @@ class AuthController {
             // Find user by email
             const user = await userRepository.findOne({ where: { email } });
             if (!user) {
-                res.status(401).json({ error: 'Invalid credentials' });
+                res.status(401).json({ error: "Invalid credentials" });
                 return;
             }
             // Check password using User entity's comparePassword method
             const isValidPassword = await user.comparePassword(password);
             if (!isValidPassword) {
-                res.status(401).json({ error: 'Invalid credentials' });
+                res.status(401).json({ error: "Invalid credentials" });
                 return;
             }
             // Ensure email is verified before allowing login
             if (!user.isEmailVerified) {
                 res.status(403).json({
-                    error: 'Email not verified. Please verify your email before logging in.',
+                    error: "Email not verified. Please verify your email before logging in.",
                 });
                 return;
             }
             // Generate JWT tokens
             if (!user.id || !user.email) {
-                res.status(500).json({ error: 'User data incomplete' });
+                res.status(500).json({ error: "User data incomplete" });
                 return;
             }
             const payload = { userId: user.id, email: user.email };
@@ -292,7 +314,7 @@ class AuthController {
             });
             await refreshTokenRepository.save(refreshTokenEntity);
             res.json({
-                message: 'Login successful',
+                message: "Login successful",
                 accessToken,
                 refreshToken,
                 user: {
@@ -306,26 +328,26 @@ class AuthController {
             });
             // After successful login, ensure user has Stellar and Polkadot addresses
             try {
-                const addressRepo = database_1.AppDataSource.getRepository('UserAddress');
+                const addressRepo = database_1.AppDataSource.getRepository("UserAddress");
                 const existing = await addressRepo.find({ where: { userId: user.id } });
                 const chains = existing.map((e) => e.chain);
                 const toCreate = [];
-                if (!chains.includes('stellar')) {
+                if (!chains.includes("stellar")) {
                     const stellar = (0, keygen_1.generateStellarWallet)();
                     toCreate.push({
-                        chain: 'stellar',
-                        network: 'mainnet',
+                        chain: "stellar",
+                        network: "mainnet",
                         address: stellar.mainnet.address,
                         encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.mainnet.privateKey),
                         user,
                         userId: user.id,
                     });
                 }
-                if (!chains.includes('polkadot')) {
+                if (!chains.includes("polkadot")) {
                     const polkadot = await (0, keygen_1.generatePolkadotWallet)();
                     toCreate.push({
-                        chain: 'polkadot',
-                        network: 'mainnet',
+                        chain: "polkadot",
+                        network: "mainnet",
                         address: polkadot.mainnet.address,
                         encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.mainnet.privateKey),
                         user,
@@ -338,33 +360,33 @@ class AuthController {
                             await addressRepo.save(row);
                         }
                         catch (err) {
-                            console.error('Failed to save generated address on login', err);
+                            console.error("Failed to save generated address on login", err);
                         }
                     }
                 }
             }
             catch (err) {
-                console.error('Post-login address generation failed', err);
+                console.error("Post-login address generation failed", err);
             }
             // Create login notification
             try {
                 if (user.id) {
                     await notificationService_1.NotificationService.notifyLogin(user.id, {
                         loginTime: new Date(),
-                        userAgent: req.headers['user-agent'],
+                        userAgent: req.headers["user-agent"],
                         ip: req.ip || req.connection.remoteAddress,
                     });
-                    console.log('[DEBUG] Login notification created for user:', user.id);
+                    console.log("[DEBUG] Login notification created for user:", user.id);
                 }
             }
             catch (notificationError) {
-                console.error('[DEBUG] Failed to create login notification:', notificationError);
+                console.error("[DEBUG] Failed to create login notification:", notificationError);
                 // Don't fail login if notification fails
             }
         }
         catch (error) {
-            console.error('Login error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Login error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -380,16 +402,18 @@ class AuthController {
             // Minimal masking helper for logging
             const mask = (s) => {
                 if (!s)
-                    return '';
+                    return "";
                 if (s.length <= 12)
-                    return '***' + s.slice(-4);
+                    return "***" + s.slice(-4);
                 return `${s.slice(0, 8)}...${s.slice(-4)}`;
             };
             // Log incoming request for debugging (do not log full tokens in production)
-            console.log('[AUTH][Google] Incoming request:', {
+            console.log("[AUTH][Google] Incoming request:", {
                 time: new Date().toISOString(),
-                ip: req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress,
-                userAgent: req.get('User-Agent'),
+                ip: req.ip ||
+                    req.headers["x-forwarded-for"] ||
+                    req.connection?.remoteAddress,
+                userAgent: req.get("User-Agent"),
                 hasIdToken: !!idToken,
                 idTokenPreview: mask(idToken),
                 hasCode: !!code,
@@ -406,28 +430,38 @@ class AuthController {
                     const data = resp.data;
                     email = data.email;
                     // Google returns email_verified as string 'true' or boolean depending on endpoint
-                    emailVerified = data.email_verified === true || data.email_verified === 'true';
+                    emailVerified =
+                        data.email_verified === true || data.email_verified === "true";
                     name = data.name;
                     // Verify audience matches our client id
                     const aud = data.aud || data.audience || data.client_id;
                     const issuer = data.iss || data.issuer;
                     const expectedAud = process.env.GOOGLE_CLIENT_ID;
                     if (expectedAud && aud && expectedAud !== String(aud)) {
-                        console.error('[AUTH][Google] Token audience mismatch', { expectedAud, aud });
-                        return res.status(400).json({ error: 'Invalid Google ID token (audience mismatch)' });
+                        console.error("[AUTH][Google] Token audience mismatch", {
+                            expectedAud,
+                            aud,
+                        });
+                        return res
+                            .status(400)
+                            .json({ error: "Invalid Google ID token (audience mismatch)" });
                     }
-                    if (issuer && issuer !== 'accounts.google.com' && issuer !== 'https://accounts.google.com') {
-                        console.error('[AUTH][Google] Token issuer unexpected', issuer);
-                        return res.status(400).json({ error: 'Invalid Google ID token (issuer mismatch)' });
+                    if (issuer &&
+                        issuer !== "accounts.google.com" &&
+                        issuer !== "https://accounts.google.com") {
+                        console.error("[AUTH][Google] Token issuer unexpected", issuer);
+                        return res
+                            .status(400)
+                            .json({ error: "Invalid Google ID token (issuer mismatch)" });
                     }
                 }
                 catch (err) {
-                    console.error('Failed to verify Google id_token:', err?.response?.data || err);
-                    return res.status(400).json({ error: 'Invalid Google ID token' });
+                    console.error("Failed to verify Google id_token:", err?.response?.data || err);
+                    return res.status(400).json({ error: "Invalid Google ID token" });
                 }
             }
             if (!email) {
-                return res.status(400).json({ error: 'Email is required' });
+                return res.status(400).json({ error: "Email is required" });
             }
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const refreshTokenRepository = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
@@ -438,7 +472,9 @@ class AuthController {
             }
             // Ensure user is available for downstream operations
             if (!user) {
-                return res.status(500).json({ error: 'Failed to retrieve or create user' });
+                return res
+                    .status(500)
+                    .json({ error: "Failed to retrieve or create user" });
             }
             // If Google verified the email but our DB flag isn't set, mark it verified
             // If Google verified the email but our DB flag isn't set, mark it verified
@@ -448,9 +484,9 @@ class AuthController {
             // Only populate firstName/lastName from Google if the user hasn't set them previously.
             // This prevents overwriting user-updated profile fields with Google token values.
             if (name) {
-                const parts = name.split(' ');
+                const parts = name.split(" ");
                 const gFirst = parts.shift();
-                const gLast = parts.join(' ');
+                const gLast = parts.join(" ");
                 let shouldSave = false;
                 if (!user.firstName && gFirst) {
                     user.firstName = gFirst;
@@ -470,7 +506,7 @@ class AuthController {
             }
             // Issue tokens (same as login)
             if (!user.id || !user.email) {
-                return res.status(500).json({ error: 'User data incomplete' });
+                return res.status(500).json({ error: "User data incomplete" });
             }
             const payload = { userId: user.id, email: user.email };
             const accessToken = (0, jwt_1.generateAccessToken)(payload);
@@ -483,7 +519,10 @@ class AuthController {
             });
             await refreshTokenRepository.save(refreshTokenEntity);
             // Fetch full user profile (addresses, kyc) for consistent frontend shape
-            const fullUser = await userRepository.findOne({ where: { id: user.id }, relations: ['addresses', 'kycDocument'] });
+            const fullUser = await userRepository.findOne({
+                where: { id: user.id },
+                relations: ["addresses", "kycDocument"],
+            });
             return res.json({
                 exists: true,
                 accessToken,
@@ -511,8 +550,8 @@ class AuthController {
             });
         }
         catch (error) {
-            console.error('Google sign-in error:', error);
-            return res.status(500).json({ error: 'Internal server error' });
+            console.error("Google sign-in error:", error);
+            return res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -526,7 +565,7 @@ class AuthController {
         try {
             const { idToken } = req.body;
             if (!idToken) {
-                return res.status(400).json({ error: 'idToken is required' });
+                return res.status(400).json({ error: "idToken is required" });
             }
             // Verify ID token with Google
             let email;
@@ -536,39 +575,52 @@ class AuthController {
                 const resp = await axios_1.default.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
                 const data = resp.data;
                 email = data.email;
-                emailVerified = data.email_verified === true || data.email_verified === 'true';
+                emailVerified =
+                    data.email_verified === true || data.email_verified === "true";
                 name = data.name;
                 // Verify audience and issuer
                 const aud = data.aud || data.audience || data.client_id;
                 const issuer = data.iss || data.issuer;
                 const expectedAud = process.env.GOOGLE_CLIENT_ID;
                 if (expectedAud && aud && expectedAud !== String(aud)) {
-                    console.error('[AUTH][Google][Signup] Token audience mismatch', { expectedAud, aud });
-                    return res.status(400).json({ error: 'Invalid Google ID token (audience mismatch)' });
+                    console.error("[AUTH][Google][Signup] Token audience mismatch", {
+                        expectedAud,
+                        aud,
+                    });
+                    return res
+                        .status(400)
+                        .json({ error: "Invalid Google ID token (audience mismatch)" });
                 }
-                if (issuer && issuer !== 'accounts.google.com' && issuer !== 'https://accounts.google.com') {
-                    console.error('[AUTH][Google][Signup] Token issuer unexpected', issuer);
-                    return res.status(400).json({ error: 'Invalid Google ID token (issuer mismatch)' });
+                if (issuer &&
+                    issuer !== "accounts.google.com" &&
+                    issuer !== "https://accounts.google.com") {
+                    console.error("[AUTH][Google][Signup] Token issuer unexpected", issuer);
+                    return res
+                        .status(400)
+                        .json({ error: "Invalid Google ID token (issuer mismatch)" });
                 }
             }
             catch (err) {
-                console.error('Failed to verify Google id_token (signup):', err?.response?.data || err);
-                return res.status(400).json({ error: 'Invalid Google ID token' });
+                console.error("Failed to verify Google id_token (signup):", err?.response?.data || err);
+                return res.status(400).json({ error: "Invalid Google ID token" });
             }
             if (!email) {
-                return res.status(400).json({ error: 'Email not available from Google token' });
+                return res
+                    .status(400)
+                    .json({ error: "Email not available from Google token" });
             }
             if (!emailVerified) {
-                return res.status(400).json({ error: 'Google email not verified' });
+                return res.status(400).json({ error: "Google email not verified" });
             }
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const refreshTokenRepository = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
             // Attempt to create user; if already exists, return conflict
-            const randomPwd = Math.random().toString(36).slice(2, 12) + Date.now().toString(36).slice(-4);
+            const randomPwd = Math.random().toString(36).slice(2, 12) +
+                Date.now().toString(36).slice(-4);
             const created = await (0, userService_1.createUserIfNotExists)(email, randomPwd);
             if (!created) {
                 // User already exists
-                return res.status(409).json({ error: 'User already exists' });
+                return res.status(409).json({ error: "User already exists" });
             }
             // Set verified and names
             created.isEmailVerified = true;
@@ -577,9 +629,9 @@ class AuthController {
             if (req.body.lastName)
                 created.lastName = req.body.lastName;
             if (!created.firstName && name) {
-                const parts = name.split(' ');
+                const parts = name.split(" ");
                 created.firstName = parts.shift();
-                created.lastName = parts.join(' ');
+                created.lastName = parts.join(" ");
             }
             await userRepository.save(created);
             // Generate wallets and addresses (same as register)
@@ -591,33 +643,141 @@ class AuthController {
                 const polkadot = await (0, keygen_1.generatePolkadotWallet)();
                 const strk = (0, keygen_1.generateStrkWallet)();
                 const tron = (0, keygen_1.generateEthWallet)();
+                const usdcWallets = (0, keygen_1.generateUsdcWallet)();
                 const addresses = [
-                    { chain: 'ethereum', network: 'mainnet', address: eth.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey) },
-                    { chain: 'ethereum', network: 'testnet', address: eth.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey) },
-                    { chain: 'bitcoin', network: 'mainnet', address: btc.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(btc.mainnet.privateKey) },
-                    { chain: 'bitcoin', network: 'testnet', address: btc.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(btc.testnet.privateKey) },
-                    { chain: 'solana', network: 'mainnet', address: sol.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(sol.mainnet.privateKey) },
-                    { chain: 'solana', network: 'testnet', address: sol.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(sol.testnet.privateKey) },
-                    { chain: 'starknet', network: 'mainnet', address: strk.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(strk.mainnet.privateKey) },
-                    { chain: 'starknet', network: 'testnet', address: strk.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(strk.testnet.privateKey) },
-                    { chain: 'usdt_erc20', network: 'mainnet', address: eth.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey) },
-                    { chain: 'usdt_erc20', network: 'testnet', address: eth.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey) },
-                    { chain: 'usdt_trc20', network: 'mainnet', address: tron.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(tron.mainnet.privateKey) },
-                    { chain: 'usdt_trc20', network: 'testnet', address: tron.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(tron.testnet.privateKey) },
-                    { chain: 'stellar', network: 'mainnet', address: stellar.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.mainnet.privateKey) },
-                    { chain: 'stellar', network: 'testnet', address: stellar.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.testnet.privateKey) },
-                    { chain: 'polkadot', network: 'mainnet', address: polkadot.mainnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.mainnet.privateKey) },
-                    { chain: 'polkadot', network: 'testnet', address: polkadot.testnet.address, encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.testnet.privateKey) },
+                    {
+                        chain: "ethereum",
+                        network: "mainnet",
+                        address: eth.mainnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey),
+                    },
+                    {
+                        chain: "ethereum",
+                        network: "testnet",
+                        address: eth.testnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey),
+                    },
+                    {
+                        chain: "bitcoin",
+                        network: "mainnet",
+                        address: btc.mainnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(btc.mainnet.privateKey),
+                    },
+                    {
+                        chain: "bitcoin",
+                        network: "testnet",
+                        address: btc.testnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(btc.testnet.privateKey),
+                    },
+                    {
+                        chain: "solana",
+                        network: "mainnet",
+                        address: sol.mainnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(sol.mainnet.privateKey),
+                    },
+                    {
+                        chain: "solana",
+                        network: "testnet",
+                        address: sol.testnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(sol.testnet.privateKey),
+                    },
+                    {
+                        chain: "starknet",
+                        network: "mainnet",
+                        address: strk.mainnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(strk.mainnet.privateKey),
+                    },
+                    {
+                        chain: "starknet",
+                        network: "testnet",
+                        address: strk.testnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(strk.testnet.privateKey),
+                    },
+                    {
+                        chain: "usdt_erc20",
+                        network: "mainnet",
+                        address: eth.mainnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(eth.mainnet.privateKey),
+                    },
+                    {
+                        chain: "usdt_erc20",
+                        network: "testnet",
+                        address: eth.testnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(eth.testnet.privateKey),
+                    },
+                    {
+                        chain: "usdt_trc20",
+                        network: "mainnet",
+                        address: tron.mainnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(tron.mainnet.privateKey),
+                    },
+                    {
+                        chain: "usdt_trc20",
+                        network: "testnet",
+                        address: tron.testnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(tron.testnet.privateKey),
+                    },
+                    {
+                        chain: "stellar",
+                        network: "mainnet",
+                        address: stellar.mainnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.mainnet.privateKey),
+                    },
+                    {
+                        chain: "stellar",
+                        network: "testnet",
+                        address: stellar.testnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(stellar.testnet.privateKey),
+                    },
+                    {
+                        chain: "polkadot",
+                        network: "mainnet",
+                        address: polkadot.mainnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.mainnet.privateKey),
+                    },
+                    {
+                        chain: "polkadot",
+                        network: "testnet",
+                        address: polkadot.testnet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(polkadot.testnet.privateKey),
+                    },
+                    {
+                        chain: "usdc-evm", // All EVM chains use the same address for USDC (ERC-20)
+                        network: "mainnet",
+                        address: usdcWallets.evm.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(usdcWallets.evm.privateKey),
+                        note: "USDC on Ethereum, Arbitrum, Base, Optimism, Polygon, Linea, Scroll, zkSync Era, Avalanche, Mantle, etc.",
+                    },
+                    {
+                        chain: "usdc-solana",
+                        network: "mainnet",
+                        address: usdcWallets.solana.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(usdcWallets.solana.privateKey),
+                        note: "USDC (SPL) on Solana - ATA created automatically on receive",
+                    },
+                    {
+                        chain: "usdc-starknet",
+                        network: "mainnet",
+                        address: usdcWallets.starknet.address,
+                        encryptedPrivateKey: (0, keygen_1.encrypt)(usdcWallets.starknet.privateKey),
+                        note: "USDC on Starknet - requires account deployment if new",
+                    },
                 ];
                 await (0, userService_1.saveUserAddresses)(created, addresses);
-                await notificationService_1.NotificationService.notifyRegistration(created.id, { email: created.email, registrationDate: new Date(), addressCount: addresses.length }).catch(err => console.error('notify reg failed', err));
+                await notificationService_1.NotificationService.notifyRegistration(created.id, {
+                    email: created.email,
+                    registrationDate: new Date(),
+                    addressCount: addresses.length,
+                }).catch((err) => console.error("notify reg failed", err));
             }
             catch (addrErr) {
-                console.error('Failed to generate wallets for google-signup user', addrErr);
+                console.error("Failed to generate wallets for google-signup user", addrErr);
             }
             // Issue tokens
             if (!created.id || !created.email) {
-                return res.status(500).json({ error: 'User data incomplete after creation' });
+                return res
+                    .status(500)
+                    .json({ error: "User data incomplete after creation" });
             }
             const payload = { userId: created.id, email: created.email };
             const accessToken = (0, jwt_1.generateAccessToken)(payload);
@@ -629,7 +789,10 @@ class AuthController {
             });
             await refreshTokenRepository.save(refreshTokenEntity);
             // Return full profile for consistency with other auth flows
-            const createdFull = await userRepository.findOne({ where: { id: created.id }, relations: ['addresses', 'kycDocument'] });
+            const createdFull = await userRepository.findOne({
+                where: { id: created.id },
+                relations: ["addresses", "kycDocument"],
+            });
             return res.status(201).json({
                 accessToken,
                 refreshToken,
@@ -656,8 +819,8 @@ class AuthController {
             });
         }
         catch (error) {
-            console.error('Google signup error:', error);
-            return res.status(500).json({ error: 'Internal server error' });
+            console.error("Google signup error:", error);
+            return res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -674,26 +837,26 @@ class AuthController {
             // Find user by email
             const user = await userRepository.findOne({ where: { email } });
             if (!user) {
-                res.status(404).json({ error: 'User not found' });
+                res.status(404).json({ error: "User not found" });
                 return;
             }
             // Ensure OTP and expiry are present
             if (!user.emailOTP || !user.emailOTPExpiry) {
                 res.status(400).json({
-                    error: 'OTP not found. Please request a new one.',
+                    error: "OTP not found. Please request a new one.",
                 });
                 return;
             }
             // Check if OTP is expired
             if ((0, otp_1.isOTPExpired)(user.emailOTPExpiry)) {
                 res.status(400).json({
-                    error: 'OTP expired. Please request a new one.',
+                    error: "OTP expired. Please request a new one.",
                 });
                 return;
             }
             // Check if OTP matches
             if (user.emailOTP !== otp) {
-                res.status(400).json({ error: 'Invalid OTP' });
+                res.status(400).json({ error: "Invalid OTP" });
                 return;
             }
             // Mark email as verified and clear OTP fields
@@ -709,12 +872,12 @@ class AuthController {
                 verificationTime: new Date(),
                 email: userEmail,
             })
-                .then(() => console.log('[DEBUG] OTP verification notification created for user:', userId))
-                .catch((notificationError) => console.error('[DEBUG] Failed to create OTP verification notification:', notificationError));
+                .then(() => console.log("[DEBUG] OTP verification notification created for user:", userId))
+                .catch((notificationError) => console.error("[DEBUG] Failed to create OTP verification notification:", notificationError));
             // After successful verification, issue tokens so frontend can redirect to dashboard without logging in
             try {
                 if (!userId || !userEmail) {
-                    res.status(500).json({ error: 'User data incomplete' });
+                    res.status(500).json({ error: "User data incomplete" });
                     return;
                 }
                 const payload = { userId: userId, email: userEmail };
@@ -730,7 +893,7 @@ class AuthController {
                 await refreshTokenRepository.save(refreshTokenEntity);
                 // Return tokens and user info so frontend can proceed to dashboard
                 return res.json({
-                    message: 'Email verified successfully',
+                    message: "Email verified successfully",
                     accessToken,
                     refreshToken,
                     user: {
@@ -743,14 +906,14 @@ class AuthController {
                 });
             }
             catch (tokenErr) {
-                console.error('Post-verify token issue:', tokenErr);
+                console.error("Post-verify token issue:", tokenErr);
                 // If token issuance fails, still return success of verification
-                return res.json({ message: 'Email verified successfully' });
+                return res.json({ message: "Email verified successfully" });
             }
         }
         catch (error) {
-            console.error('OTP verification error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("OTP verification error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -767,12 +930,12 @@ class AuthController {
             // Find user by email
             const user = await userRepository.findOne({ where: { email } });
             if (!user) {
-                res.status(404).json({ error: 'User not found' });
+                res.status(404).json({ error: "User not found" });
                 return;
             }
             // Prevent resending OTP if already verified
             if (user.isEmailVerified) {
-                res.status(400).json({ error: 'Email already verified' });
+                res.status(400).json({ error: "Email already verified" });
                 return;
             }
             // Generate new OTP and expiry
@@ -784,20 +947,20 @@ class AuthController {
             try {
                 await (0, mailtrap_1.sendMailtrapMail)({
                     to: email,
-                    subject: 'Your OTP Code',
+                    subject: "Your OTP Code",
                     text: `Your OTP code is: ${otp}`,
                     html: (0, resendOtpTemplate_1.resendOtpTemplate)(email, otp),
                 });
             }
             catch (mailErr) {
-                console.error('Mailtrap send error:', mailErr);
+                console.error("Mailtrap send error:", mailErr);
             }
             console.log(`OTP for ${email}: ${otp}`);
-            res.json({ message: 'OTP sent successfully' });
+            res.json({ message: "OTP sent successfully" });
         }
         catch (error) {
-            console.error('Resend OTP error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Resend OTP error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -812,7 +975,7 @@ class AuthController {
             const refreshTokenRepository = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             if (!refreshToken) {
-                res.status(401).json({ error: 'Refresh token required' });
+                res.status(401).json({ error: "Refresh token required" });
                 return;
             }
             // Verify refresh token and check if not revoked/expired
@@ -823,7 +986,7 @@ class AuthController {
             if (!tokenEntity ||
                 !tokenEntity.expiresAt ||
                 tokenEntity.expiresAt < new Date()) {
-                res.status(403).json({ error: 'Invalid refresh token' });
+                res.status(403).json({ error: "Invalid refresh token" });
                 return;
             }
             // Find user by ID from decoded token
@@ -831,12 +994,12 @@ class AuthController {
                 where: { id: decoded.userId },
             });
             if (!user) {
-                res.status(403).json({ error: 'User not found' });
+                res.status(403).json({ error: "User not found" });
                 return;
             }
             // Generate new access token
             if (!user.id || !user.email) {
-                res.status(500).json({ error: 'User data incomplete' });
+                res.status(500).json({ error: "User data incomplete" });
                 return;
             }
             const payload = { userId: user.id, email: user.email };
@@ -844,8 +1007,8 @@ class AuthController {
             res.json({ accessToken: newAccessToken });
         }
         catch (error) {
-            console.error('Token refresh error:', error);
-            res.status(403).json({ error: 'Invalid refresh token' });
+            console.error("Token refresh error:", error);
+            res.status(403).json({ error: "Invalid refresh token" });
         }
     }
     /**
@@ -861,7 +1024,7 @@ class AuthController {
             if (refreshToken) {
                 await refreshTokenRepository.update({ token: refreshToken }, { isRevoked: true });
             }
-            res.json({ message: 'Logged out successfully' });
+            res.json({ message: "Logged out successfully" });
             //           if (req.user && req.user.email) {
             //     await sendMail(
             //         req.user.email,
@@ -872,8 +1035,8 @@ class AuthController {
             // Optionally send logout notification email (commented out)
         }
         catch (error) {
-            console.error('Logout error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Logout error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -888,7 +1051,7 @@ class AuthController {
             if (req.user) {
                 await refreshTokenRepository.update({ userId: req.user.id }, { isRevoked: true });
             }
-            res.json({ message: 'Logged out from all devices successfully' });
+            res.json({ message: "Logged out from all devices successfully" });
             //            if (req.user && req.user.email) {
             //     await sendMail(
             //         req.user.email,
@@ -899,8 +1062,8 @@ class AuthController {
             // Optionally send logout notification email (commented out)
         }
         catch (error) {
-            console.error('Logout all error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Logout all error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -914,7 +1077,7 @@ class AuthController {
         try {
             const { email } = req.body;
             if (!email) {
-                res.status(400).json({ error: 'Email is required' });
+                res.status(400).json({ error: "Email is required" });
                 return;
             }
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
@@ -922,7 +1085,7 @@ class AuthController {
             if (!user) {
                 // Don't reveal if email exists or not for security
                 res.json({
-                    message: 'If the email exists, you will receive a password reset link',
+                    message: "If the email exists, you will receive a password reset link",
                 });
                 return;
             }
@@ -938,7 +1101,7 @@ class AuthController {
             try {
                 await (0, mailtrap_1.sendMailtrapMail)({
                     to: email,
-                    subject: 'Password Reset Request',
+                    subject: "Password Reset Request",
                     text: (0, passwordResetTemplates_1.passwordResetRequestText)(email, resetToken),
                     html: (0, passwordResetTemplates_1.passwordResetRequestTemplate)(email, resetToken),
                 });
@@ -946,13 +1109,13 @@ class AuthController {
                 console.log(`Reset token: ${resetToken} (expires: ${resetExpiry})`);
             }
             catch (emailError) {
-                console.error('Failed to send reset email:', emailError);
+                console.error("Failed to send reset email:", emailError);
                 // Still return success to not reveal email existence
             }
             // Create notification
             try {
                 if (user.id) {
-                    await notificationService_1.NotificationService.createNotification(user.id, types_1.NotificationType.SECURITY_ALERT, 'Password Reset Requested', 'A password reset was requested for your account', {
+                    await notificationService_1.NotificationService.createNotification(user.id, types_1.NotificationType.SECURITY_ALERT, "Password Reset Requested", "A password reset was requested for your account", {
                         email,
                         timestamp: new Date(),
                         ipAddress: req.ip,
@@ -960,15 +1123,15 @@ class AuthController {
                 }
             }
             catch (notificationError) {
-                console.error('Failed to create reset notification:', notificationError);
+                console.error("Failed to create reset notification:", notificationError);
             }
             res.json({
-                message: 'If the email exists, you will receive a password reset link',
+                message: "If the email exists, you will receive a password reset link",
             });
         }
         catch (error) {
-            console.error('Forgot password error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Forgot password error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -981,60 +1144,57 @@ class AuthController {
             const { email, token } = req.body;
             if (!email || !token) {
                 res.status(400).json({
-                    error: 'Email and reset token are required',
+                    error: "Email and reset token are required",
                 });
                 return;
             }
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const user = await userRepository.findOne({ where: { email } });
             if (!user) {
-                res.status(400).json({ error: 'Invalid reset token' });
+                res.status(400).json({ error: "Invalid reset token" });
                 return;
             }
             // Debug logging
-            console.log('=== PASSWORD RESET TOKEN VERIFICATION DEBUG ===');
-            console.log('Provided email:', email);
-            console.log('Provided token:', token);
-            console.log('Stored token in DB:', user.passwordResetToken);
-            console.log('Token expiry in DB:', user.passwordResetExpiry);
-            console.log('Current time:', new Date());
-            console.log('Token matches:', user.passwordResetToken === token);
-            console.log('Token exists:', !!user.passwordResetToken);
-            console.log('Expiry exists:', !!user.passwordResetExpiry);
-            console.log('Is expired:', user.passwordResetExpiry
-                ? new Date() > user.passwordResetExpiry
-                : 'N/A');
-            console.log('===============================================');
+            console.log("=== PASSWORD RESET TOKEN VERIFICATION DEBUG ===");
+            console.log("Provided email:", email);
+            console.log("Provided token:", token);
+            console.log("Stored token in DB:", user.passwordResetToken);
+            console.log("Token expiry in DB:", user.passwordResetExpiry);
+            console.log("Current time:", new Date());
+            console.log("Token matches:", user.passwordResetToken === token);
+            console.log("Token exists:", !!user.passwordResetToken);
+            console.log("Expiry exists:", !!user.passwordResetExpiry);
+            console.log("Is expired:", user.passwordResetExpiry ? new Date() > user.passwordResetExpiry : "N/A");
+            console.log("===============================================");
             // Check if token matches and hasn't expired
             if (user.passwordResetToken !== token ||
                 !user.passwordResetExpiry ||
                 new Date() > user.passwordResetExpiry) {
                 let errorDetails = [];
                 if (user.passwordResetToken !== token) {
-                    errorDetails.push('Token mismatch');
+                    errorDetails.push("Token mismatch");
                 }
                 if (!user.passwordResetExpiry) {
-                    errorDetails.push('No expiry set');
+                    errorDetails.push("No expiry set");
                 }
-                if (user.passwordResetExpiry &&
-                    new Date() > user.passwordResetExpiry) {
-                    errorDetails.push('Token expired');
+                if (user.passwordResetExpiry && new Date() > user.passwordResetExpiry) {
+                    errorDetails.push("Token expired");
                 }
-                console.log('Verification failed. Reasons:', errorDetails.join(', '));
+                console.log("Verification failed. Reasons:", errorDetails.join(", "));
                 res.status(400).json({
-                    error: 'Invalid or expired reset token',
+                    error: "Invalid or expired reset token",
                     debug: errorDetails, // Remove this in production
                 });
                 return;
             }
             res.json({
-                message: 'Reset token is valid',
+                message: "Reset token is valid",
                 canResetPassword: true,
             });
         }
         catch (error) {
-            console.error('Verify reset token error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Verify reset token error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -1049,54 +1209,51 @@ class AuthController {
             const { email, token, newPassword } = req.body;
             if (!email || !token || !newPassword) {
                 res.status(400).json({
-                    error: 'Email, reset token, and new password are required',
+                    error: "Email, reset token, and new password are required",
                 });
                 return;
             }
             if (newPassword.length < 6) {
                 res.status(400).json({
-                    error: 'Password must be at least 6 characters long',
+                    error: "Password must be at least 6 characters long",
                 });
                 return;
             }
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const user = await userRepository.findOne({ where: { email } });
             if (!user) {
-                res.status(400).json({ error: 'Invalid reset token' });
+                res.status(400).json({ error: "Invalid reset token" });
                 return;
             }
             // Debug logging
-            console.log('=== PASSWORD RESET DEBUG ===');
-            console.log('Provided email:', email);
-            console.log('Provided token:', token);
-            console.log('Stored token in DB:', user.passwordResetToken);
-            console.log('Token expiry in DB:', user.passwordResetExpiry);
-            console.log('Current time:', new Date());
-            console.log('Token matches:', user.passwordResetToken === token);
-            console.log('Token exists:', !!user.passwordResetToken);
-            console.log('Expiry exists:', !!user.passwordResetExpiry);
-            console.log('Is expired:', user.passwordResetExpiry
-                ? new Date() > user.passwordResetExpiry
-                : 'N/A');
-            console.log('=============================');
+            console.log("=== PASSWORD RESET DEBUG ===");
+            console.log("Provided email:", email);
+            console.log("Provided token:", token);
+            console.log("Stored token in DB:", user.passwordResetToken);
+            console.log("Token expiry in DB:", user.passwordResetExpiry);
+            console.log("Current time:", new Date());
+            console.log("Token matches:", user.passwordResetToken === token);
+            console.log("Token exists:", !!user.passwordResetToken);
+            console.log("Expiry exists:", !!user.passwordResetExpiry);
+            console.log("Is expired:", user.passwordResetExpiry ? new Date() > user.passwordResetExpiry : "N/A");
+            console.log("=============================");
             // Check if token matches and hasn't expired
             if (user.passwordResetToken !== token ||
                 !user.passwordResetExpiry ||
                 new Date() > user.passwordResetExpiry) {
                 let errorDetails = [];
                 if (user.passwordResetToken !== token) {
-                    errorDetails.push('Token mismatch');
+                    errorDetails.push("Token mismatch");
                 }
                 if (!user.passwordResetExpiry) {
-                    errorDetails.push('No expiry set');
+                    errorDetails.push("No expiry set");
                 }
-                if (user.passwordResetExpiry &&
-                    new Date() > user.passwordResetExpiry) {
-                    errorDetails.push('Token expired');
+                if (user.passwordResetExpiry && new Date() > user.passwordResetExpiry) {
+                    errorDetails.push("Token expired");
                 }
-                console.log('Reset failed. Reasons:', errorDetails.join(', '));
+                console.log("Reset failed. Reasons:", errorDetails.join(", "));
                 res.status(400).json({
-                    error: 'Invalid or expired reset token',
+                    error: "Invalid or expired reset token",
                     debug: errorDetails, // Remove this in production
                 });
                 return;
@@ -1114,18 +1271,18 @@ class AuthController {
             try {
                 await (0, mailtrap_1.sendMailtrapMail)({
                     to: email,
-                    subject: 'Password Changed Successfully',
+                    subject: "Password Changed Successfully",
                     text: (0, passwordResetTemplates_1.passwordChangedText)(email),
                     html: (0, passwordResetTemplates_1.passwordChangedTemplate)(email),
                 });
             }
             catch (emailError) {
-                console.error('Failed to send password change confirmation:', emailError);
+                console.error("Failed to send password change confirmation:", emailError);
             }
             // Create notification
             try {
                 if (user.id) {
-                    await notificationService_1.NotificationService.createNotification(user.id, types_1.NotificationType.PASSWORD_CHANGE, 'Password Changed', 'Your password has been successfully changed', {
+                    await notificationService_1.NotificationService.createNotification(user.id, types_1.NotificationType.PASSWORD_CHANGE, "Password Changed", "Your password has been successfully changed", {
                         email,
                         timestamp: new Date(),
                         ipAddress: req.ip,
@@ -1133,15 +1290,15 @@ class AuthController {
                 }
             }
             catch (notificationError) {
-                console.error('Failed to create password change notification:', notificationError);
+                console.error("Failed to create password change notification:", notificationError);
             }
             res.json({
-                message: 'Password reset successfully. Please log in with your new password.',
+                message: "Password reset successfully. Please log in with your new password.",
             });
         }
         catch (error) {
-            console.error('Reset password error:', error);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error("Reset password error:", error);
+            res.status(500).json({ error: "Internal server error" });
         }
     }
     /**
@@ -1151,22 +1308,22 @@ class AuthController {
      */
     static mapChainName(chain) {
         switch (chain) {
-            case 'ethereum':
-                return 'eth';
-            case 'bitcoin':
-                return 'btc';
-            case 'solana':
-                return 'sol';
-            case 'starknet':
-                return 'strk';
-            case 'stellar':
-                return 'xlm';
-            case 'polkadot':
-                return 'dot';
-            case 'usdt_erc20':
-                return 'usdterc20';
-            case 'usdt_trc20':
-                return 'usdttrc20';
+            case "ethereum":
+                return "eth";
+            case "bitcoin":
+                return "btc";
+            case "solana":
+                return "sol";
+            case "starknet":
+                return "strk";
+            case "stellar":
+                return "xlm";
+            case "polkadot":
+                return "dot";
+            case "usdt_erc20":
+                return "usdterc20";
+            case "usdt_trc20":
+                return "usdttrc20";
             default:
                 return chain;
         }
@@ -1175,7 +1332,16 @@ class AuthController {
      * Helper to sort addresses by desired chain order.
      */
     static sortAddresses(addresses) {
-        const order = ['eth', 'btc', 'xlm', 'dot', 'sol', 'strk', 'usdterc20', 'usdttrc20'];
+        const order = [
+            "eth",
+            "btc",
+            "xlm",
+            "dot",
+            "sol",
+            "strk",
+            "usdterc20",
+            "usdttrc20",
+        ];
         return addresses.sort((a, b) => {
             const aIndex = order.indexOf(a.chain);
             const bIndex = order.indexOf(b.chain);

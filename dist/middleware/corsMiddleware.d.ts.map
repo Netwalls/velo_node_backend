@@ -1,1 +1,1 @@
-{"version":3,"file":"corsMiddleware.d.ts","sourceRoot":"","sources":["../../src/middleware/corsMiddleware.ts"],"names":[],"mappings":"AAAA,OAAO,IAAI,MAAM,MAAM,CAAC;AAUxB,eAAO,MAAM,cAAc;cAA2jC,CAAC;;;aAAmH,CAAC,sBAA5pC,CAAC"}
+{"version":3,"file":"corsMiddleware.d.ts","sourceRoot":"","sources":["../../src/middleware/corsMiddleware.ts"],"names":[],"mappings":"AAAA,OAAO,IAAI,MAAM,MAAM,CAAC;AAUxB,eAAO,MAAM,cAAc;cAAqkC,CAAC;;;aAAmH,CAAC,sBAAtqC,CAAC"}

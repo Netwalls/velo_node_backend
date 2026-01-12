@@ -17,8 +17,15 @@ router.get('/addresses/testnet', auth_1.authMiddleware, walletController_1.Walle
 // Get user mainnet addresses (chain and address only)
 router.get('/addresses/mainnet', auth_1.authMiddleware, walletController_1.WalletController.getMainnetAddresses);
 router.post('/check-deposits', async (req, res) => {
-    await walletController_1.WalletController.checkForDeposits();
-    res.json({ message: 'Deposit check complete' });
+    // Return immediately and process in background
+    res.json({ message: 'Deposit check started in background' });
+    // Process deposits in background
+    try {
+        await walletController_1.WalletController.checkForDeposits();
+    }
+    catch (error) {
+        console.error('Background deposit check failed:', error);
+    }
 });
 router.post('/send', auth_1.authMiddleware, async (req, res) => {
     await walletController_1.WalletController.sendTransaction(req, res);
