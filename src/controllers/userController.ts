@@ -28,7 +28,7 @@ export class UserController {
             const userRepository = AppDataSource.getRepository(User);
             const user = await userRepository.findOne({
                 where: { id: typeof userId === 'string' ? userId : userId[0] },
-                relations: ['addresses', 'kycDocument'],
+                relations: ['addresses', 'kycDocument', 'company'],
             });
 
             if (!user) {
@@ -46,6 +46,9 @@ export class UserController {
                     username: user.username,
                     displayPicture: user.displayPicture,
                     isEmailVerified: user.isEmailVerified,
+                    role: user.userType,
+                    companyCode: user.company?.companyCode,
+                    companyName: user.company?.companyName,
                     hasTransactionPin: !!user.transactionPin,
                     kycStatus: user.kycStatus,
                     kyc: user.kycDocument,
@@ -74,7 +77,7 @@ export class UserController {
             const userRepository = AppDataSource.getRepository(User);
             const user = await userRepository.findOne({
                 where: { id: req.user!.id },
-                relations: ['addresses', 'kycDocument'],
+                relations: ['addresses', 'kycDocument', 'company'],
             });
 
             if (!user) {
@@ -92,6 +95,9 @@ export class UserController {
                     username: user.username,
                     displayPicture: user.displayPicture,
                     isEmailVerified: user.isEmailVerified,
+                    role: user.userType,
+                    companyCode: user.company?.companyCode,
+                    companyName: user.company?.companyName,
                     hasTransactionPin: !!user.transactionPin,
                     kycStatus: user.kycStatus,
                     kyc: user.kycDocument,

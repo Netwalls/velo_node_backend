@@ -1,6 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./config/swagger";
 import { connectDB } from "./config/database";
 import authRouter from "./routes/authRoute";
 import userRouter from "./routes/userRoute";
@@ -16,21 +18,18 @@ import adminRoute from "./routes/adminRoute";
 import publicRoute from "./routes/publicRoute";
 // import swapRoute from './routes/swapRoute';
 
-
-
 // import changellyRouter from './controllers/changellyController';
 import paymentRouter from "./routes/paymentRoute";
 
-import feeRoute from './routes/feeRoute';
-import changellyRoute from './routes/changellyRoute';
-import moonpayRoute from './routes/moonpayRoute';
+import feeRoute from "./routes/feeRoute";
+import changellyRoute from "./routes/changellyRoute";
+import moonpayRoute from "./routes/moonpayRoute";
 import airtimeRoutes from "./routes/airtime";
 import dataRoutes from "./routes/data";
 import electricityRoutes from "./routes/electricity";
 // Changelly routes are currently implemented in `src/routes/changellyRoute.ts` but
 // that file has its exports commented out while the feature is in progress.
 // Do not import controllers as routers — mount the routes file when it's ready.
-
 
 // Load environment variables
 dotenv.config();
@@ -47,14 +46,29 @@ app.use(express.json());
 // app.use(createRateLimiter({ windowMs: 60 * 1000, max: 30 }));
 
 app.get("/", (req, res) => {
-       res.send("Velo Backend Server is running!");
+  res.send("Velo Backend Server is running!");
+});
+
+// Swagger documentation
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "Velo API Documentation",
+  }),
+);
+
+// Swagger JSON endpoint
+app.get("/api-docs.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerSpec);
 });
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-       res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
-
 
 // app.use('/fiat', changellyRoute);
 // app.use('/fiat', fiatRoutes);
@@ -67,15 +81,13 @@ app.use("/history", historyRouter);
 app.use("/payment", paymentRouter);
 
 // TODO: enable Changelly routes when `src/routes/changellyRoute.ts` exports a router
-app.use('/api/fiat', changellyRoute);
-app.use('/api/moonpay', moonpayRoute);
+app.use("/api/fiat", changellyRoute);
+app.use("/api/moonpay", moonpayRoute);
 // app.use('/auth', authRouter);
 // app.use('/user', userRouter);
 // app.use('/wallet', walletRouter);
-app.use('/notification', notificationRouter);
-app.use('/history', historyRouter);
-
-
+app.use("/notification", notificationRouter);
+app.use("/history", historyRouter);
 
 app.use("/transactions", transactionRoutes);
 app.use("/merchant", qrpaymentRoute);
@@ -93,8 +105,8 @@ app.use("/data", dataRoutes);
 app.use("/electricity", electricityRoutes);
 
 connectDB().then(() => {
-       app.listen(PORT, () => {
-              console.log(`Server is running on port ${PORT}`);
-              // Start automatic deposit monitor (calls WalletController.checkForDeposits periodically)
-       });
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    // Start automatic deposit monitor (calls WalletController.checkForDeposits periodically)
+  });
 });

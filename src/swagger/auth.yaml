@@ -1,0 +1,431 @@
+/auth/register/company:
+  post:
+    tags:
+      - Authentication
+    summary: Register a new company
+    description: Creates a company account and generates a unique company code for employee registration
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - companyName
+              - email
+              - password
+            properties:
+              companyName:
+                type: string
+                example: "Tech Corp Inc"
+              email:
+                type: string
+                format: email
+                example: "admin@techcorp.com"
+              password:
+                type: string
+                format: password
+                minLength: 6
+                example: "SecurePass123!"
+    responses:
+      201:
+        description: Company registered successfully
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  example: "Company registered successfully. Please verify your email."
+                userId:
+                  type: string
+                  format: uuid
+                companyCode:
+                  type: string
+                  example: "ABC12345"
+                  description: "Share this code with employees for registration"
+                companyName:
+                  type: string
+                  example: "Tech Corp Inc"
+                addresses:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/WalletAddress"
+      409:
+        description: Company or email already exists
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Error"
+
+/auth/register/employee:
+  post:
+    tags:
+      - Authentication
+    summary: Register a new employee
+    description: Creates an employee account linked to a company using company code
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - companyCode
+              - email
+              - password
+            properties:
+              companyCode:
+                type: string
+                example: "ABC12345"
+                description: "8-character code provided by company"
+              email:
+                type: string
+                format: email
+                example: "employee@techcorp.com"
+              password:
+                type: string
+                format: password
+                minLength: 6
+                example: "SecurePass123!"
+    responses:
+      201:
+        description: Employee registered successfully
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                userId:
+                  type: string
+                  format: uuid
+                companyName:
+                  type: string
+                addresses:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/WalletAddress"
+      404:
+        description: Invalid company code
+      403:
+        description: Company account is inactive
+
+/auth/register/individual:
+  post:
+    tags:
+      - Authentication
+    summary: Register a new individual user
+    description: Creates an individual account (not linked to any company)
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - email
+              - password
+            properties:
+              email:
+                type: string
+                format: email
+                example: "user@example.com"
+              password:
+                type: string
+                format: password
+                minLength: 6
+                example: "SecurePass123!"
+    responses:
+      201:
+        description: User registered successfully
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                userId:
+                  type: string
+                  format: uuid
+                addresses:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/WalletAddress"
+
+/auth/login:
+  post:
+    tags:
+      - Authentication
+    summary: Login to account
+    description: Authenticates user and returns JWT tokens
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - email
+              - password
+            properties:
+              email:
+                type: string
+                format: email
+                example: "user@example.com"
+              password:
+                type: string
+                format: password
+                example: "SecurePass123!"
+    responses:
+      200:
+        description: Login successful
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  example: "Login successful"
+                accessToken:
+                  type: string
+                refreshToken:
+                  type: string
+                user:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    email:
+                      type: string
+                    firstName:
+                      type: string
+                      nullable: true
+                    lastName:
+                      type: string
+                      nullable: true
+                    isEmailVerified:
+                      type: boolean
+                    hasTransactionPin:
+                      type: boolean
+                    userType:
+                      type: string
+                      enum: [company, employee, individual]
+                    company:
+                      type: object
+                      nullable: true
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        code:
+                          type: string
+                          description: "Only visible to company owners"
+      401:
+        description: Invalid credentials
+      403:
+        description: Email not verified
+
+/auth/verify-otp:
+  post:
+    tags:
+      - Authentication
+    summary: Verify email OTP
+    description: Verifies the OTP sent to user's email
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - email
+              - otp
+            properties:
+              email:
+                type: string
+                format: email
+              otp:
+                type: string
+                example: "123456"
+    responses:
+      200:
+        description: Email verified successfully
+      400:
+        description: Invalid or expired OTP
+
+/auth/resend-otp:
+  post:
+    tags:
+      - Authentication
+    summary: Resend email OTP
+    description: Generates and sends a new OTP to user's email
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - email
+            properties:
+              email:
+                type: string
+                format: email
+    responses:
+      200:
+        description: OTP sent successfully
+
+/auth/refresh-token:
+  post:
+    tags:
+      - Authentication
+    summary: Refresh access token
+    description: Gets a new access token using refresh token
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - refreshToken
+            properties:
+              refreshToken:
+                type: string
+    responses:
+      200:
+        description: New tokens generated
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthTokens"
+
+/auth/forgot-password:
+  post:
+    tags:
+      - Authentication
+    summary: Initiate password reset
+    description: Sends password reset link to user's email
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - email
+            properties:
+              email:
+                type: string
+                format: email
+    responses:
+      200:
+        description: Reset email sent
+
+/auth/reset-password:
+  post:
+    tags:
+      - Authentication
+    summary: Reset password
+    description: Resets password using reset token
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - token
+              - newPassword
+            properties:
+              token:
+                type: string
+              newPassword:
+                type: string
+                format: password
+                minLength: 6
+    responses:
+      200:
+        description: Password reset successful
+
+/auth/logout:
+  post:
+    tags:
+      - Authentication
+    summary: Logout from current device
+    description: Revokes current refresh token
+    security:
+      - bearerAuth: []
+    responses:
+      200:
+        description: Logged out successfully
+      401:
+        description: Unauthorized
+
+/auth/logout-all:
+  post:
+    tags:
+      - Authentication
+    summary: Logout from all devices
+    description: Revokes all refresh tokens for the user
+    security:
+      - bearerAuth: []
+    responses:
+      200:
+        description: Logged out from all devices
+      401:
+        description: Unauthorized
+
+/auth/company/employees:
+  get:
+    tags:
+      - Company
+    summary: Get company employees
+    description: Returns list of all employees for the company (company owners only)
+    security:
+      - bearerAuth: []
+    responses:
+      200:
+        description: Employees retrieved successfully
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                companyName:
+                  type: string
+                totalEmployees:
+                  type: number
+                employees:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      email:
+                        type: string
+                      name:
+                        type: string
+                      walletAddress:
+                        type: string
+                        description: "Primary wallet address (ETH mainnet)"
+                      position:
+                        type: string
+                      salary:
+                        type: number
+                        format: decimal
+      403:
+        description: Access denied (not a company owner)
+      404:
+        description: Company not found

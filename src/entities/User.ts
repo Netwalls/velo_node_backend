@@ -1,168 +1,195 @@
 import {
-    Entity,
-    PrimaryGeneratedColumn,
-    Column,
-    CreateDateColumn,
-    UpdateDateColumn,
-    OneToMany,
-    OneToOne,
-    JoinColumn,
-    BeforeInsert,
-    BeforeUpdate,
-} from 'typeorm';
-import { IsEmail, MinLength } from 'class-validator';
-import bcrypt from 'bcryptjs';
-import { UserAddress } from './UserAddress';
-import { KYCDocument } from './KYCDocument';
-import { RefreshToken } from './RefreshToken';
-import { KYCStatus } from '../types';
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
+  OneToOne,
+  JoinColumn,
+  BeforeInsert,
+  BeforeUpdate,
+  ManyToOne,
+} from "typeorm";
+import { IsEmail, MinLength } from "class-validator";
+import bcrypt from "bcryptjs";
+import { UserAddress } from "./UserAddress";
+import { KYCDocument } from "./KYCDocument";
+import { RefreshToken } from "./RefreshToken";
+import { Company } from "./Company";
+import { KYCStatus } from "../types";
 
-@Entity('users')
+export enum UserType {
+  COMPANY = "company",
+  EMPLOYEE = "employee",
+  INDIVIDUAL = "individual",
+}
+
+@Entity("users")
 export class User {
-    @PrimaryGeneratedColumn('uuid')
-    id: string | undefined;
+  @PrimaryGeneratedColumn("uuid")
+  id: string | undefined;
 
-    @Column({ unique: true })
-    @IsEmail()
-    email!: string;
+  @Column({ unique: true })
+  @IsEmail()
+  email!: string;
 
-    @Column()
-    @MinLength(6)
-    password!: string;
+  @Column()
+  @MinLength(6)
+  password!: string;
 
-    @Column({ nullable: true })
-    firstName?: string;
+  @Column({
+    type: "enum",
+    enum: UserType,
+    default: UserType.INDIVIDUAL,
+  })
+  userType!: UserType;
 
-    @Column({ nullable: true })
-    lastName?: string;
+  @ManyToOne(() => Company, (company) => company.employees, { nullable: true })
+  company?: Company;
 
-    @Column({ nullable: true })
-    phoneNumber?: string;
+  @Column({ nullable: true })
+  companyId?: string;
 
-    @Column({ unique: true, nullable: true })
-    username?: string;
+  @Column({ nullable: true })
+  firstName?: string;
 
-    @Column({ nullable: true })
-    displayPicture?: string;
+  @Column({ nullable: true })
+  lastName?: string;
 
-    @Column({ nullable: true })
-    bankName?: string;
+  @Column({ nullable: true })
+  phoneNumber?: string;
 
-    @Column({ nullable: true })
-    accountNumber?: string;
+  @Column({ unique: true, nullable: true })
+  username?: string;
 
-    @Column({ nullable: true })
-    accountName?: string;
+  @Column({ nullable: true })
+  displayPicture?: string;
 
-    @Column({ default: false })
-    isEmailVerified!: boolean;
+  @Column({ nullable: true })
+  bankName?: string;
 
-    @Column('decimal', { precision: 18, scale: 8, default: 0 })
-    usdtBalance!: number;
+  @Column({ nullable: true })
+  accountNumber?: string;
 
-    // Balances for other supported tokens (application-level ledger)
-    @Column('decimal', { precision: 30, scale: 18, default: 0 })
-    ethBalance!: number;
+  @Column({ nullable: true })
+  accountName?: string;
 
-    @Column('decimal', { precision: 30, scale: 18, default: 0 })
-    strkBalance!: number;
+  @Column({ nullable: true })
+  position?: string;
 
-    @Column('decimal', { precision: 30, scale: 18, default: 0 })
-    solBalance!: number;
+  @Column("decimal", { precision: 18, scale: 2, nullable: true })
+  salary?: number;
 
-    @Column('decimal', { precision: 30, scale: 8, default: 0 })
-    btcBalance!: number;
+  @Column({ default: false })
+  isEmailVerified!: boolean;
 
-    @Column('decimal', { precision: 30, scale: 7, default: 0 })
-    xlmBalance!: number;
+  @Column("decimal", { precision: 18, scale: 8, default: 0 })
+  usdtBalance!: number;
 
-    @Column('decimal', { precision: 30, scale: 10, default: 0 })
-    dotBalance!: number;
+  // Balances for other supported tokens (application-level ledger)
+  @Column("decimal", { precision: 30, scale: 18, default: 0 })
+  ethBalance!: number;
 
-    @Column({ nullable: true })
-    emailOTP?: string;
+  @Column("decimal", { precision: 30, scale: 18, default: 0 })
+  strkBalance!: number;
 
-    @Column({ type: 'timestamp', nullable: true })
-    emailOTPExpiry?: Date;
+  @Column("decimal", { precision: 30, scale: 18, default: 0 })
+  solBalance!: number;
 
-    @Column({ nullable: true })
-    phoneOTP?: string;
+  @Column("decimal", { precision: 30, scale: 8, default: 0 })
+  btcBalance!: number;
 
-    @Column({ type: 'timestamp', nullable: true })
-    phoneOTPExpiry?: Date;
+  @Column("decimal", { precision: 30, scale: 7, default: 0 })
+  xlmBalance!: number;
 
-    @Column({ nullable: true })
-    passwordResetToken?: string;
+  @Column("decimal", { precision: 30, scale: 10, default: 0 })
+  dotBalance!: number;
 
-    @Column({ type: 'timestamp', nullable: true })
-    passwordResetExpiry?: Date;
+  @Column({ nullable: true })
+  emailOTP?: string;
 
-    @Column({
-        type: 'enum',
-        enum: KYCStatus,
-        default: KYCStatus.PENDING,
-    })
-    kycStatus: KYCStatus | undefined;
+  @Column({ type: "timestamp", nullable: true })
+  emailOTPExpiry?: Date;
 
-    @OneToMany(() => UserAddress, (address) => address.user, { cascade: true })
-    addresses: UserAddress[] | undefined;
+  @Column({ nullable: true })
+  phoneOTP?: string;
 
-    @OneToOne(() => KYCDocument, (kyc) => kyc.user, { cascade: true })
-    @JoinColumn()
-    kycDocument?: KYCDocument;
+  @Column({ type: "timestamp", nullable: true })
+  phoneOTPExpiry?: Date;
 
-    @OneToMany(() => RefreshToken, (token) => token.user, { cascade: true })
-    refreshTokens: RefreshToken[] | undefined;
+  @Column({ nullable: true })
+  passwordResetToken?: string;
 
-    @CreateDateColumn()
-    createdAt: Date | undefined;
+  @Column({ type: "timestamp", nullable: true })
+  passwordResetExpiry?: Date;
 
-    @UpdateDateColumn()
-    updatedAt: Date | undefined;
+  @Column({
+    type: "enum",
+    enum: KYCStatus,
+    default: KYCStatus.PENDING,
+  })
+  kycStatus: KYCStatus | undefined;
 
-    @BeforeInsert()
-    @BeforeUpdate()
-    async hashPassword() {
-        if (
-            this.password &&
-            !this.password.startsWith('$2a$') &&
-            !this.password.startsWith('$2b$')
-        ) {
-            const salt = await bcrypt.genSalt(12);
-            this.password = await bcrypt.hash(this.password, salt);
-        }
-        // Ensure transaction PIN is hashed as well when present
-        try {
-            await this.hashTransactionPinIfNeeded();
-        } catch (err) {
-            console.error('Failed to hash transaction PIN:', err);
-        }
+  @OneToMany(() => UserAddress, (address) => address.user, { cascade: true })
+  addresses: UserAddress[] | undefined;
+
+  @OneToOne(() => KYCDocument, (kyc) => kyc.user, { cascade: true })
+  @JoinColumn()
+  kycDocument?: KYCDocument;
+
+  @OneToMany(() => RefreshToken, (token) => token.user, { cascade: true })
+  refreshTokens: RefreshToken[] | undefined;
+
+  @CreateDateColumn()
+  createdAt: Date | undefined;
+
+  @UpdateDateColumn()
+  updatedAt: Date | undefined;
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  async hashPassword() {
+    if (
+      this.password &&
+      !this.password.startsWith("$2a$") &&
+      !this.password.startsWith("$2b$")
+    ) {
+      const salt = await bcrypt.genSalt(12);
+      this.password = await bcrypt.hash(this.password, salt);
     }
-
-    /**
-     * Transaction PIN: stored hashed for security. Expect a 4-digit numeric PIN.
-     */
-    @Column({ nullable: true })
-    transactionPin?: string;
-
-    /**
-     * Hash transaction PIN similarly to the password when set/updated.
-     */
-    async hashTransactionPinIfNeeded() {
-        if (
-            this.transactionPin &&
-            !this.transactionPin.startsWith('$2a$') &&
-            !this.transactionPin.startsWith('$2b$')
-        ) {
-            const salt = await bcrypt.genSalt(12);
-            this.transactionPin = await bcrypt.hash(this.transactionPin, salt);
-        }
+    // Ensure transaction PIN is hashed as well when present
+    try {
+      await this.hashTransactionPinIfNeeded();
+    } catch (err) {
+      console.error("Failed to hash transaction PIN:", err);
     }
+  }
 
-    async comparePassword(candidatePassword: string): Promise<boolean> {
-        if (!this.password) {
-            return false;
-        }
-        return await bcrypt.compare(candidatePassword, this.password);
+  /**
+   * Transaction PIN: stored hashed for security. Expect a 4-digit numeric PIN.
+   */
+  @Column({ nullable: true })
+  transactionPin?: string;
+
+  /**
+   * Hash transaction PIN similarly to the password when set/updated.
+   */
+  async hashTransactionPinIfNeeded() {
+    if (
+      this.transactionPin &&
+      !this.transactionPin.startsWith("$2a$") &&
+      !this.transactionPin.startsWith("$2b$")
+    ) {
+      const salt = await bcrypt.genSalt(12);
+      this.transactionPin = await bcrypt.hash(this.transactionPin, salt);
     }
+  }
+
+  async comparePassword(candidatePassword: string): Promise<boolean> {
+    if (!this.password) {
+      return false;
+    }
+    return await bcrypt.compare(candidatePassword, this.password);
+  }
 }

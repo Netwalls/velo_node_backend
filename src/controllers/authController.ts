@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../config/database";
-import { User } from "../entities/User";
+import { User, UserType } from "../entities/User";
+import { Company } from "../entities/Company";
 import { RefreshToken } from "../entities/RefreshToken";
 import { AuthRequest } from "../types";
 import {
@@ -54,7 +55,9 @@ export class AuthController {
         return;
       }
       const userRepository = AppDataSource.getRepository(User);
-      const user = await userRepository.findOne({ where: { id: typeof id === 'string' ? id : id[0] } });
+      const user = await userRepository.findOne({
+        where: { id: typeof id === "string" ? id : id[0] },
+      });
       if (!user) {
         res.status(404).json({ error: "User not found" });
         return;
@@ -78,14 +81,82 @@ export class AuthController {
    */
   static async register(req: Request, res: Response): Promise<void> {
     try {
-      const { email, password } = req.body;
-      // Create user if not exists
-      const user = await createUserIfNotExists(email, password);
+      const { email, password, userType, companyName, companyCode } = req.body;
+
+      // Generate OTP early to ensure it's saved with the user
+      const otp = generateOTP();
+      const otpExpiry = getOTPExpiry();
+
+      let targetUserType = UserType.INDIVIDUAL;
+      let companyId: string | undefined;
+
+      console.log(
+        `[DEBUG] Registration started for: ${email}, type: ${userType}`,
+      );
+
+      let companyCodeValue: string | undefined;
+      if (userType === "company") {
+        if (!companyName) {
+          res.status(400).json({ error: "Company name is required" });
+          return;
+        }
+        targetUserType = UserType.COMPANY;
+
+        // Create the company
+        console.log(`[DEBUG] Creating company: ${companyName}`);
+        const companyRepo = AppDataSource.getRepository(Company);
+        const company = companyRepo.create({
+          companyName,
+          companyEmail: email, // Default to user email
+        });
+        await companyRepo.save(company);
+        companyId = company.id;
+        companyCodeValue = company.companyCode;
+        console.log(
+          `[DEBUG] Company created with ID: ${companyId}, Code: ${company.companyCode}`,
+        );
+      } else if (userType === "employee") {
+        if (!companyCode) {
+          res.status(400).json({ error: "Company code is required" });
+          return;
+        }
+        targetUserType = UserType.EMPLOYEE;
+
+        // Find the company by code
+        console.log(`[DEBUG] Finding company for code: ${companyCode}`);
+        const companyRepo = AppDataSource.getRepository(Company);
+        const company = await companyRepo.findOne({ where: { companyCode } });
+        if (!company) {
+          res.status(404).json({ error: "Invalid company code" });
+          return;
+        }
+        companyId = company.id;
+        console.log(
+          `[DEBUG] Found company: ${company.companyName} with ID: ${companyId}`,
+        );
+      }
+
+      // Create user if not exists with OTP pre-populated
+      console.log(`[DEBUG] Creating user: ${email}`);
+      const user = await createUserIfNotExists(
+        email,
+        password,
+        targetUserType,
+        companyId,
+        otp,
+        otpExpiry,
+      );
       if (!user) {
+        console.log(
+          `[DEBUG] Registration failed: User ${email} already exists`,
+        );
         res.status(409).json({ error: "User already exists" });
         return;
       }
+      console.log(`[DEBUG] User created with ID: ${user.id}, OTP: ${otp}`);
+
       // Generate all wallets directly
+      console.log(`[DEBUG] Generating wallets for: ${user.id}`);
       const eth = generateEthWallet();
       const btc = generateBtcWallet();
       const sol = generateSolWallet();
@@ -99,7 +170,7 @@ export class AuthController {
       const tron = generateEthWallet(); // Tron uses similar address generation
 
       // Prepare addresses array for saving and response
-      const addresses = [
+      const fullAddresses = [
         {
           chain: "ethereum",
           network: "mainnet",
@@ -224,8 +295,11 @@ export class AuthController {
       ];
 
       // Save all generated addresses to the database directly
+      console.log(
+        `[DEBUG] Saving ${fullAddresses.length} addresses for user: ${user.id}`,
+      );
       const addressRepo = AppDataSource.getRepository(UserAddress);
-      for (const addr of addresses) {
+      for (const addr of fullAddresses) {
         try {
           await addressRepo.save({
             ...addr,
@@ -235,7 +309,7 @@ export class AuthController {
               ChainType[addr.chain.toUpperCase() as keyof typeof ChainType],
             network:
               NetworkType[
-                addr.network.toUpperCase() as keyof typeof NetworkType
+              addr.network.toUpperCase() as keyof typeof NetworkType
               ],
           });
           console.log("[DEBUG] Saved address:", {
@@ -243,19 +317,23 @@ export class AuthController {
             userId: user.id,
           });
         } catch (err) {
-          console.error(
-            "[DEBUG] Failed to save address:",
-            { ...addr, userId: user.id },
-            err
-          );
+          console.error(`[DEBUG] Failed to save address ${addr.chain}:`, err);
         }
       }
 
       // Generate and save OTP for email verification
-      const otp = generateOTP();
-      user.emailOTP = otp;
-      user.emailOTPExpiry = getOTPExpiry();
-      await AppDataSource.getRepository(User).save(user);
+      // OTP is now generated and saved with the user during createUserIfNotExists
+      // const otp = generateOTP();
+      // user.emailOTP = otp;
+      // user.emailOTPExpiry = getOTPExpiry();
+      // await AppDataSource.getRepository(User).save(user);
+
+      console.log(`\n========================================`);
+      console.log(`📧 REGISTRATION OTP`);
+      console.log(`Email: ${email}`);
+      console.log(`OTP Code: ${otp}`);
+      console.log(`Expires: ${otpExpiry.toISOString()}`);
+      console.log(`========================================\n`);
 
       // Send registration verification email and OTP
       await sendRegistrationEmails(email, otp);
@@ -266,23 +344,23 @@ export class AuthController {
           await NotificationService.notifyRegistration(user.id, {
             email,
             registrationDate: new Date(),
-            addressCount: addresses.length,
+            addressCount: fullAddresses.length,
           });
           console.log(
             "[DEBUG] Registration notification created for user:",
-            user.id
+            user.id,
           );
         }
       } catch (notificationError) {
         console.error(
           "[DEBUG] Failed to create registration notification:",
-          notificationError
+          notificationError,
         );
         // Don't fail registration if notification fails
       }
 
       // Return user profile with addresses (no private keys)
-      const userAddresses = addresses.map((a) => ({
+      const userAddresses = fullAddresses.map((a: any) => ({
         chain: AuthController.mapChainName(a.chain),
         network: a.network,
         address: a.address,
@@ -293,12 +371,15 @@ export class AuthController {
       // Always log sorted addresses for debugging
       console.log(
         "[DEBUG] Sorted addresses:",
-        JSON.stringify(sortedAddresses, null, 2)
+        JSON.stringify(sortedAddresses, null, 2),
       );
 
       res.status(201).json({
         message: "User registered successfully. Please verify your email.",
         userId: user.id,
+        role: targetUserType,
+        companyName: companyName, // Added this
+        companyCode: companyCodeValue,
         addresses: sortedAddresses,
       });
     } catch (error) {
@@ -321,8 +402,11 @@ export class AuthController {
       const userRepository = AppDataSource.getRepository(User);
       const refreshTokenRepository = AppDataSource.getRepository(RefreshToken);
 
-      // Find user by email
-      const user = await userRepository.findOne({ where: { email } });
+      // Find user by email with company details
+      const user = await userRepository.findOne({
+        where: { email },
+        relations: ["company"],
+      });
       if (!user) {
         res.status(401).json({ error: "Invalid credentials" });
         return;
@@ -370,6 +454,17 @@ export class AuthController {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          role: user.userType,
+          position: user.position,
+          salary: user.salary,
+          company: user.company
+            ? {
+              id: user.company.id,
+              name: user.company.companyName,
+              code: user.company.companyCode,
+              email: user.company.companyEmail,
+            }
+            : null,
           isEmailVerified: user.isEmailVerified,
           hasTransactionPin: !!user.transactionPin,
         },
@@ -429,7 +524,7 @@ export class AuthController {
       } catch (notificationError) {
         console.error(
           "[DEBUG] Failed to create login notification:",
-          notificationError
+          notificationError,
         );
         // Don't fail login if notification fails
       }
@@ -480,8 +575,8 @@ export class AuthController {
         try {
           const resp = await axios.get(
             `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(
-              idToken
-            )}`
+              idToken,
+            )}`,
           );
           const data = resp.data as any;
           email = data.email;
@@ -515,7 +610,7 @@ export class AuthController {
         } catch (err: any) {
           console.error(
             "Failed to verify Google id_token:",
-            err?.response?.data || err
+            err?.response?.data || err,
           );
           return res.status(400).json({ error: "Invalid Google ID token" });
         }
@@ -649,8 +744,8 @@ export class AuthController {
       try {
         const resp = await axios.get(
           `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(
-            idToken
-          )}`
+            idToken,
+          )}`,
         );
         const data = resp.data as any;
         email = data.email;
@@ -677,7 +772,7 @@ export class AuthController {
         ) {
           console.error(
             "[AUTH][Google][Signup] Token issuer unexpected",
-            issuer
+            issuer,
           );
           return res
             .status(400)
@@ -686,7 +781,7 @@ export class AuthController {
       } catch (err: any) {
         console.error(
           "Failed to verify Google id_token (signup):",
-          err?.response?.data || err
+          err?.response?.data || err,
         );
         return res.status(400).json({ error: "Invalid Google ID token" });
       }
@@ -864,7 +959,7 @@ export class AuthController {
       } catch (addrErr) {
         console.error(
           "Failed to generate wallets for google-signup user",
-          addrErr
+          addrErr,
         );
       }
 
@@ -978,14 +1073,14 @@ export class AuthController {
         .then(() =>
           console.log(
             "[DEBUG] OTP verification notification created for user:",
-            userId
-          )
+            userId,
+          ),
         )
         .catch((notificationError) =>
           console.error(
             "[DEBUG] Failed to create OTP verification notification:",
-            notificationError
-          )
+            notificationError,
+          ),
         );
 
       // After successful verification, issue tokens so frontend can redirect to dashboard without logging in
@@ -1018,6 +1113,7 @@ export class AuthController {
             email: userEmail,
             firstName: user.firstName,
             lastName: user.lastName,
+            role: user.userType,
             isEmailVerified: user.isEmailVerified,
           },
         });
@@ -1153,7 +1249,7 @@ export class AuthController {
       if (refreshToken) {
         await refreshTokenRepository.update(
           { token: refreshToken },
-          { isRevoked: true }
+          { isRevoked: true },
         );
       }
 
@@ -1185,7 +1281,7 @@ export class AuthController {
       if (req.user) {
         await refreshTokenRepository.update(
           { userId: req.user.id },
-          { isRevoked: true }
+          { isRevoked: true },
         );
       }
 
@@ -1200,6 +1296,94 @@ export class AuthController {
       // Optionally send logout notification email (commented out)
     } catch (error) {
       console.error("Logout all error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+
+  /**
+   * Get all employees for a company.
+   * Only accessible by company owners.
+   * Returns employee id, name, wallet address, position, and salary.
+   */
+  static async getCompanyEmployees(
+    req: AuthRequest,
+    res: Response,
+  ): Promise<void> {
+    try {
+      if (!req.user || !req.user.id) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const userRepository = AppDataSource.getRepository(User);
+      const addressRepository = AppDataSource.getRepository(UserAddress);
+
+      // Get the authenticated user with company relation
+      const authUser = await userRepository.findOne({
+        where: { id: req.user.id },
+        relations: ["company"],
+      });
+
+      if (!authUser) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+
+      // Check if user is a company owner
+      if (authUser.userType !== UserType.COMPANY) {
+        res.status(403).json({
+          error: "Access denied. Only company owners can view employees.",
+        });
+        return;
+      }
+
+      if (!authUser.company || !authUser.company.id) {
+        res.status(404).json({ error: "Company not found" });
+        return;
+      }
+
+      // Get all employees for this company
+      const employees = await userRepository.find({
+        where: {
+          companyId: authUser.company.id,
+          userType: UserType.EMPLOYEE,
+        },
+        select: ["id", "email", "firstName", "lastName", "position", "salary"],
+      });
+
+      // Get wallet addresses for each employee
+      const employeesWithWallets = await Promise.all(
+        employees.map(async (employee) => {
+          // Get primary wallet address (using ETH mainnet as primary)
+          const walletAddress = await addressRepository.findOne({
+            where: {
+              userId: employee.id,
+              chain: ChainType.ETHEREUM,
+              network: NetworkType.MAINNET,
+            },
+          });
+
+          return {
+            id: employee.id,
+            email: employee.email,
+            name:
+              `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+              "N/A",
+            walletAddress: walletAddress?.address || "Not available",
+            position: employee.position || "Not set",
+            salary: employee.salary || 0,
+          };
+        }),
+      );
+
+      res.json({
+        message: "Employees retrieved successfully",
+        companyName: authUser.company.companyName,
+        totalEmployees: employeesWithWallets.length,
+        employees: employeesWithWallets,
+      });
+    } catch (error) {
+      console.error("Get company employees error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }
@@ -1270,13 +1454,13 @@ export class AuthController {
               email,
               timestamp: new Date(),
               ipAddress: req.ip,
-            }
+            },
           );
         }
       } catch (notificationError) {
         console.error(
           "Failed to create reset notification:",
-          notificationError
+          notificationError,
         );
       }
 
@@ -1325,7 +1509,9 @@ export class AuthController {
       console.log("Expiry exists:", !!user.passwordResetExpiry);
       console.log(
         "Is expired:",
-        user.passwordResetExpiry ? new Date() > user.passwordResetExpiry : "N/A"
+        user.passwordResetExpiry
+          ? new Date() > user.passwordResetExpiry
+          : "N/A",
       );
       console.log("===============================================");
 
@@ -1410,7 +1596,9 @@ export class AuthController {
       console.log("Expiry exists:", !!user.passwordResetExpiry);
       console.log(
         "Is expired:",
-        user.passwordResetExpiry ? new Date() > user.passwordResetExpiry : "N/A"
+        user.passwordResetExpiry
+          ? new Date() > user.passwordResetExpiry
+          : "N/A",
       );
       console.log("=============================");
 
@@ -1453,7 +1641,7 @@ export class AuthController {
       const refreshTokenRepository = AppDataSource.getRepository(RefreshToken);
       await refreshTokenRepository.update(
         { userId: user.id },
-        { isRevoked: true }
+        { isRevoked: true },
       );
 
       // Send password change confirmation email
@@ -1467,7 +1655,7 @@ export class AuthController {
       } catch (emailError) {
         console.error(
           "Failed to send password change confirmation:",
-          emailError
+          emailError,
         );
       }
 
@@ -1483,13 +1671,13 @@ export class AuthController {
               email,
               timestamp: new Date(),
               ipAddress: req.ip,
-            }
+            },
           );
         }
       } catch (notificationError) {
         console.error(
           "Failed to create password change notification:",
-          notificationError
+          notificationError,
         );
       }
 
