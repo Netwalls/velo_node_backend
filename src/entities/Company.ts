@@ -8,6 +8,7 @@ import {
   BeforeInsert,
 } from "typeorm";
 import { User } from "./User";
+import { Employee } from "./Employee";
 import { randomBytes } from "crypto";
 
 @Entity("companies")
@@ -28,7 +29,10 @@ export class Company {
   isActive!: boolean;
 
   @OneToMany(() => User, (user) => user.company)
-  employees: User[] | undefined;
+  users: User[] | undefined;
+
+  @OneToMany(() => Employee, (employee) => employee.company)
+  employees: Employee[] | undefined;
 
   @CreateDateColumn()
   createdAt: Date | undefined;

@@ -152,10 +152,10 @@ export class BlockchainValidator {
     txHash: string,
     expectedTo: string,
     minAmount: number,
-    maxAmount: number
+    maxAmount: number,
   ): Promise<boolean> {
     const rpcUrl =
-      process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com";
+      process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
 
     try {
       console.log(`🔍 [DEBUG] Fetching Solana transaction: ${txHash}`);
@@ -209,7 +209,7 @@ export class BlockchainValidator {
               totalAmount += amount;
               foundTransfer = true;
               console.log(
-                `✅ [DEBUG] Valid transfer: ${amount} SOL to ${expectedTo}`
+                `✅ [DEBUG] Valid transfer: ${amount} SOL to ${expectedTo}`,
               );
             }
           }
@@ -223,7 +223,7 @@ export class BlockchainValidator {
         tx.transaction.message.accountKeys
       ) {
         console.log(
-          `🔍 [DEBUG] No transfer instructions found, checking balance changes...`
+          `🔍 [DEBUG] No transfer instructions found, checking balance changes...`,
         );
 
         const accountKeys = tx.transaction.message.accountKeys;
@@ -237,7 +237,7 @@ export class BlockchainValidator {
             const balanceChange = (postBalance - preBalance) / 1e9;
 
             console.log(
-              `🔍 [DEBUG] Balance change for ${expectedTo}: ${balanceChange} SOL`
+              `🔍 [DEBUG] Balance change for ${expectedTo}: ${balanceChange} SOL`,
             );
 
             if (balanceChange > 0) {
@@ -256,7 +256,7 @@ export class BlockchainValidator {
       console.log(
         `   - Validation: ${
           foundTransfer && totalAmount >= minAmount && totalAmount <= maxAmount
-        }`
+        }`,
       );
 
       return (
@@ -272,12 +272,12 @@ export class BlockchainValidator {
     txHash: string,
     expectedTo: string,
     minAmount: number,
-    maxAmount: number
+    maxAmount: number,
   ): Promise<boolean> {
     const rpcEndpoints = [
-      "https://eth-sepolia.g.alchemy.com/v2/demo",
-      "https://ethereum-sepolia-rpc.publicnode.com",
-      "https://rpc.sepolia.org",
+      "https://eth-mainnet.g.alchemy.com/v2/demo",
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth.llamarpc.com",
     ];
 
     for (const endpoint of rpcEndpoints) {
@@ -295,7 +295,7 @@ export class BlockchainValidator {
           {
             timeout: 10000,
             headers: { "Content-Type": "application/json" },
-          }
+          },
         );
 
         const data = response.data as EthereumTransactionResponse;
@@ -328,16 +328,16 @@ export class BlockchainValidator {
   }
 
   /**
-   * Validate Bitcoin transaction using Blockchain.com API (Testnet)
+   * Validate Bitcoin transaction using Blockchain.com API (Mainnet)
    */
   async validateBitcoinTransaction(
     txHash: string,
     expectedTo: string,
     minAmount: number,
-    maxAmount: number
+    maxAmount: number,
   ): Promise<boolean> {
-    // Using Bitcoin testnet
-    const url = `https://blockstream.info/testnet/api/tx/${txHash}`;
+    // Using Bitcoin mainnet
+    const url = `https://blockstream.info/api/tx/${txHash}`;
 
     try {
       const response = await axios.get<BitcoinTransaction>(url);
@@ -350,7 +350,7 @@ export class BlockchainValidator {
 
       // Find output that matches our expected address
       const targetOutput = tx.vout.find(
-        (output) => output.scriptpubkey_address === expectedTo
+        (output) => output.scriptpubkey_address === expectedTo,
       );
 
       if (!targetOutput) {
@@ -361,7 +361,7 @@ export class BlockchainValidator {
       const actualAmount = targetOutput.value / 1e8; // Convert from satoshis to BTC
 
       console.log(
-        `   Bitcoin Testnet TX: ${actualAmount} BTC to ${expectedTo}`
+        `   Bitcoin Mainnet TX: ${actualAmount} BTC to ${expectedTo}`,
       );
 
       return actualAmount >= minAmount && actualAmount <= maxAmount;
@@ -372,17 +372,17 @@ export class BlockchainValidator {
   }
 
   /**
-   * Validate Stellar transaction using Horizon API (Testnet)
+   * Validate Stellar transaction using Horizon API (Mainnet)
    */
   async validateStellarTransaction(
     txHash: string,
     expectedTo: string,
     minAmount: number,
-    maxAmount: number
+    maxAmount: number,
   ): Promise<boolean> {
     const endpoints = [
-      "https://horizon-testnet.stellar.org",
       "https://horizon.stellar.org",
+      "https://horizon-testnet.stellar.org",
     ];
 
     for (const endpoint of endpoints) {
@@ -390,7 +390,7 @@ export class BlockchainValidator {
         console.log(`🔍 [XLM] Trying: ${endpoint.split("/")[2]}`);
         console.log(`   TX: ${txHash}`);
         console.log(
-          `   Expected: ${minAmount}-${maxAmount} XLM to ${expectedTo}`
+          `   Expected: ${minAmount}-${maxAmount} XLM to ${expectedTo}`,
         );
 
         // Step 1: Get the main transaction
@@ -442,7 +442,7 @@ export class BlockchainValidator {
           console.log(
             `        Asset: ${op.asset_type}${
               op.asset_code ? ` ${op.asset_code}` : ""
-            }`
+            }`,
           );
           console.log(`        Amount: ${op.amount}`);
 
@@ -458,11 +458,11 @@ export class BlockchainValidator {
             console.log(`      ✅ VALID TRANSFER: ${amount} XLM to ${op.to}`);
           } else if (op.to === expectedTo) {
             console.log(
-              `      ❌ Wrong type/asset: ${op.type}, ${op.asset_type}`
+              `      ❌ Wrong type/asset: ${op.type}, ${op.asset_type}`,
             );
           } else {
             console.log(
-              `      ❌ Wrong recipient: expected ${expectedTo}, got ${op.to}`
+              `      ❌ Wrong recipient: expected ${expectedTo}, got ${op.to}`,
             );
           }
         }
@@ -491,21 +491,21 @@ export class BlockchainValidator {
   }
 
   /**
-   * Validate Polkadot transaction using Subscan API (Westend Testnet)
+   * Validate Polkadot transaction using Subscan API (Mainnet)
    */
   async validatePolkadotTransaction(
     txHash: string,
     expectedTo: string,
     minAmount: number,
-    maxAmount: number
+    maxAmount: number,
   ): Promise<boolean> {
     const apiKey = process.env.SUBSCAN_API_KEY;
     if (!apiKey) {
       throw new Error("Subscan API key not configured");
     }
 
-    // Using Polkadot Westend testnet
-    const url = "https://westend.api.subscan.io/api/scan/extrinsic";
+    // Using Polkadot mainnet
+    const url = "https://polkadot.api.subscan.io/api/scan/extrinsic";
 
     try {
       const response = await axios.post<SubscanResponse>(
@@ -518,7 +518,7 @@ export class BlockchainValidator {
             "Content-Type": "application/json",
             "X-API-Key": apiKey,
           },
-        }
+        },
       );
 
       const data = response.data;
@@ -538,14 +538,14 @@ export class BlockchainValidator {
             try {
               const params: SubscanEventParam[] = JSON.parse(event.params);
               const toParam = params.find(
-                (p) => p.name === "to" || p.type === "AccountId"
+                (p) => p.name === "to" || p.type === "AccountId",
               );
               const valueParam = params.find(
-                (p) => p.name === "value" || p.type === "Balance"
+                (p) => p.name === "value" || p.type === "Balance",
               );
 
               if (toParam && valueParam && toParam.value === expectedTo) {
-                totalAmount += parseFloat(valueParam.value) / 1e12; // Convert from Planck to WND (Westend)
+                totalAmount += parseFloat(valueParam.value) / 1e10; // Convert from Planck to DOT (Mainnet)
               }
             } catch (parseError) {
               console.error("Error parsing Polkadot event params:", parseError);
@@ -556,7 +556,7 @@ export class BlockchainValidator {
       }
 
       console.log(
-        `   Polkadot Westend TX: ${totalAmount} WND to ${expectedTo}`
+        `   Polkadot Mainnet TX: ${totalAmount} DOT to ${expectedTo}`,
       );
 
       return totalAmount >= minAmount && totalAmount <= maxAmount;
@@ -567,17 +567,17 @@ export class BlockchainValidator {
   }
 
   /**
-   * Validate Starknet transaction using Starknet API (Goerli Testnet)
+   * Validate Starknet transaction using Starknet API (Mainnet)
    */
   async validateStarknetTransaction(
     txHash: string,
     expectedTo: string,
     minAmount: number,
-    maxAmount: number
+    maxAmount: number,
   ): Promise<boolean> {
     const rpcEndpoints = [
-      "https://starknet-sepolia-rpc.publicnode.com",
-      "https://starknet-sepolia.drpc.org",
+      "https://starknet-mainnet.public.blastapi.io",
+      "https://free-rpc.nethermind.io/mainnet-juno",
       "https://rpc.starknet.lava.build",
     ];
 
@@ -588,7 +588,7 @@ export class BlockchainValidator {
         console.log(`🔍 [STRK] Trying: ${endpoint.split("/")[2]}`);
         console.log(`   TX: ${txHash}`);
         console.log(
-          `   Expected: ${minAmount}-${maxAmount} STRK to ${expectedTo}`
+          `   Expected: ${minAmount}-${maxAmount} STRK to ${expectedTo}`,
         );
 
         const response = await axios.post<StarkNetResponse>(
@@ -605,7 +605,7 @@ export class BlockchainValidator {
               "Content-Type": "application/json",
               Accept: "application/json",
             },
-          }
+          },
         );
 
         const data: StarkNetResponse = response.data;
@@ -627,7 +627,7 @@ export class BlockchainValidator {
 
         console.log(`   ✅ Transaction found:`);
         console.log(
-          `      - Status: ${receipt.finality_status || receipt.status}`
+          `      - Status: ${receipt.finality_status || receipt.status}`,
         );
         console.log(`      - Type: ${receipt.type}`);
         console.log(`      - Events: ${receipt.events?.length || 0}`);
@@ -640,7 +640,7 @@ export class BlockchainValidator {
           console.error(
             `   ❌ Transaction not finalized: ${
               receipt.finality_status || receipt.status
-            }`
+            }`,
           );
           return false;
         }
@@ -671,7 +671,7 @@ export class BlockchainValidator {
                 .toLowerCase();
 
               console.log(
-                `      Normalized: ${normalizedTo} vs ${normalizedExpected}`
+                `      Normalized: ${normalizedTo} vs ${normalizedExpected}`,
               );
 
               if (normalizedTo === normalizedExpected) {
@@ -680,7 +680,7 @@ export class BlockchainValidator {
                 totalAmount += amountDecimal;
                 foundTransfer = true;
                 console.log(
-                  `      ✅ VALID TRANSFER: ${amountDecimal} STRK to ${to}`
+                  `      ✅ VALID TRANSFER: ${amountDecimal} STRK to ${to}`,
                 );
               }
             }
@@ -690,7 +690,7 @@ export class BlockchainValidator {
         if (foundTransfer) {
           const isValid = totalAmount >= minAmount && totalAmount <= maxAmount;
           console.log(
-            `📊 [STRK] Summary: ${totalAmount} STRK to ${expectedTo}`
+            `📊 [STRK] Summary: ${totalAmount} STRK to ${expectedTo}`,
           );
           console.log(`   - Expected range: ${minAmount}-${maxAmount} STRK`);
           console.log(`   - Validation: ${isValid ? "SUCCESS" : "FAILED"}`);
@@ -704,7 +704,7 @@ export class BlockchainValidator {
 
         if (error.response?.status === 403) {
           console.warn(
-            `   ❌ Endpoint blocked (403): ${endpoint.split("/")[2]}`
+            `   ❌ Endpoint blocked (403): ${endpoint.split("/")[2]}`,
           );
         } else if (error.response?.status === 400) {
           console.warn(`   ❌ Bad request (400): ${endpoint.split("/")[2]}`);
@@ -718,33 +718,32 @@ export class BlockchainValidator {
     }
 
     console.error(
-      `❌ [STRK] All RPC endpoints failed. Last error: ${lastError}`
+      `❌ [STRK] All RPC endpoints failed. Last error: ${lastError}`,
     );
     return false;
   }
 
   /**
-   * Validate USDT ERC-20 transaction using Etherscan (Goerli Testnet)
+   * Validate USDT ERC-20 transaction using Etherscan (Mainnet)
    */
   async validateUsdtTransaction(
     txHash: string,
     expectedTo: string,
     minAmount: number,
-    maxAmount: number
+    maxAmount: number,
   ): Promise<boolean> {
     const apiKey = process.env.ETHERSCAN_API_KEY;
     if (!apiKey) {
       throw new Error("Etherscan API key not configured");
     }
 
-    // USDT contract address on Ethereum Goerli testnet
-    // Note: You may need to deploy your own test USDT contract on Goerli
+    // USDT contract address on Ethereum Mainnet
     const usdtContract =
-      process.env.USDT_TESTNET_CONTRACT ||
-      "0x509Ee0d083DdF8AC028f2a56731412edD63223B9";
+      process.env.USDT_MAINNET_CONTRACT ||
+      "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
-    // Using Goerli testnet
-    const url = `https://api-goerli.etherscan.io/api?module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${apiKey}`;
+    // Using Ethereum mainnet
+    const url = `https://api.etherscan.io/api?module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${apiKey}`;
 
     try {
       const response = await axios.get<EthereumTransactionReceipt>(url);
@@ -778,7 +777,7 @@ export class BlockchainValidator {
         }
       }
 
-      console.log(`   USDT Testnet TX: ${totalAmount} USDT to ${expectedTo}`);
+      console.log(`   USDT Mainnet TX: ${totalAmount} USDT to ${expectedTo}`);
 
       return totalAmount >= minAmount && totalAmount <= maxAmount;
     } catch (error) {

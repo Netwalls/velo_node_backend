@@ -27,6 +27,7 @@ import moonpayRoute from "./routes/moonpayRoute";
 import airtimeRoutes from "./routes/airtime";
 import dataRoutes from "./routes/data";
 import electricityRoutes from "./routes/electricity";
+import beneficiaryRoute from "./routes/beneficiaryRoute";
 // Changelly routes are currently implemented in `src/routes/changellyRoute.ts` but
 // that file has its exports commented out while the feature is in progress.
 // Do not import controllers as routers — mount the routes file when it's ready.
@@ -103,6 +104,7 @@ app.use("/", publicRoute);
 app.use("/airtime", airtimeRoutes);
 app.use("/data", dataRoutes);
 app.use("/electricity", electricityRoutes);
+app.use("/beneficiary", beneficiaryRoute);
 
 connectDB().then(() => {
   app.listen(PORT, () => {

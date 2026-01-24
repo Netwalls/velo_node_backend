@@ -1354,12 +1354,12 @@ export class AuthController {
       // Get wallet addresses for each employee
       const employeesWithWallets = await Promise.all(
         employees.map(async (employee) => {
-          // Get primary wallet address (using ETH mainnet as primary)
+          // Get Solana wallet address (using testnet for devnet)
           const walletAddress = await addressRepository.findOne({
             where: {
               userId: employee.id,
-              chain: ChainType.ETHEREUM,
-              network: NetworkType.MAINNET,
+              chain: ChainType.SOLANA,
+              network: NetworkType.TESTNET, // Solana devnet
             },
           });
 
@@ -1384,6 +1384,98 @@ export class AuthController {
       });
     } catch (error) {
       console.error("Get company employees error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+
+  /**
+   * Update employee details (position and salary).
+   * Only accessible by company owners for their employees.
+   */
+  static async updateEmployee(
+    req: AuthRequest,
+    res: Response,
+  ): Promise<void> {
+    try {
+      if (!req.user || !req.user.id) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      const { employeeId } = req.params;
+      const { position, salary } = req.body;
+
+      if (!employeeId || typeof employeeId !== 'string') {
+        res.status(400).json({ error: "Invalid employee ID" });
+        return;
+      }
+
+      const userRepository = AppDataSource.getRepository(User);
+
+      // Get the authenticated company user
+      const authUser = await userRepository.findOne({
+        where: { id: req.user.id },
+        relations: ["company"],
+      });
+
+      if (!authUser) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+
+      // Check if user is a company owner
+      if (authUser.userType !== UserType.COMPANY) {
+        res.status(403).json({
+          error: "Access denied. Only company owners can update employees.",
+        });
+        return;
+      }
+
+      if (!authUser.company || !authUser.company.id) {
+        res.status(404).json({ error: "Company not found" });
+        return;
+      }
+
+      // Get the employee to update
+      const employee = await userRepository.findOne({
+        where: {
+          id: employeeId,
+          companyId: authUser.company.id,
+          userType: UserType.EMPLOYEE,
+        },
+      });
+
+      if (!employee) {
+        res.status(404).json({
+          error: "Employee not found or does not belong to your company",
+        });
+        return;
+      }
+
+      // Update employee details
+      if (position !== undefined) {
+        employee.position = position;
+      }
+      if (salary !== undefined) {
+        employee.salary = parseFloat(salary);
+      }
+
+      await userRepository.save(employee);
+
+      res.json({
+        message: "Employee updated successfully",
+        employee: {
+          id: employee.id,
+          email: employee.email,
+          name:
+            `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+            "N/A",
+          position: employee.position,
+          salary: employee.salary,
+        },
+      });
+    } catch (error) {
+      console.error("Update employee error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }

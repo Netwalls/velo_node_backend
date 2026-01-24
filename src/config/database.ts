@@ -4,6 +4,7 @@ dotenv.config();
 import { DataSource } from "typeorm";
 import { User } from "../entities/User";
 import { Company } from "../entities/Company";
+import { Employee } from "../entities/Employee";
 import { UserAddress } from "../entities/UserAddress";
 import { KYCDocument } from "../entities/KYCDocument";
 import { RefreshToken } from "../entities/RefreshToken";
@@ -30,6 +31,7 @@ export const AppDataSource = new DataSource({
   entities: [
     User,
     Company,
+    Employee,
     UserAddress,
     KYCDocument,
     RefreshToken,

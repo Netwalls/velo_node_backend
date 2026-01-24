@@ -73,6 +73,13 @@ router.get(
   AuthController.getCompanyEmployees,
 );
 
+// Update employee details (only for company owners)
+router.put(
+  "/company/employees/:employeeId",
+  authMiddleware,
+  AuthController.updateEmployee,
+);
+
 // Delete user by ID (expects :id param)
 router.delete(
   "/delete-user/:id",
