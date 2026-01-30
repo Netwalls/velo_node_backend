@@ -1,11 +1,20 @@
-import { UserAddress } from './UserAddress';
-import { KYCDocument } from './KYCDocument';
-import { RefreshToken } from './RefreshToken';
-import { KYCStatus } from '../types';
+import { UserAddress } from "./UserAddress";
+import { KYCDocument } from "./KYCDocument";
+import { RefreshToken } from "./RefreshToken";
+import { Company } from "./Company";
+import { KYCStatus } from "../types";
+export declare enum UserType {
+    COMPANY = "company",
+    EMPLOYEE = "employee",
+    INDIVIDUAL = "individual"
+}
 export declare class User {
     id: string | undefined;
     email: string;
     password: string;
+    userType: UserType;
+    company?: Company;
+    companyId?: string;
     firstName?: string;
     lastName?: string;
     phoneNumber?: string;
@@ -14,6 +23,8 @@ export declare class User {
     bankName?: string;
     accountNumber?: string;
     accountName?: string;
+    position?: string;
+    salary?: number;
     isEmailVerified: boolean;
     usdtBalance: number;
     ethBalance: number;

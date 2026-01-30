@@ -21,8 +21,8 @@ function getEnv(key, fallback = "") {
     return process.env[key] || fallback;
 }
 // Support both legacy and new environment variable names
-const USERID = "CK101265322";
-const APIKEY = "BI4HSJA5821F0N95B85F52L329551U5OMGDQ2C70EW81GCRLFD84678KGR252LAO";
+const USERID = process.env.CLUB_KONNECT_ID || "CK101265516";
+const APIKEY = process.env.CLUB_KONNECT_APIKEY || process.env.NELLOBYTES_APIKEY || "";
 const CALLBACK = process.env.NELLOBYTES_CALLBACK_URL ||
     process.env.CLUB_KONNECT_CALLBACK_URL ||
     "";

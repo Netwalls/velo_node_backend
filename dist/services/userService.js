@@ -5,12 +5,19 @@ exports.saveUserAddresses = saveUserAddresses;
 const database_1 = require("../config/database");
 const User_1 = require("../entities/User");
 const UserAddress_1 = require("../entities/UserAddress");
-async function createUserIfNotExists(email, password) {
+async function createUserIfNotExists(email, password, userType = User_1.UserType.INDIVIDUAL, companyId, emailOTP, emailOTPExpiry) {
     const userRepository = database_1.AppDataSource.getRepository(User_1.User);
     const existingUser = await userRepository.findOne({ where: { email } });
     if (existingUser)
         return null;
-    const user = userRepository.create({ email, password });
+    const user = userRepository.create({
+        email,
+        password,
+        userType,
+        companyId,
+        emailOTP,
+        emailOTPExpiry
+    });
     await userRepository.save(user);
     return user;
 }

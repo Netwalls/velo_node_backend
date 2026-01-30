@@ -8,6 +8,8 @@ const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const typeorm_1 = require("typeorm");
 const User_1 = require("../entities/User");
+const Company_1 = require("../entities/Company");
+const Employee_1 = require("../entities/Employee");
 const UserAddress_1 = require("../entities/UserAddress");
 const KYCDocument_1 = require("../entities/KYCDocument");
 const RefreshToken_1 = require("../entities/RefreshToken");
@@ -26,12 +28,14 @@ const DataPurchase_1 = require("../entities/DataPurchase");
 const ElectricityPurchase_1 = require("../entities/ElectricityPurchase");
 const FiatTransaction_1 = require("../entities/FiatTransaction");
 exports.AppDataSource = new typeorm_1.DataSource({
-    type: 'postgres',
+    type: "postgres",
     url: process.env.DATABASE_URL,
-    synchronize: process.env.NODE_ENV === 'development',
-    logging: ['error'],
+    synchronize: process.env.NODE_ENV === "development",
+    logging: ["error"],
     entities: [
         User_1.User,
+        Company_1.Company,
+        Employee_1.Employee,
         UserAddress_1.UserAddress,
         KYCDocument_1.KYCDocument,
         RefreshToken_1.RefreshToken,
@@ -50,20 +54,20 @@ exports.AppDataSource = new typeorm_1.DataSource({
         ElectricityPurchase_1.ElectricityPurchase,
         FiatTransaction_1.FiatTransaction,
     ],
-    migrations: ['src/migrations/*.ts'],
-    subscribers: ['src/subscribers/*.ts'],
+    migrations: ["src/migrations/*.ts"],
+    subscribers: ["src/subscribers/*.ts"],
     // ssl: { rejectUnauthorized: false },
 });
 const connectDB = async () => {
     try {
         await exports.AppDataSource.initialize();
-        console.log('PostgreSQL Connected successfully');
+        console.log("PostgreSQL Connected successfully");
         // Debug: Check if AirtimePurchase is registered
         const entityNames = exports.AppDataSource.entityMetadatas.map((meta) => meta.name);
         // console.log('Registered entities:', entityNames);
     }
     catch (error) {
-        console.error('Database connection failed:', error);
+        console.error("Database connection failed:", error);
         process.exit(1);
     }
 };

@@ -59,7 +59,7 @@ class UserController {
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const user = await userRepository.findOne({
                 where: { id: typeof userId === 'string' ? userId : userId[0] },
-                relations: ['addresses', 'kycDocument'],
+                relations: ['addresses', 'kycDocument', 'company'],
             });
             if (!user) {
                 res.status(404).json({ error: 'User not found' });
@@ -75,6 +75,9 @@ class UserController {
                     username: user.username,
                     displayPicture: user.displayPicture,
                     isEmailVerified: user.isEmailVerified,
+                    role: user.userType,
+                    companyCode: user.company?.companyCode,
+                    companyName: user.company?.companyName,
                     hasTransactionPin: !!user.transactionPin,
                     kycStatus: user.kycStatus,
                     kyc: user.kycDocument,
@@ -103,7 +106,7 @@ class UserController {
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const user = await userRepository.findOne({
                 where: { id: req.user.id },
-                relations: ['addresses', 'kycDocument'],
+                relations: ['addresses', 'kycDocument', 'company'],
             });
             if (!user) {
                 res.status(404).json({ error: 'User not found' });
@@ -119,6 +122,9 @@ class UserController {
                     username: user.username,
                     displayPicture: user.displayPicture,
                     isEmailVerified: user.isEmailVerified,
+                    role: user.userType,
+                    companyCode: user.company?.companyCode,
+                    companyName: user.company?.companyName,
                     hasTransactionPin: !!user.transactionPin,
                     kycStatus: user.kycStatus,
                     kyc: user.kycDocument,

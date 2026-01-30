@@ -8,7 +8,7 @@ export class BeneficiaryController {
    */
   static async createBeneficiary(
     req: AuthRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       if (!req.user?.id) {
@@ -18,7 +18,13 @@ export class BeneficiaryController {
 
       const { name, description, chain, network, recipients } = req.body;
 
-      if (!name || !chain || !network || !recipients || !Array.isArray(recipients)) {
+      if (
+        !name ||
+        !chain ||
+        !network ||
+        !recipients ||
+        !Array.isArray(recipients)
+      ) {
         res.status(400).json({
           error: "Missing required fields: name, chain, network, recipients",
         });
@@ -31,7 +37,7 @@ export class BeneficiaryController {
         recipients,
         chain,
         network,
-        description
+        description,
       );
 
       res.status(201).json({
@@ -49,7 +55,7 @@ export class BeneficiaryController {
    */
   static async getBeneficiaries(
     req: AuthRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       if (!req.user?.id) {
@@ -58,7 +64,7 @@ export class BeneficiaryController {
       }
 
       const beneficiaries = await BeneficiaryService.getBeneficiaries(
-        req.user.id
+        req.user.id,
       );
 
       res.json({
@@ -74,20 +80,18 @@ export class BeneficiaryController {
   /**
    * Get a single beneficiary by ID
    */
-  static async getBeneficiary(
-    req: AuthRequest,
-    res: Response
-  ): Promise<void> {
+  static async getBeneficiary(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.user?.id) {
         res.status(401).json({ error: "Unauthorized" });
         return;
       }
 
-      const { id } = req.params;
+      let { id } = req.params;
+      if (Array.isArray(id)) id = id[0];
       const beneficiary = await BeneficiaryService.getBeneficiary(
         id,
-        req.user.id
+        req.user.id,
       );
 
       if (!beneficiary) {
@@ -107,7 +111,7 @@ export class BeneficiaryController {
    */
   static async updateBeneficiary(
     req: AuthRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       if (!req.user?.id) {
@@ -115,13 +119,14 @@ export class BeneficiaryController {
         return;
       }
 
-      const { id } = req.params;
+      let { id } = req.params;
+      if (Array.isArray(id)) id = id[0];
       const { name, description, recipients } = req.body;
 
       const beneficiary = await BeneficiaryService.updateBeneficiary(
         id,
         req.user.id,
-        { name, description, recipients }
+        { name, description, recipients },
       );
 
       if (!beneficiary) {
@@ -144,7 +149,7 @@ export class BeneficiaryController {
    */
   static async deleteBeneficiary(
     req: AuthRequest,
-    res: Response
+    res: Response,
   ): Promise<void> {
     try {
       if (!req.user?.id) {
@@ -152,10 +157,11 @@ export class BeneficiaryController {
         return;
       }
 
-      const { id } = req.params;
+      let { id } = req.params;
+      if (Array.isArray(id)) id = id[0];
       const deleted = await BeneficiaryService.deleteBeneficiary(
         id,
-        req.user.id
+        req.user.id,
       );
 
       if (!deleted) {

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const database_1 = require("../config/database");
 const User_1 = require("../entities/User");
+const Company_1 = require("../entities/Company");
 const RefreshToken_1 = require("../entities/RefreshToken");
 const jwt_1 = require("../utils/jwt");
 const otp_1 = require("../utils/otp");
@@ -36,7 +37,9 @@ class AuthController {
                 return;
             }
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
-            const user = await userRepository.findOne({ where: { id: typeof id === 'string' ? id : id[0] } });
+            const user = await userRepository.findOne({
+                where: { id: typeof id === "string" ? id : id[0] },
+            });
             if (!user) {
                 res.status(404).json({ error: "User not found" });
                 return;
@@ -61,14 +64,60 @@ class AuthController {
      */
     static async register(req, res) {
         try {
-            const { email, password } = req.body;
-            // Create user if not exists
-            const user = await (0, userService_1.createUserIfNotExists)(email, password);
+            const { email, password, userType, companyName, companyCode } = req.body;
+            // Generate OTP early to ensure it's saved with the user
+            const otp = (0, otp_1.generateOTP)();
+            const otpExpiry = (0, otp_1.getOTPExpiry)();
+            let targetUserType = User_1.UserType.INDIVIDUAL;
+            let companyId;
+            console.log(`[DEBUG] Registration started for: ${email}, type: ${userType}`);
+            let companyCodeValue;
+            if (userType === "company") {
+                if (!companyName) {
+                    res.status(400).json({ error: "Company name is required" });
+                    return;
+                }
+                targetUserType = User_1.UserType.COMPANY;
+                // Create the company
+                console.log(`[DEBUG] Creating company: ${companyName}`);
+                const companyRepo = database_1.AppDataSource.getRepository(Company_1.Company);
+                const company = companyRepo.create({
+                    companyName,
+                    companyEmail: email, // Default to user email
+                });
+                await companyRepo.save(company);
+                companyId = company.id;
+                companyCodeValue = company.companyCode;
+                console.log(`[DEBUG] Company created with ID: ${companyId}, Code: ${company.companyCode}`);
+            }
+            else if (userType === "employee") {
+                if (!companyCode) {
+                    res.status(400).json({ error: "Company code is required" });
+                    return;
+                }
+                targetUserType = User_1.UserType.EMPLOYEE;
+                // Find the company by code
+                console.log(`[DEBUG] Finding company for code: ${companyCode}`);
+                const companyRepo = database_1.AppDataSource.getRepository(Company_1.Company);
+                const company = await companyRepo.findOne({ where: { companyCode } });
+                if (!company) {
+                    res.status(404).json({ error: "Invalid company code" });
+                    return;
+                }
+                companyId = company.id;
+                console.log(`[DEBUG] Found company: ${company.companyName} with ID: ${companyId}`);
+            }
+            // Create user if not exists with OTP pre-populated
+            console.log(`[DEBUG] Creating user: ${email}`);
+            const user = await (0, userService_1.createUserIfNotExists)(email, password, targetUserType, companyId, otp, otpExpiry);
             if (!user) {
+                console.log(`[DEBUG] Registration failed: User ${email} already exists`);
                 res.status(409).json({ error: "User already exists" });
                 return;
             }
+            console.log(`[DEBUG] User created with ID: ${user.id}, OTP: ${otp}`);
             // Generate all wallets directly
+            console.log(`[DEBUG] Generating wallets for: ${user.id}`);
             const eth = (0, keygen_1.generateEthWallet)();
             const btc = (0, keygen_1.generateBtcWallet)();
             const sol = (0, keygen_1.generateSolWallet)();
@@ -80,7 +129,7 @@ class AuthController {
             // and generate separate Tron addresses for USDT-TRC20
             const tron = (0, keygen_1.generateEthWallet)(); // Tron uses similar address generation
             // Prepare addresses array for saving and response
-            const addresses = [
+            const fullAddresses = [
                 {
                     chain: "ethereum",
                     network: "mainnet",
@@ -204,8 +253,9 @@ class AuthController {
                 },
             ];
             // Save all generated addresses to the database directly
+            console.log(`[DEBUG] Saving ${fullAddresses.length} addresses for user: ${user.id}`);
             const addressRepo = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
-            for (const addr of addresses) {
+            for (const addr of fullAddresses) {
                 try {
                     await addressRepo.save({
                         ...addr,
@@ -220,14 +270,21 @@ class AuthController {
                     });
                 }
                 catch (err) {
-                    console.error("[DEBUG] Failed to save address:", { ...addr, userId: user.id }, err);
+                    console.error(`[DEBUG] Failed to save address ${addr.chain}:`, err);
                 }
             }
             // Generate and save OTP for email verification
-            const otp = (0, otp_1.generateOTP)();
-            user.emailOTP = otp;
-            user.emailOTPExpiry = (0, otp_1.getOTPExpiry)();
-            await database_1.AppDataSource.getRepository(User_1.User).save(user);
+            // OTP is now generated and saved with the user during createUserIfNotExists
+            // const otp = generateOTP();
+            // user.emailOTP = otp;
+            // user.emailOTPExpiry = getOTPExpiry();
+            // await AppDataSource.getRepository(User).save(user);
+            console.log(`\n========================================`);
+            console.log(`📧 REGISTRATION OTP`);
+            console.log(`Email: ${email}`);
+            console.log(`OTP Code: ${otp}`);
+            console.log(`Expires: ${otpExpiry.toISOString()}`);
+            console.log(`========================================\n`);
             // Send registration verification email and OTP
             await (0, emailService_1.sendRegistrationEmails)(email, otp);
             // Create registration notification
@@ -236,7 +293,7 @@ class AuthController {
                     await notificationService_1.NotificationService.notifyRegistration(user.id, {
                         email,
                         registrationDate: new Date(),
-                        addressCount: addresses.length,
+                        addressCount: fullAddresses.length,
                     });
                     console.log("[DEBUG] Registration notification created for user:", user.id);
                 }
@@ -246,7 +303,7 @@ class AuthController {
                 // Don't fail registration if notification fails
             }
             // Return user profile with addresses (no private keys)
-            const userAddresses = addresses.map((a) => ({
+            const userAddresses = fullAddresses.map((a) => ({
                 chain: AuthController.mapChainName(a.chain),
                 network: a.network,
                 address: a.address,
@@ -258,6 +315,9 @@ class AuthController {
             res.status(201).json({
                 message: "User registered successfully. Please verify your email.",
                 userId: user.id,
+                role: targetUserType,
+                companyName: companyName, // Added this
+                companyCode: companyCodeValue,
                 addresses: sortedAddresses,
             });
         }
@@ -279,8 +339,11 @@ class AuthController {
             const { email, password } = req.body;
             const userRepository = database_1.AppDataSource.getRepository(User_1.User);
             const refreshTokenRepository = database_1.AppDataSource.getRepository(RefreshToken_1.RefreshToken);
-            // Find user by email
-            const user = await userRepository.findOne({ where: { email } });
+            // Find user by email with company details
+            const user = await userRepository.findOne({
+                where: { email },
+                relations: ["company"],
+            });
             if (!user) {
                 res.status(401).json({ error: "Invalid credentials" });
                 return;
@@ -322,6 +385,17 @@ class AuthController {
                     email: user.email,
                     firstName: user.firstName,
                     lastName: user.lastName,
+                    role: user.userType,
+                    position: user.position,
+                    salary: user.salary,
+                    company: user.company
+                        ? {
+                            id: user.company.id,
+                            name: user.company.companyName,
+                            code: user.company.companyCode,
+                            email: user.company.companyEmail,
+                        }
+                        : null,
                     isEmailVerified: user.isEmailVerified,
                     hasTransactionPin: !!user.transactionPin,
                 },
@@ -901,6 +975,7 @@ class AuthController {
                         email: userEmail,
                         firstName: user.firstName,
                         lastName: user.lastName,
+                        role: user.userType,
                         isEmailVerified: user.isEmailVerified,
                     },
                 });
@@ -1067,6 +1142,155 @@ class AuthController {
         }
     }
     /**
+     * Get all employees for a company.
+     * Only accessible by company owners.
+     * Returns employee id, name, wallet address, position, and salary.
+     */
+    static async getCompanyEmployees(req, res) {
+        try {
+            if (!req.user || !req.user.id) {
+                res.status(401).json({ error: "Unauthorized" });
+                return;
+            }
+            const userRepository = database_1.AppDataSource.getRepository(User_1.User);
+            const addressRepository = database_1.AppDataSource.getRepository(UserAddress_1.UserAddress);
+            // Get the authenticated user with company relation
+            const authUser = await userRepository.findOne({
+                where: { id: req.user.id },
+                relations: ["company"],
+            });
+            if (!authUser) {
+                res.status(404).json({ error: "User not found" });
+                return;
+            }
+            // Check if user is a company owner
+            if (authUser.userType !== User_1.UserType.COMPANY) {
+                res.status(403).json({
+                    error: "Access denied. Only company owners can view employees.",
+                });
+                return;
+            }
+            if (!authUser.company || !authUser.company.id) {
+                res.status(404).json({ error: "Company not found" });
+                return;
+            }
+            // Get all employees for this company
+            const employees = await userRepository.find({
+                where: {
+                    companyId: authUser.company.id,
+                    userType: User_1.UserType.EMPLOYEE,
+                },
+                select: ["id", "email", "firstName", "lastName", "position", "salary"],
+            });
+            // Get wallet addresses for each employee
+            const employeesWithWallets = await Promise.all(employees.map(async (employee) => {
+                // Get Solana wallet address (using testnet for devnet)
+                const walletAddress = await addressRepository.findOne({
+                    where: {
+                        userId: employee.id,
+                        chain: types_2.ChainType.SOLANA,
+                        network: types_1.NetworkType.TESTNET, // Solana devnet
+                    },
+                });
+                return {
+                    id: employee.id,
+                    email: employee.email,
+                    name: `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+                        "N/A",
+                    walletAddress: walletAddress?.address || "Not available",
+                    position: employee.position || "Not set",
+                    salary: employee.salary || 0,
+                };
+            }));
+            res.json({
+                message: "Employees retrieved successfully",
+                companyName: authUser.company.companyName,
+                totalEmployees: employeesWithWallets.length,
+                employees: employeesWithWallets,
+            });
+        }
+        catch (error) {
+            console.error("Get company employees error:", error);
+            res.status(500).json({ error: "Internal server error" });
+        }
+    }
+    /**
+     * Update employee details (position and salary).
+     * Only accessible by company owners for their employees.
+     */
+    static async updateEmployee(req, res) {
+        try {
+            if (!req.user || !req.user.id) {
+                res.status(401).json({ error: "Unauthorized" });
+                return;
+            }
+            const { employeeId } = req.params;
+            const { position, salary } = req.body;
+            if (!employeeId || typeof employeeId !== 'string') {
+                res.status(400).json({ error: "Invalid employee ID" });
+                return;
+            }
+            const userRepository = database_1.AppDataSource.getRepository(User_1.User);
+            // Get the authenticated company user
+            const authUser = await userRepository.findOne({
+                where: { id: req.user.id },
+                relations: ["company"],
+            });
+            if (!authUser) {
+                res.status(404).json({ error: "User not found" });
+                return;
+            }
+            // Check if user is a company owner
+            if (authUser.userType !== User_1.UserType.COMPANY) {
+                res.status(403).json({
+                    error: "Access denied. Only company owners can update employees.",
+                });
+                return;
+            }
+            if (!authUser.company || !authUser.company.id) {
+                res.status(404).json({ error: "Company not found" });
+                return;
+            }
+            // Get the employee to update
+            const employee = await userRepository.findOne({
+                where: {
+                    id: employeeId,
+                    companyId: authUser.company.id,
+                    userType: User_1.UserType.EMPLOYEE,
+                },
+            });
+            if (!employee) {
+                res.status(404).json({
+                    error: "Employee not found or does not belong to your company",
+                });
+                return;
+            }
+            // Update employee details
+            if (position !== undefined) {
+                employee.position = position;
+            }
+            if (salary !== undefined) {
+                employee.salary = parseFloat(salary);
+            }
+            await userRepository.save(employee);
+            res.json({
+                message: "Employee updated successfully",
+                employee: {
+                    id: employee.id,
+                    email: employee.email,
+                    name: `${employee.firstName || ""} ${employee.lastName || ""}`.trim() ||
+                        "N/A",
+                    position: employee.position,
+                    salary: employee.salary,
+                },
+            });
+        }
+        catch (error) {
+            console.error("Update employee error:", error);
+            res.status(500).json({ error: "Internal server error" });
+        }
+    }
+    /**
      * Initiate forgot password process
      * - Validates email exists
      * - Generates secure reset token
@@ -1164,7 +1388,9 @@ class AuthController {
             console.log("Token matches:", user.passwordResetToken === token);
             console.log("Token exists:", !!user.passwordResetToken);
             console.log("Expiry exists:", !!user.passwordResetExpiry);
-            console.log("Is expired:", user.passwordResetExpiry ? new Date() > user.passwordResetExpiry : "N/A");
+            console.log("Is expired:", user.passwordResetExpiry
+                ? new Date() > user.passwordResetExpiry
+                : "N/A");
             console.log("===============================================");
             // Check if token matches and hasn't expired
             if (user.passwordResetToken !== token ||
@@ -1235,7 +1461,9 @@ class AuthController {
             console.log("Token matches:", user.passwordResetToken === token);
             console.log("Token exists:", !!user.passwordResetToken);
             console.log("Expiry exists:", !!user.passwordResetExpiry);
-            console.log("Is expired:", user.passwordResetExpiry ? new Date() > user.passwordResetExpiry : "N/A");
+            console.log("Is expired:", user.passwordResetExpiry
+                ? new Date() > user.passwordResetExpiry
+                : "N/A");
             console.log("=============================");
             // Check if token matches and hasn't expired
             if (user.passwordResetToken !== token ||

@@ -78,6 +78,17 @@ export declare class AuthController {
      */
     static logoutAll(req: AuthRequest, res: Response): Promise<void>;
     /**
+     * Get all employees for a company.
+     * Only accessible by company owners.
+     * Returns employee id, name, wallet address, position, and salary.
+     */
+    static getCompanyEmployees(req: AuthRequest, res: Response): Promise<void>;
+    /**
+     * Update employee details (position and salary).
+     * Only accessible by company owners for their employees.
+     */
+    static updateEmployee(req: AuthRequest, res: Response): Promise<void>;
+    /**
      * Initiate forgot password process
      * - Validates email exists
      * - Generates secure reset token
