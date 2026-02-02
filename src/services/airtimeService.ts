@@ -48,10 +48,10 @@ export class AirtimeService {
     purchaseData: {
       type: "airtime";
       amount: number;
-      chain: Blockchain;
+      chain?: Blockchain;  // Optional for fiat payments
       phoneNumber: string;
       mobileNetwork: MobileNetwork;
-      transactionHash: string;
+      transactionHash?: string;  // Optional for fiat payments
     }
   ) {
     console.log(
@@ -65,59 +65,71 @@ export class AirtimeService {
       // 1. Validate inputs
       this.validatePurchaseData(purchaseData);
 
-      // 2. Check transaction hash uniqueness (only checks COMPLETED purchases)
-      await checkTransactionHashUniqueness(purchaseData.transactionHash);
+      const isCryptoPayment = !!purchaseData.chain && !!purchaseData.transactionHash;
+      let expectedCryptoAmount = 0;
+      let receivingWallet = '';
 
-      // 3. Convert fiat to crypto
-      const expectedCryptoAmount = await convertFiatToCrypto(
-        purchaseData.amount,
-        purchaseData.chain
-      );
+      if (isCryptoPayment) {
+        // 2. Check transaction hash uniqueness (only for crypto payments)
+        await checkTransactionHashUniqueness(purchaseData.transactionHash!);
 
-      // 4. Get receiving wallet
-      const receivingWallet = getBlockchainWallet(purchaseData.chain);
+        // 3. Convert fiat to crypto
+        expectedCryptoAmount = await convertFiatToCrypto(
+          purchaseData.amount,
+          purchaseData.chain!
+        );
 
-      console.log(
-        `💰 Expected: ${expectedCryptoAmount} ${purchaseData.chain} to ${receivingWallet}`
-      );
+        // 4. Get receiving wallet
+        receivingWallet = getBlockchainWallet(purchaseData.chain!);
+
+        console.log(
+          `💰 Expected: ${expectedCryptoAmount} ${purchaseData.chain} to ${receivingWallet}`
+        );
+      } else {
+        console.log(`💵 Processing fiat payment for ${purchaseData.amount} NGN`);
+      }
 
       // 5. Create pending purchase record
       airtimePurchase = new AirtimePurchase();
       airtimePurchase.user_id = userId;
       airtimePurchase.network = purchaseData.mobileNetwork;
-      airtimePurchase.blockchain = purchaseData.chain;
+      airtimePurchase.blockchain = purchaseData.chain || 'fiat';
       airtimePurchase.crypto_amount = expectedCryptoAmount;
-      airtimePurchase.crypto_currency = purchaseData.chain.toUpperCase();
+      airtimePurchase.crypto_currency = purchaseData.chain?.toUpperCase() || 'NGN';
       airtimePurchase.fiat_amount = purchaseData.amount;
       airtimePurchase.phone_number = purchaseData.phoneNumber;
-      airtimePurchase.transaction_hash = purchaseData.transactionHash;
+      airtimePurchase.transaction_hash = purchaseData.transactionHash || undefined;
       airtimePurchase.status = AirtimePurchaseStatus.PROCESSING;
 
       await this.getRepository().save(airtimePurchase);
 
-      // 6. Validate blockchain transaction
-      console.log(
-        `🔍 Validating ${purchaseData.chain} transaction: ${purchaseData.transactionHash}`
-      );
-
-      const isValid = await validateBlockchainTransaction(
-        purchaseData.chain,
-        purchaseData.transactionHash,
-        expectedCryptoAmount,
-        receivingWallet
-      );
-
-      if (!isValid) {
-        await this.markPurchaseFailed(
-          airtimePurchase,
-          "Transaction validation failed"
+      if (isCryptoPayment) {
+        // 6. Validate blockchain transaction (only for crypto payments)
+        console.log(
+          `🔍 Validating ${purchaseData.chain} transaction: ${purchaseData.transactionHash}`
         );
-        throw new Error(
-          "Transaction validation failed. Please check the transaction details."
+
+        const isValid = await validateBlockchainTransaction(
+          purchaseData.chain!,
+          purchaseData.transactionHash!,
+          expectedCryptoAmount,
+          receivingWallet
         );
+
+        if (!isValid) {
+          await this.markPurchaseFailed(
+            airtimePurchase,
+            "Transaction validation failed"
+          );
+          throw new Error(
+            "Transaction validation failed. Please check the transaction details."
+          );
+        }
+
+        console.log(`✅ Transaction validated! Proceeding to airtime delivery...`);
+      } else {
+        console.log(`✅ Fiat payment accepted! Proceeding to airtime delivery...`);
       }
-
-      console.log(`✅ Transaction validated! Proceeding to airtime delivery...`);
 
       // 7. Process airtime with Nellobytes
       const providerResult = await this.processAirtimeWithNellobytes(
@@ -146,19 +158,17 @@ export class AirtimeService {
 
       return {
         success: true,
-        message: `Airtime purchase successful! ${
-          purchaseData.amount
-        } NGN ${purchaseData.mobileNetwork.toUpperCase()} airtime delivered to ${
-          purchaseData.phoneNumber
-        }`,
+        message: `Airtime purchase successful! ${purchaseData.amount
+          } NGN ${purchaseData.mobileNetwork.toUpperCase()} airtime delivered to ${purchaseData.phoneNumber
+          }`,
         data: {
           purchaseId: airtimePurchase.id,
           airtimeAmount: purchaseData.amount,
           network: purchaseData.mobileNetwork,
           phoneNumber: purchaseData.phoneNumber,
           providerReference: providerResult.orderid,
-          cryptoAmount: expectedCryptoAmount,
-          cryptoCurrency: purchaseData.chain.toUpperCase(),
+          cryptoAmount: isCryptoPayment ? expectedCryptoAmount : undefined,
+          cryptoCurrency: isCryptoPayment ? purchaseData.chain!.toUpperCase() : undefined,
           deliveredAt: new Date(),
         },
       };
@@ -253,15 +263,28 @@ export class AirtimeService {
       );
     }
 
-    // Common validation (amount, phone, chain, txHash)
-    validateCommonInputs({
-      phoneNumber,
-      chain,
-      transactionHash,
-      amount,
-      minAmount: SECURITY_CONSTANTS.MIN_AIRTIME_AMOUNT,
-      maxAmount: SECURITY_CONSTANTS.MAX_AIRTIME_AMOUNT,
-    });
+    // For fiat payments, only validate amount and phone number
+    if (!chain && !transactionHash) {
+      // Fiat payment validation
+      if (!phoneNumber || phoneNumber.length < 10) {
+        throw new Error("Invalid phone number");
+      }
+      if (amount < SECURITY_CONSTANTS.MIN_AIRTIME_AMOUNT || amount > SECURITY_CONSTANTS.MAX_AIRTIME_AMOUNT) {
+        throw new Error(
+          `Amount must be between ${SECURITY_CONSTANTS.MIN_AIRTIME_AMOUNT} and ${SECURITY_CONSTANTS.MAX_AIRTIME_AMOUNT} NGN`
+        );
+      }
+    } else {
+      // Crypto payment validation - full validation including blockchain
+      validateCommonInputs({
+        phoneNumber,
+        chain,
+        transactionHash,
+        amount,
+        minAmount: SECURITY_CONSTANTS.MIN_AIRTIME_AMOUNT,
+        maxAmount: SECURITY_CONSTANTS.MAX_AIRTIME_AMOUNT,
+      });
+    }
 
     console.log("✅ Input validation passed");
   }
@@ -352,10 +375,10 @@ export class AirtimeService {
       averagePurchase:
         history.length > 0
           ? history.reduce(
-              (sum, purchase) =>
-                sum + parseFloat(purchase.fiat_amount.toString()),
-              0
-            ) / history.length
+            (sum, purchase) =>
+              sum + parseFloat(purchase.fiat_amount.toString()),
+            0
+          ) / history.length
           : 0,
     };
   }

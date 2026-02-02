@@ -103,10 +103,10 @@ export class DataService {
       type: "data";
       dataplanId: string;
       amount: number;
-      chain: Blockchain;
+      chain?: Blockchain;  // Optional for fiat
       phoneNumber: string;
       mobileNetwork: MobileNetwork;
-      transactionHash: string;
+      transactionHash?: string;  // Optional for fiat
     }
   ) {
     console.log(
@@ -146,60 +146,74 @@ export class DataService {
       this.validatePurchaseData(purchaseData, planAmount);
 
       // 6. Check transaction hash uniqueness (only checks COMPLETED purchases)
-      await checkTransactionHashUniqueness(purchaseData.transactionHash);
+      if (purchaseData.transactionHash) {
+        await checkTransactionHashUniqueness(purchaseData.transactionHash);
+      }
 
-      // 7. Convert fiat to crypto
-      const expectedCryptoAmount = await convertFiatToCrypto(
-        purchaseData.amount,
-        purchaseData.chain
-      );
+      let expectedCryptoAmount = 0;
+      let receivingWallet = '';
+      const isCryptoPayment = !!purchaseData.chain && !!purchaseData.transactionHash;
 
-      // 8. Get receiving wallet
-      const receivingWallet = getBlockchainWallet(purchaseData.chain);
+      if (isCryptoPayment) {
+        // 7. Convert fiat to crypto
+        expectedCryptoAmount = await convertFiatToCrypto(
+          purchaseData.amount,
+          purchaseData.chain!
+        );
 
-      console.log(
-        `💰 Expected: ${expectedCryptoAmount} ${purchaseData.chain} to ${receivingWallet}`
-      );
+        // 8. Get receiving wallet
+        receivingWallet = getBlockchainWallet(purchaseData.chain!);
+
+        console.log(
+          `💰 Expected: ${expectedCryptoAmount} ${purchaseData.chain} to ${receivingWallet}`
+        );
+      } else {
+        console.log(`💵 Processing fiat data purchase for ${purchaseData.amount} NGN`);
+      }
 
       // 9. Create pending purchase record
       dataPurchase = new DataPurchase();
       dataPurchase.user_id = userId;
       dataPurchase.network = purchaseData.mobileNetwork;
-      dataPurchase.blockchain = purchaseData.chain;
+      dataPurchase.blockchain = purchaseData.chain || 'fiat';
       dataPurchase.crypto_amount = expectedCryptoAmount;
-      dataPurchase.crypto_currency = purchaseData.chain.toUpperCase();
+      dataPurchase.crypto_currency = purchaseData.chain?.toUpperCase() || 'NGN';
       dataPurchase.fiat_amount = purchaseData.amount;
       dataPurchase.phone_number = purchaseData.phoneNumber;
-      dataPurchase.transaction_hash = purchaseData.transactionHash;
+      dataPurchase.transaction_hash = purchaseData.transactionHash || undefined;
       dataPurchase.status = DataPurchaseStatus.PROCESSING;
       dataPurchase.plan_name = plan.plan_name;
       dataPurchase.dataplan_id = plan.dataplan_id;
 
       await this.getRepository().save(dataPurchase);
 
-      // 10. Validate blockchain transaction
-      console.log(
-        `🔍 Validating ${purchaseData.chain} transaction: ${purchaseData.transactionHash}`
-      );
-
-      const isValid = await validateBlockchainTransaction(
-        purchaseData.chain,
-        purchaseData.transactionHash,
-        expectedCryptoAmount,
-        receivingWallet
-      );
-
-      if (!isValid) {
-        await this.markPurchaseFailed(
-          dataPurchase,
-          "Transaction validation failed"
+      if (isCryptoPayment) {
+        // 10. Validate blockchain transaction
+        console.log(
+          `🔍 Validating ${purchaseData.chain} transaction: ${purchaseData.transactionHash}`
         );
-        throw new Error(
-          "Transaction validation failed. Please check the transaction details."
+
+        const isValid = await validateBlockchainTransaction(
+          purchaseData.chain!,
+          purchaseData.transactionHash!,
+          expectedCryptoAmount,
+          receivingWallet
         );
+
+        if (!isValid) {
+          await this.markPurchaseFailed(
+            dataPurchase,
+            "Transaction validation failed"
+          );
+          throw new Error(
+            "Transaction validation failed. Please check the transaction details."
+          );
+        }
+
+        console.log(`✅ Transaction validated! Proceeding to data delivery...`);
+      } else {
+        console.log(`✅ Fiat payment accepted! Proceeding to data delivery...`);
       }
-
-      console.log(`✅ Transaction validated! Proceeding to data delivery...`);
 
       // 11. Process data with Nellobytes
       const providerResult = await this.processDataWithNellobytes(dataPurchase);
@@ -240,8 +254,8 @@ export class DataService {
           network: purchaseData.mobileNetwork,
           phoneNumber: purchaseData.phoneNumber,
           providerReference: providerResult.orderid,
-          cryptoAmount: expectedCryptoAmount,
-          cryptoCurrency: purchaseData.chain.toUpperCase(),
+          cryptoAmount: isCryptoPayment ? expectedCryptoAmount : undefined,
+          cryptoCurrency: isCryptoPayment ? purchaseData.chain!.toUpperCase() : undefined,
           deliveredAt: new Date(),
         },
       };
@@ -349,14 +363,27 @@ export class DataService {
     }
 
     // Common validation
-    validateCommonInputs({
-      phoneNumber,
-      chain,
-      transactionHash,
-      amount,
-      minAmount: SECURITY_CONSTANTS.MIN_DATA_AMOUNT,
-      maxAmount: SECURITY_CONSTANTS.MAX_DATA_AMOUNT,
-    });
+    if (!chain && !transactionHash) {
+      // Fiat payment validation
+      if (!phoneNumber || phoneNumber.length < 10) {
+        throw new Error("Invalid phone number");
+      }
+      if (amount < SECURITY_CONSTANTS.MIN_DATA_AMOUNT || amount > SECURITY_CONSTANTS.MAX_DATA_AMOUNT) {
+        throw new Error(
+          `Amount must be between ${SECURITY_CONSTANTS.MIN_DATA_AMOUNT} and ${SECURITY_CONSTANTS.MAX_DATA_AMOUNT} NGN`
+        );
+      }
+    } else {
+      // Crypto payment validation
+      validateCommonInputs({
+        phoneNumber,
+        chain,
+        transactionHash,
+        amount,
+        minAmount: SECURITY_CONSTANTS.MIN_DATA_AMOUNT,
+        maxAmount: SECURITY_CONSTANTS.MAX_DATA_AMOUNT,
+      });
+    }
 
     console.log("✅ Input validation passed");
   }
@@ -469,10 +496,10 @@ export class DataService {
       averagePurchase:
         history.length > 0
           ? history.reduce(
-              (sum, purchase) =>
-                sum + parseFloat(purchase.fiat_amount.toString()),
-              0
-            ) / history.length
+            (sum, purchase) =>
+              sum + parseFloat(purchase.fiat_amount.toString()),
+            0
+          ) / history.length
           : 0,
     };
   }

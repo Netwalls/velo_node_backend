@@ -42,91 +42,91 @@ export class ElectricityService {
   private readonly COMPANY_MAP: {
     [key in ElectricityCompany]: ElectricityCompanyConfig;
   } = {
-    [ElectricityCompany.EKO_ELECTRIC]: {
-      id: "01",
-      name: "Eko Electric - EKEDC (PHCN)",
-      code: "01",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.IKEJA_ELECTRIC]: {
-      id: "02",
-      name: "Ikeja Electric - IKEDC (PHCN)",
-      code: "02",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.ABUJA_ELECTRIC]: {
-      id: "03",
-      name: "Abuja Electric - AEDC",
-      code: "03",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.KANO_ELECTRIC]: {
-      id: "04",
-      name: "Kano Electric - KEDC",
-      code: "04",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.PORTHARCOURT_ELECTRIC]: {
-      id: "05",
-      name: "Portharcourt Electric - PHEDC",
-      code: "05",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.JOS_ELECTRIC]: {
-      id: "06",
-      name: "Jos Electric - JEDC",
-      code: "06",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.IBADAN_ELECTRIC]: {
-      id: "07",
-      name: "Ibadan Electric - IBEDC",
-      code: "07",
-      minAmount: 2000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.KADUNA_ELECTRIC]: {
-      id: "08",
-      name: "Kaduna Electric - KAEDC",
-      code: "08",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.ENUGU_ELECTRIC]: {
-      id: "09",
-      name: "ENUGU Electric - EEDC",
-      code: "09",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.BENIN_ELECTRIC]: {
-      id: "10",
-      name: "BENIN Electric - BEDC",
-      code: "10",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.YOLA_ELECTRIC]: {
-      id: "11",
-      name: "YOLA Electric - YEDC",
-      code: "11",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-    [ElectricityCompany.ABA_ELECTRIC]: {
-      id: "12",
-      name: "ABA Electric - APLE",
-      code: "12",
-      minAmount: 1000,
-      maxAmount: 200000,
-    },
-  };
+      [ElectricityCompany.EKO_ELECTRIC]: {
+        id: "01",
+        name: "Eko Electric - EKEDC (PHCN)",
+        code: "01",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.IKEJA_ELECTRIC]: {
+        id: "02",
+        name: "Ikeja Electric - IKEDC (PHCN)",
+        code: "02",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.ABUJA_ELECTRIC]: {
+        id: "03",
+        name: "Abuja Electric - AEDC",
+        code: "03",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.KANO_ELECTRIC]: {
+        id: "04",
+        name: "Kano Electric - KEDC",
+        code: "04",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.PORTHARCOURT_ELECTRIC]: {
+        id: "05",
+        name: "Portharcourt Electric - PHEDC",
+        code: "05",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.JOS_ELECTRIC]: {
+        id: "06",
+        name: "Jos Electric - JEDC",
+        code: "06",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.IBADAN_ELECTRIC]: {
+        id: "07",
+        name: "Ibadan Electric - IBEDC",
+        code: "07",
+        minAmount: 2000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.KADUNA_ELECTRIC]: {
+        id: "08",
+        name: "Kaduna Electric - KAEDC",
+        code: "08",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.ENUGU_ELECTRIC]: {
+        id: "09",
+        name: "ENUGU Electric - EEDC",
+        code: "09",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.BENIN_ELECTRIC]: {
+        id: "10",
+        name: "BENIN Electric - BEDC",
+        code: "10",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.YOLA_ELECTRIC]: {
+        id: "11",
+        name: "YOLA Electric - YEDC",
+        code: "11",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+      [ElectricityCompany.ABA_ELECTRIC]: {
+        id: "12",
+        name: "ABA Electric - APLE",
+        code: "12",
+        minAmount: 1000,
+        maxAmount: 200000,
+      },
+    };
 
   constructor() {
     this.electricityPurchaseRepo = null as any;
@@ -148,12 +148,12 @@ export class ElectricityService {
     purchaseData: {
       type: "electricity";
       amount: number;
-      chain: Blockchain;
+      chain?: Blockchain;
       company: ElectricityCompany;
       meterType: MeterType;
       meterNumber: string;
       phoneNumber: string;
-      transactionHash: string;
+      transactionHash?: string;
     }
   ) {
     console.log(
@@ -179,20 +179,30 @@ export class ElectricityService {
       await this.verifyMeterNumber(purchaseData.company, purchaseData.meterNumber);
 
       // 4. Check transaction hash uniqueness (only checks COMPLETED purchases)
-      await checkTransactionHashUniqueness(purchaseData.transactionHash);
+      if (purchaseData.transactionHash) {
+        await checkTransactionHashUniqueness(purchaseData.transactionHash);
+      }
 
-      // 5. Convert fiat to crypto
-      const expectedCryptoAmount = await convertFiatToCrypto(
-        purchaseData.amount,
-        purchaseData.chain
-      );
+      let expectedCryptoAmount = 0;
+      let receivingWallet = '';
+      const isCryptoPayment = !!purchaseData.chain && !!purchaseData.transactionHash;
 
-      // 6. Get receiving wallet
-      const receivingWallet = getBlockchainWallet(purchaseData.chain);
+      if (isCryptoPayment) {
+        // 5. Convert fiat to crypto
+        expectedCryptoAmount = await convertFiatToCrypto(
+          purchaseData.amount,
+          purchaseData.chain!
+        );
 
-      console.log(
-        `💰 Expected: ${expectedCryptoAmount} ${purchaseData.chain} to ${receivingWallet}`
-      );
+        // 6. Get receiving wallet
+        receivingWallet = getBlockchainWallet(purchaseData.chain!);
+
+        console.log(
+          `💰 Expected: ${expectedCryptoAmount} ${purchaseData.chain} to ${receivingWallet}`
+        );
+      } else {
+        console.log(`💵 Processing fiat electricity payment for ${purchaseData.amount} NGN`);
+      }
 
       // 7. Create pending purchase record
       electricityPurchase = new ElectricityPurchase();
@@ -204,38 +214,42 @@ export class ElectricityService {
         purchaseData.meterType === MeterType.PREPAID ? "01" : "02";
       electricityPurchase.meter_number = purchaseData.meterNumber;
       electricityPurchase.phone_number = purchaseData.phoneNumber;
-      electricityPurchase.blockchain = purchaseData.chain;
+      electricityPurchase.blockchain = purchaseData.chain || 'fiat';
       electricityPurchase.crypto_amount = expectedCryptoAmount;
-      electricityPurchase.crypto_currency = purchaseData.chain.toUpperCase();
+      electricityPurchase.crypto_currency = purchaseData.chain?.toUpperCase() || 'NGN';
       electricityPurchase.fiat_amount = purchaseData.amount;
-      electricityPurchase.transaction_hash = purchaseData.transactionHash;
+      electricityPurchase.transaction_hash = purchaseData.transactionHash || undefined;
       electricityPurchase.status = ElectricityPurchaseStatus.PROCESSING;
 
       await this.getRepository().save(electricityPurchase);
 
-      // 8. Validate blockchain transaction
-      console.log(
-        `🔍 Validating ${purchaseData.chain} transaction: ${purchaseData.transactionHash}`
-      );
-
-      const isValid = await validateBlockchainTransaction(
-        purchaseData.chain,
-        purchaseData.transactionHash,
-        expectedCryptoAmount,
-        receivingWallet
-      );
-
-      if (!isValid) {
-        await this.markPurchaseFailed(
-          electricityPurchase,
-          "Transaction validation failed"
+      if (isCryptoPayment) {
+        // 8. Validate blockchain transaction
+        console.log(
+          `🔍 Validating ${purchaseData.chain} transaction: ${purchaseData.transactionHash}`
         );
-        throw new Error(
-          "Transaction validation failed. Please check the transaction details."
+
+        const isValid = await validateBlockchainTransaction(
+          purchaseData.chain!,
+          purchaseData.transactionHash!,
+          expectedCryptoAmount,
+          receivingWallet
         );
+
+        if (!isValid) {
+          await this.markPurchaseFailed(
+            electricityPurchase,
+            "Transaction validation failed"
+          );
+          throw new Error(
+            "Transaction validation failed. Please check the transaction details."
+          );
+        }
+
+        console.log(`✅ Transaction validated! Proceeding to electricity payment...`);
+      } else {
+        console.log(`✅ Fiat payment accepted! Proceeding to electricity payment...`);
       }
-
-      console.log(`✅ Transaction validated! Proceeding to electricity payment...`);
 
       // 9. Process electricity payment with Nellobytes
       const providerResult = await this.processElectricityWithNellobytes(
@@ -278,8 +292,8 @@ export class ElectricityService {
           meterType: purchaseData.meterType,
           meterToken: providerResult.metertoken,
           providerReference: providerResult.orderid,
-          cryptoAmount: expectedCryptoAmount,
-          cryptoCurrency: purchaseData.chain.toUpperCase(),
+          cryptoAmount: isCryptoPayment ? expectedCryptoAmount : undefined,
+          cryptoCurrency: isCryptoPayment ? purchaseData.chain!.toUpperCase() : undefined,
           processedAt: new Date(),
         },
       };
@@ -455,15 +469,28 @@ export class ElectricityService {
       throw new Error("Meter number must be between 10 and 13 digits");
     }
 
-    // Common validation (amount, phone, chain, txHash)
-    validateCommonInputs({
-      phoneNumber,
-      chain,
-      transactionHash,
-      amount,
-      minAmount: companyConfig.minAmount,
-      maxAmount: companyConfig.maxAmount,
-    });
+    // Common validation
+    if (!chain && !transactionHash) {
+      // Fiat payment validation
+      if (!phoneNumber || phoneNumber.length < 10) {
+        throw new Error("Invalid phone number");
+      }
+      if (amount < companyConfig.minAmount || amount > companyConfig.maxAmount) {
+        throw new Error(
+          `Amount must be between ${companyConfig.minAmount} and ${companyConfig.maxAmount} NGN`
+        );
+      }
+    } else {
+      // Crypto payment validation
+      validateCommonInputs({
+        phoneNumber,
+        chain,
+        transactionHash,
+        amount,
+        minAmount: companyConfig.minAmount,
+        maxAmount: companyConfig.maxAmount,
+      });
+    }
 
     console.log("✅ Input validation passed");
   }
@@ -577,10 +604,10 @@ export class ElectricityService {
       averagePurchase:
         history.length > 0
           ? history.reduce(
-              (sum, purchase) =>
-                sum + parseFloat(purchase.fiat_amount.toString()),
-              0
-            ) / history.length
+            (sum, purchase) =>
+              sum + parseFloat(purchase.fiat_amount.toString()),
+            0
+          ) / history.length
           : 0,
     };
   }

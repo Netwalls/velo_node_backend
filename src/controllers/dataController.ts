@@ -22,7 +22,9 @@ export class DataController {
      */
     async processDataPurchase(req: Request, res: Response) {
         try {
-            const { type, dataplanId, amount, chain, phoneNumber, mobileNetwork, transactionHash } = req.body;
+            // Accept both 'planId' and 'dataplanId' for compatibility
+            const dataplanIdParam = req.body.dataplanId || req.body.planId;
+            const { type, amount, chain, phoneNumber, mobileNetwork, transactionHash } = req.body;
             const userId = (req as any).user?.id;
 
             if (!userId) {
@@ -33,16 +35,25 @@ export class DataController {
             }
 
             // Validate required fields
-            if (!dataplanId || !amount || !chain || !phoneNumber || !mobileNetwork || !transactionHash) {
+            // Validate required fields
+            if (!dataplanIdParam || !amount || !phoneNumber || !mobileNetwork) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Missing required fields: dataplanId, amount, chain, phoneNumber, mobileNetwork, transactionHash'
+                    message: 'Missing required fields: planId, amount, phoneNumber, mobileNetwork'
+                });
+            }
+
+            // If crypto payment, require chain and transactionHash
+            if ((chain && !transactionHash) || (!chain && transactionHash)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Both chain and transactionHash are required for crypto payments'
                 });
             }
 
             const result = await dataService.processDataPurchase(userId, {
                 type: type || 'data',
-                dataplanId,
+                dataplanId: dataplanIdParam,
                 amount: parseFloat(amount),
                 chain,
                 phoneNumber,
@@ -66,17 +77,19 @@ export class DataController {
      */
     async getDataPlans(req: Request, res: Response) {
         try {
-            const { network, refresh } = req.query;
+            // Accept both 'network' and 'mobileNetwork' for compatibility
+            const networkParam = (req.query.network || req.query.mobileNetwork) as string;
+            const { refresh } = req.query;
 
-            if (!network) {
+            if (!networkParam) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Network parameter is required'
+                    message: 'Network parameter is required (use network or mobileNetwork)'
                 });
             }
 
             // Validate network
-            if (!Object.values(MobileNetwork).includes(network as MobileNetwork)) {
+            if (!Object.values(MobileNetwork).includes(networkParam as MobileNetwork)) {
                 return res.status(400).json({
                     success: false,
                     message: `Invalid network. Supported: ${Object.values(MobileNetwork).join(', ')}`
@@ -88,19 +101,22 @@ export class DataController {
                 await dataService.forceRefreshDataPlans();
             }
 
-            const plans = await dataService.getDataPlans(network as MobileNetwork);
+            const plans = await dataService.getDataPlans(networkParam as MobileNetwork);
 
             res.json({
                 success: true,
                 message: 'Data plans retrieved successfully',
                 data: {
-                    network,
+                    network: networkParam,
                     totalPlans: plans.length,
                     plans: plans.map(plan => ({
-                        dataplanId: plan.dataplan_id,
+                        planId: plan.dataplan_id,  // Frontend expects 'planId'
+                        dataplanId: plan.dataplan_id,  // Keep for backward compatibility
                         name: plan.plan_name,
                         amount: plan.plan_amount,
                         validity: plan.month_validate,
+                        duration: plan.month_validate,  // Frontend expects 'duration'
+                        description: plan.plan_name,  // Add description field
                         networkCode: plan.plan_network
                     }))
                 }
