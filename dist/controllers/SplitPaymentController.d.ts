@@ -1,5 +1,5 @@
-import { Response } from 'express';
-import { AuthRequest } from '../types';
+import { Response } from "express";
+import { AuthRequest } from "../types";
 export declare class SplitPaymentController {
     /**
      * Create a new reusable split payment template
@@ -14,9 +14,9 @@ export declare class SplitPaymentController {
      */
     private static processPolkadotBatch;
     /**
-         * Get all split payment templates (reusable)
-         * GET /split-payment/templates
-         */
+     * Get all split payment templates (reusable)
+     * GET /split-payment/templates
+     */
     static getSplitPaymentTemplates(req: AuthRequest, res: Response): Promise<void>;
     /**
      * Get execution history for a split payment

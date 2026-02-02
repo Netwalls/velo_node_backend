@@ -1,12 +1,26 @@
 import { AppDataSource } from '../config/database';
-import { User } from '../entities/User';
+import { User, UserType } from '../entities/User';
 import { UserAddress } from '../entities/UserAddress';
 
-export async function createUserIfNotExists(email: string, password: string) {
+export async function createUserIfNotExists(
+    email: string,
+    password: string,
+    userType: UserType = UserType.INDIVIDUAL,
+    companyId?: string,
+    emailOTP?: string,
+    emailOTPExpiry?: Date
+) {
     const userRepository = AppDataSource.getRepository(User);
     const existingUser = await userRepository.findOne({ where: { email } });
     if (existingUser) return null;
-    const user = userRepository.create({ email, password });
+    const user = userRepository.create({
+        email,
+        password,
+        userType,
+        companyId,
+        emailOTP,
+        emailOTPExpiry
+    });
     await userRepository.save(user);
     return user;
 }

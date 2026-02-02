@@ -12,19 +12,26 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.User = void 0;
+exports.User = exports.UserType = void 0;
 const typeorm_1 = require("typeorm");
 const class_validator_1 = require("class-validator");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const UserAddress_1 = require("./UserAddress");
 const KYCDocument_1 = require("./KYCDocument");
 const RefreshToken_1 = require("./RefreshToken");
+const Company_1 = require("./Company");
 const types_1 = require("../types");
+var UserType;
+(function (UserType) {
+    UserType["COMPANY"] = "company";
+    UserType["EMPLOYEE"] = "employee";
+    UserType["INDIVIDUAL"] = "individual";
+})(UserType || (exports.UserType = UserType = {}));
 let User = class User {
     async hashPassword() {
         if (this.password &&
-            !this.password.startsWith('$2a$') &&
-            !this.password.startsWith('$2b$')) {
+            !this.password.startsWith("$2a$") &&
+            !this.password.startsWith("$2b$")) {
             const salt = await bcryptjs_1.default.genSalt(12);
             this.password = await bcryptjs_1.default.hash(this.password, salt);
         }
@@ -33,7 +40,7 @@ let User = class User {
             await this.hashTransactionPinIfNeeded();
         }
         catch (err) {
-            console.error('Failed to hash transaction PIN:', err);
+            console.error("Failed to hash transaction PIN:", err);
         }
     }
     /**
@@ -41,8 +48,8 @@ let User = class User {
      */
     async hashTransactionPinIfNeeded() {
         if (this.transactionPin &&
-            !this.transactionPin.startsWith('$2a$') &&
-            !this.transactionPin.startsWith('$2b$')) {
+            !this.transactionPin.startsWith("$2a$") &&
+            !this.transactionPin.startsWith("$2b$")) {
             const salt = await bcryptjs_1.default.genSalt(12);
             this.transactionPin = await bcryptjs_1.default.hash(this.transactionPin, salt);
         }
@@ -56,7 +63,7 @@ let User = class User {
 };
 exports.User = User;
 __decorate([
-    (0, typeorm_1.PrimaryGeneratedColumn)('uuid'),
+    (0, typeorm_1.PrimaryGeneratedColumn)("uuid"),
     __metadata("design:type", Object)
 ], User.prototype, "id", void 0);
 __decorate([
@@ -69,6 +76,22 @@ __decorate([
     (0, class_validator_1.MinLength)(6),
     __metadata("design:type", String)
 ], User.prototype, "password", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: "enum",
+        enum: UserType,
+        default: UserType.INDIVIDUAL,
+    }),
+    __metadata("design:type", String)
+], User.prototype, "userType", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => Company_1.Company, (company) => company.employees, { nullable: true }),
+    __metadata("design:type", Company_1.Company)
+], User.prototype, "company", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "companyId", void 0);
 __decorate([
     (0, typeorm_1.Column)({ nullable: true }),
     __metadata("design:type", String)
@@ -102,35 +125,43 @@ __decorate([
     __metadata("design:type", String)
 ], User.prototype, "accountName", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ nullable: true }),
+    __metadata("design:type", String)
+], User.prototype, "position", void 0);
+__decorate([
+    (0, typeorm_1.Column)("decimal", { precision: 18, scale: 2, nullable: true }),
+    __metadata("design:type", Number)
+], User.prototype, "salary", void 0);
+__decorate([
     (0, typeorm_1.Column)({ default: false }),
     __metadata("design:type", Boolean)
 ], User.prototype, "isEmailVerified", void 0);
 __decorate([
-    (0, typeorm_1.Column)('decimal', { precision: 18, scale: 8, default: 0 }),
+    (0, typeorm_1.Column)("decimal", { precision: 18, scale: 8, default: 0 }),
     __metadata("design:type", Number)
 ], User.prototype, "usdtBalance", void 0);
 __decorate([
-    (0, typeorm_1.Column)('decimal', { precision: 30, scale: 18, default: 0 }),
+    (0, typeorm_1.Column)("decimal", { precision: 30, scale: 18, default: 0 }),
     __metadata("design:type", Number)
 ], User.prototype, "ethBalance", void 0);
 __decorate([
-    (0, typeorm_1.Column)('decimal', { precision: 30, scale: 18, default: 0 }),
+    (0, typeorm_1.Column)("decimal", { precision: 30, scale: 18, default: 0 }),
     __metadata("design:type", Number)
 ], User.prototype, "strkBalance", void 0);
 __decorate([
-    (0, typeorm_1.Column)('decimal', { precision: 30, scale: 18, default: 0 }),
+    (0, typeorm_1.Column)("decimal", { precision: 30, scale: 18, default: 0 }),
     __metadata("design:type", Number)
 ], User.prototype, "solBalance", void 0);
 __decorate([
-    (0, typeorm_1.Column)('decimal', { precision: 30, scale: 8, default: 0 }),
+    (0, typeorm_1.Column)("decimal", { precision: 30, scale: 8, default: 0 }),
     __metadata("design:type", Number)
 ], User.prototype, "btcBalance", void 0);
 __decorate([
-    (0, typeorm_1.Column)('decimal', { precision: 30, scale: 7, default: 0 }),
+    (0, typeorm_1.Column)("decimal", { precision: 30, scale: 7, default: 0 }),
     __metadata("design:type", Number)
 ], User.prototype, "xlmBalance", void 0);
 __decorate([
-    (0, typeorm_1.Column)('decimal', { precision: 30, scale: 10, default: 0 }),
+    (0, typeorm_1.Column)("decimal", { precision: 30, scale: 10, default: 0 }),
     __metadata("design:type", Number)
 ], User.prototype, "dotBalance", void 0);
 __decorate([
@@ -138,7 +169,7 @@ __decorate([
     __metadata("design:type", String)
 ], User.prototype, "emailOTP", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
+    (0, typeorm_1.Column)({ type: "timestamp", nullable: true }),
     __metadata("design:type", Date)
 ], User.prototype, "emailOTPExpiry", void 0);
 __decorate([
@@ -146,7 +177,7 @@ __decorate([
     __metadata("design:type", String)
 ], User.prototype, "phoneOTP", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
+    (0, typeorm_1.Column)({ type: "timestamp", nullable: true }),
     __metadata("design:type", Date)
 ], User.prototype, "phoneOTPExpiry", void 0);
 __decorate([
@@ -154,12 +185,12 @@ __decorate([
     __metadata("design:type", String)
 ], User.prototype, "passwordResetToken", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ type: 'timestamp', nullable: true }),
+    (0, typeorm_1.Column)({ type: "timestamp", nullable: true }),
     __metadata("design:type", Date)
 ], User.prototype, "passwordResetExpiry", void 0);
 __decorate([
     (0, typeorm_1.Column)({
-        type: 'enum',
+        type: "enum",
         enum: types_1.KYCStatus,
         default: types_1.KYCStatus.PENDING,
     }),
@@ -198,6 +229,6 @@ __decorate([
     __metadata("design:type", String)
 ], User.prototype, "transactionPin", void 0);
 exports.User = User = __decorate([
-    (0, typeorm_1.Entity)('users')
+    (0, typeorm_1.Entity)("users")
 ], User);
 //# sourceMappingURL=User.js.map

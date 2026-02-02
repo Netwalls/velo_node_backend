@@ -3,23 +3,23 @@ export declare class BlockchainValidator {
     validateSolanaTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     validateEthereumTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     /**
-     * Validate Bitcoin transaction using Blockchain.com API (Testnet)
+     * Validate Bitcoin transaction using Blockchain.com API (Mainnet)
      */
     validateBitcoinTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     /**
-     * Validate Stellar transaction using Horizon API (Testnet)
+     * Validate Stellar transaction using Horizon API (Mainnet)
      */
     validateStellarTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     /**
-     * Validate Polkadot transaction using Subscan API (Westend Testnet)
+     * Validate Polkadot transaction using Subscan API (Mainnet)
      */
     validatePolkadotTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     /**
-     * Validate Starknet transaction using Starknet API (Goerli Testnet)
+     * Validate Starknet transaction using Starknet API (Mainnet)
      */
     validateStarknetTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
     /**
-     * Validate USDT ERC-20 transaction using Etherscan (Goerli Testnet)
+     * Validate USDT ERC-20 transaction using Etherscan (Mainnet)
      */
     validateUsdtTransaction(txHash: string, expectedTo: string, minAmount: number, maxAmount: number): Promise<boolean>;
 }

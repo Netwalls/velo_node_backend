@@ -1773,206 +1773,219 @@ class WalletController {
                 }
             }
             else {
-                // ADD THE MISSING try { HERE
-                try {
-                    if (chain === "ethereum" || chain === "usdt_erc20") {
-                        const provider = new ethers_1.ethers.JsonRpcProvider(network === "testnet"
-                            ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
-                            : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
-                        const wallet = new ethers_1.ethers.Wallet(privateKey, provider);
-                        if (chain === "ethereum") {
-                            const feeTx = await wallet.sendTransaction({
-                                to: treasuryWallet,
-                                value: ethers_1.ethers.parseEther(feeTokenRounded.toString()),
-                            });
-                            feeTxHash = feeTx.hash;
-                            try {
-                                await feeTx.wait();
-                            }
-                            catch { }
-                        }
-                        else {
-                            const sepoliaRaw = "0x" + "516de3a7a567d81737e3a46ec4ff9cfd1fcb0136";
-                            const usdtMainnetRaw = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
-                            const usdtAddress = network === "testnet"
-                                ? ethers_1.ethers.getAddress(sepoliaRaw)
-                                : ethers_1.ethers.getAddress(usdtMainnetRaw);
-                            const usdtAbi = [
-                                "function transfer(address to, uint256 value) public returns (bool)",
-                            ];
-                            const usdtContract = new ethers_1.ethers.Contract(usdtAddress, usdtAbi, wallet);
-                            const feeUnits = ethers_1.ethers.parseUnits(feeTokenRounded.toString(), 6);
-                            const feeTx = await usdtContract.transfer(treasuryWallet, feeUnits);
-                            feeTxHash = feeTx.hash;
-                            try {
-                                await feeTx.wait();
-                            }
-                            catch { }
-                        }
-                    }
-                    else if (chain === "starknet") {
-                        const provider = new starknet_1.RpcProvider({
-                            nodeUrl: network === "testnet"
-                                ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
-                                : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
-                        });
-                        const account = new starknet_1.Account(provider, userAddress.address, privateKey);
-                        const tokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
-                        const feeUint = starknet_1.uint256.bnToUint256(BigInt(Math.floor(feeTokenRounded * 1e18)));
-                        const feeCall = {
-                            contractAddress: tokenAddress,
-                            entrypoint: "transfer",
-                            calldata: [treasuryWallet, feeUint.low, feeUint.high],
-                        };
-                        const r = await account.execute(feeCall);
-                        feeTxHash = r.transaction_hash;
-                        try {
-                            await provider.waitForTransaction(feeTxHash);
-                        }
-                        catch { }
-                    }
-                    else if (chain === "solana") {
-                        const connection = new web3_js_1.Connection(network === "testnet"
-                            ? "https://api.devnet.solana.com"
-                            : "https://api.mainnet-beta.solana.com");
-                        // rebuild keypair
-                        let secretKeyArray;
-                        try {
-                            const parsed = JSON.parse(privateKey);
-                            if (Array.isArray(parsed))
-                                secretKeyArray = Uint8Array.from(parsed);
-                            else
-                                throw new Error("Not array");
-                        }
-                        catch {
-                            const cleanHex = privateKey.startsWith("0x")
-                                ? privateKey.slice(2)
-                                : privateKey;
-                            const buffer = Buffer.from(cleanHex, "hex");
-                            if (buffer.length === 32) {
-                                secretKeyArray = web3_js_1.Keypair.fromSeed(buffer).secretKey;
-                            }
-                            else if (buffer.length === 64) {
-                                secretKeyArray = new Uint8Array(buffer);
-                            }
-                            else
-                                throw new Error("Invalid Solana key");
-                        }
-                        const fromKeypair = web3_js_1.Keypair.fromSecretKey(secretKeyArray);
-                        const tx = new web3_js_1.Transaction().add(web3_js_1.SystemProgram.transfer({
-                            fromPubkey: fromKeypair.publicKey,
-                            toPubkey: new web3_js_1.PublicKey(treasuryWallet),
-                            lamports: Math.round(feeTokenRounded * 1e9),
-                        }));
-                        const sig = await (0, web3_js_1.sendAndConfirmTransaction)(connection, tx, [
-                            fromKeypair,
-                        ]);
-                        feeTxHash = sig;
-                    }
-                    else if (chain === "stellar") {
-                        let StellarSdk;
-                        try {
-                            StellarSdk = require("stellar-sdk");
-                        }
-                        catch {
-                            StellarSdk = require("@stellar/stellar-sdk");
-                        }
-                        const horizonUrl = network === "testnet"
-                            ? "https://horizon-testnet.stellar.org"
-                            : "https://horizon.stellar.org";
-                        const Server = StellarSdk.Horizon?.Server || StellarSdk.Server;
-                        const Keypair = StellarSdk.Keypair;
-                        const TransactionBuilder = StellarSdk.TransactionBuilder;
-                        const Networks = StellarSdk.Networks;
-                        const Operation = StellarSdk.Operation;
-                        const Asset = StellarSdk.Asset;
-                        const server = new Server(horizonUrl);
-                        const sourceKeypair = Keypair.fromSecret(privateKey);
-                        const account = await server.loadAccount(sourceKeypair.publicKey());
-                        const feeBase = await server.fetchBaseFee();
-                        const networkPassphrase = network === "testnet" ? Networks.TESTNET : Networks.PUBLIC;
-                        const txBuilder = new TransactionBuilder(account, {
-                            fee: String(feeBase),
-                            networkPassphrase,
-                        })
-                            .addOperation(Operation.payment({
-                            destination: treasuryWallet,
-                            asset: Asset.native(),
-                            amount: String(feeTokenRounded),
-                        }))
-                            .setTimeout(30);
-                        const tx = txBuilder.build();
-                        tx.sign(sourceKeypair);
-                        const resp = await server.submitTransaction(tx);
-                        feeTxHash = resp.hash;
-                    }
-                    else if (chain === "polkadot") {
-                        // @ts-ignore
-                        const { ApiPromise, WsProvider } = require("@polkadot/api");
-                        const wsUrl = network === "testnet"
-                            ? process.env.POLKADOT_WS_TESTNET ||
-                                "wss://pas-rpc.stakeworld.io"
-                            : process.env.POLKADOT_WS_MAINNET || "wss://rpc.polkadot.io";
-                        const provider = new (require("@polkadot/api").WsProvider)(wsUrl);
-                        const api = await require("@polkadot/api").ApiPromise.create({
-                            provider,
-                        });
-                        const keyring = new (require("@polkadot/keyring").Keyring)({
-                            type: "sr25519",
-                        });
-                        let sender = null;
-                        try {
-                            sender = keyring.addFromUri(JSON.parse(privateKey).mnemonic);
-                        }
-                        catch {
-                            try {
-                                sender = keyring.addFromUri(privateKey);
-                            }
-                            catch { }
-                        }
-                        const planckFee = BigInt(Math.round(feeTokenRounded * 1e10));
-                        const tx = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
-                        const batch = api.tx.utility
-                            ? api.tx.utility.batch([tx(treasuryWallet, planckFee.toString())])
-                            : tx(treasuryWallet, planckFee.toString());
-                        feeTxHash = await new Promise(async (resolve, reject) => {
-                            try {
-                                const unsub = await batch.signAndSend(sender, (result) => {
-                                    if (result.status.isInBlock || result.status.isFinalized) {
-                                        resolve(result.status.isInBlock
-                                            ? result.status.asInBlock.toString()
-                                            : result.status.asFinalized.toString());
-                                        try {
-                                            unsub();
-                                        }
-                                        catch { }
-                                    }
+                // Only attempt fee transfer if there's actually a fee to send
+                if (feeTokenRounded && Number(feeTokenRounded) > 0) {
+                    try {
+                        if (chain === "ethereum" || chain === "usdt_erc20") {
+                            const provider = new ethers_1.ethers.JsonRpcProvider(network === "testnet"
+                                ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`
+                                : `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_STARKNET_KEY}`);
+                            const wallet = new ethers_1.ethers.Wallet(privateKey, provider);
+                            if (chain === "ethereum") {
+                                const feeTx = await wallet.sendTransaction({
+                                    to: treasuryWallet,
+                                    value: ethers_1.ethers.parseEther(feeTokenRounded.toString()),
                                 });
+                                feeTxHash = feeTx.hash;
+                                try {
+                                    await feeTx.wait();
+                                }
+                                catch { }
                             }
-                            catch (e) {
-                                reject(e);
+                            else {
+                                const sepoliaRaw = "0x" + "516de3a7a567d81737e3a46ec4ff9cfd1fcb0136";
+                                const usdtMainnetRaw = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+                                const usdtAddress = network === "testnet"
+                                    ? ethers_1.ethers.getAddress(sepoliaRaw)
+                                    : ethers_1.ethers.getAddress(usdtMainnetRaw);
+                                const usdtAbi = [
+                                    "function transfer(address to, uint256 value) public returns (bool)",
+                                ];
+                                const usdtContract = new ethers_1.ethers.Contract(usdtAddress, usdtAbi, wallet);
+                                const feeUnits = ethers_1.ethers.parseUnits(feeTokenRounded.toString(), 6);
+                                const feeTx = await usdtContract.transfer(treasuryWallet, feeUnits);
+                                feeTxHash = feeTx.hash;
+                                try {
+                                    await feeTx.wait();
+                                }
+                                catch { }
                             }
-                        });
+                        }
+                        else if (chain === "starknet") {
+                            const provider = new starknet_1.RpcProvider({
+                                nodeUrl: network === "testnet"
+                                    ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_8/${process.env.ALCHEMY_STARKNET_KEY}`
+                                    : `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_9/${process.env.ALCHEMY_STARKNET_KEY}`,
+                            });
+                            const account = new starknet_1.Account(provider, userAddress.address, privateKey);
+                            const tokenAddress = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+                            const feeUint = starknet_1.uint256.bnToUint256(BigInt(Math.floor(feeTokenRounded * 1e18)));
+                            const feeCall = {
+                                contractAddress: tokenAddress,
+                                entrypoint: "transfer",
+                                calldata: [treasuryWallet, feeUint.low, feeUint.high],
+                            };
+                            const r = await account.execute(feeCall);
+                            feeTxHash = r.transaction_hash;
+                            try {
+                                await provider.waitForTransaction(feeTxHash);
+                            }
+                            catch { }
+                        }
+                        else if (chain === "solana") {
+                            const connection = new web3_js_1.Connection(network === "testnet"
+                                ? "https://api.devnet.solana.com"
+                                : "https://api.mainnet-beta.solana.com");
+                            // rebuild keypair
+                            let secretKeyArray;
+                            try {
+                                const parsed = JSON.parse(privateKey);
+                                if (Array.isArray(parsed))
+                                    secretKeyArray = Uint8Array.from(parsed);
+                                else
+                                    throw new Error("Not array");
+                            }
+                            catch {
+                                const cleanHex = privateKey.startsWith("0x")
+                                    ? privateKey.slice(2)
+                                    : privateKey;
+                                const buffer = Buffer.from(cleanHex, "hex");
+                                if (buffer.length === 32) {
+                                    secretKeyArray = web3_js_1.Keypair.fromSeed(buffer).secretKey;
+                                }
+                                else if (buffer.length === 64) {
+                                    secretKeyArray = new Uint8Array(buffer);
+                                }
+                                else
+                                    throw new Error("Invalid Solana key");
+                            }
+                            const fromKeypair = web3_js_1.Keypair.fromSecretKey(secretKeyArray);
+                            const tx = new web3_js_1.Transaction().add(web3_js_1.SystemProgram.transfer({
+                                fromPubkey: fromKeypair.publicKey,
+                                toPubkey: new web3_js_1.PublicKey(treasuryWallet),
+                                lamports: Math.round(feeTokenRounded * 1e9),
+                            }));
+                            const sig = await (0, web3_js_1.sendAndConfirmTransaction)(connection, tx, [
+                                fromKeypair,
+                            ]);
+                            feeTxHash = sig;
+                        }
+                        else if (chain === "stellar") {
+                            let StellarSdk;
+                            try {
+                                StellarSdk = require("stellar-sdk");
+                            }
+                            catch {
+                                StellarSdk = require("@stellar/stellar-sdk");
+                            }
+                            const horizonUrl = network === "testnet"
+                                ? "https://horizon-testnet.stellar.org"
+                                : "https://horizon.stellar.org";
+                            const Server = StellarSdk.Horizon?.Server || StellarSdk.Server;
+                            const Keypair = StellarSdk.Keypair;
+                            const TransactionBuilder = StellarSdk.TransactionBuilder;
+                            const Networks = StellarSdk.Networks;
+                            const Operation = StellarSdk.Operation;
+                            const Asset = StellarSdk.Asset;
+                            const server = new Server(horizonUrl);
+                            const sourceKeypair = Keypair.fromSecret(privateKey);
+                            const account = await server.loadAccount(sourceKeypair.publicKey());
+                            const feeBase = await server.fetchBaseFee();
+                            const networkPassphrase = network === "testnet" ? Networks.TESTNET : Networks.PUBLIC;
+                            const txBuilder = new TransactionBuilder(account, {
+                                fee: String(feeBase),
+                                networkPassphrase,
+                            })
+                                .addOperation(Operation.payment({
+                                destination: treasuryWallet,
+                                asset: Asset.native(),
+                                amount: String(feeTokenRounded),
+                            }))
+                                .setTimeout(30);
+                            const tx = txBuilder.build();
+                            tx.sign(sourceKeypair);
+                            const resp = await server.submitTransaction(tx);
+                            feeTxHash = resp.hash;
+                        }
+                        else if (chain === "polkadot") {
+                            // @ts-ignore
+                            const { ApiPromise, WsProvider } = require("@polkadot/api");
+                            const wsUrl = network === "testnet"
+                                ? process.env.POLKADOT_WS_TESTNET ||
+                                    "wss://pas-rpc.stakeworld.io"
+                                : process.env.POLKADOT_WS_MAINNET || "wss://rpc.polkadot.io";
+                            const provider = new (require("@polkadot/api").WsProvider)(wsUrl);
+                            const api = await require("@polkadot/api").ApiPromise.create({
+                                provider,
+                            });
+                            const keyring = new (require("@polkadot/keyring").Keyring)({
+                                type: "sr25519",
+                            });
+                            let sender = null;
+                            try {
+                                sender = keyring.addFromUri(JSON.parse(privateKey).mnemonic);
+                            }
+                            catch {
+                                try {
+                                    sender = keyring.addFromUri(privateKey);
+                                }
+                                catch { }
+                            }
+                            const planckFee = BigInt(Math.round(feeTokenRounded * 1e10));
+                            const tx = api.tx.balances.transferKeepAlive || api.tx.balances.transfer;
+                            const batch = api.tx.utility
+                                ? api.tx.utility.batch([
+                                    tx(treasuryWallet, planckFee.toString()),
+                                ])
+                                : tx(treasuryWallet, planckFee.toString());
+                            feeTxHash = await new Promise(async (resolve, reject) => {
+                                try {
+                                    const unsub = await batch.signAndSend(sender, (result) => {
+                                        if (result.status.isInBlock ||
+                                            result.status.isFinalized) {
+                                            resolve(result.status.isInBlock
+                                                ? result.status.asInBlock.toString()
+                                                : result.status.asFinalized.toString());
+                                            try {
+                                                unsub();
+                                            }
+                                            catch { }
+                                        }
+                                    });
+                                }
+                                catch (e) {
+                                    reject(e);
+                                }
+                            });
+                            try {
+                                await api.disconnect();
+                            }
+                            catch { }
+                        }
+                        // mark fee tx as completed if we have a hash
+                        if (feeTxRecord && feeTxHash) {
+                            await feeCollectionService_1.default.completeFeeTransfer(feeTxRecord.id, feeTxHash);
+                        }
+                        else if (feeTxRecord && !feeTxHash) {
+                            await feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, "Fee transfer not completed");
+                        }
+                    }
+                    catch (feeErr) {
+                        console.error("Fee transfer error (non-fatal):", feeErr);
                         try {
-                            await api.disconnect();
+                            if (feeTxRecord)
+                                await feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, feeErr instanceof Error ? feeErr.message : String(feeErr));
                         }
                         catch { }
-                    }
-                    // mark fee tx as completed if we have a hash
-                    if (feeTxRecord && feeTxHash) {
-                        await feeCollectionService_1.default.completeFeeTransfer(feeTxRecord.id, feeTxHash);
-                    }
-                    else if (feeTxRecord && !feeTxHash) {
-                        await feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, "Fee transfer not completed");
                     }
                 }
-                catch (feeErr) {
-                    console.error("Fee transfer error (non-fatal):", feeErr);
-                    try {
-                        if (feeTxRecord)
-                            await feeCollectionService_1.default.failFeeTransfer(feeTxRecord.id, feeErr instanceof Error ? feeErr.message : String(feeErr));
+                else {
+                    console.log("[DEBUG] No fee to transfer (feeTokenRounded = 0)");
+                    if (feeTxRecord) {
+                        // Record the fee as complete even though it's 0
+                        await feeCollectionService_1.default.completeFeeTransfer(feeTxRecord.id, txHash // Use the main transaction hash
+                        ).catch(() => { });
                     }
-                    catch { }
                 }
             }
             // Respond to the client immediately (do not block on non-critical background work)

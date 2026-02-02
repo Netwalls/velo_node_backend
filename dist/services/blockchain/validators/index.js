@@ -10,7 +10,7 @@ class BlockchainValidator {
         this.AMOUNT_TOLERANCE_PERCENT = 0.01;
     }
     async validateSolanaTransaction(txHash, expectedTo, minAmount, maxAmount) {
-        const rpcUrl = process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com";
+        const rpcUrl = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
         try {
             console.log(`🔍 [DEBUG] Fetching Solana transaction: ${txHash}`);
             const response = await axios_1.default.post(rpcUrl, {
@@ -90,9 +90,9 @@ class BlockchainValidator {
     }
     async validateEthereumTransaction(txHash, expectedTo, minAmount, maxAmount) {
         const rpcEndpoints = [
-            "https://eth-sepolia.g.alchemy.com/v2/demo",
-            "https://ethereum-sepolia-rpc.publicnode.com",
-            "https://rpc.sepolia.org",
+            "https://eth-mainnet.g.alchemy.com/v2/demo",
+            "https://ethereum-rpc.publicnode.com",
+            "https://eth.llamarpc.com",
         ];
         for (const endpoint of rpcEndpoints) {
             try {
@@ -128,11 +128,11 @@ class BlockchainValidator {
         return false;
     }
     /**
-     * Validate Bitcoin transaction using Blockchain.com API (Testnet)
+     * Validate Bitcoin transaction using Blockchain.com API (Mainnet)
      */
     async validateBitcoinTransaction(txHash, expectedTo, minAmount, maxAmount) {
-        // Using Bitcoin testnet
-        const url = `https://blockstream.info/testnet/api/tx/${txHash}`;
+        // Using Bitcoin mainnet
+        const url = `https://blockstream.info/api/tx/${txHash}`;
         try {
             const response = await axios_1.default.get(url);
             const tx = response.data;
@@ -147,7 +147,7 @@ class BlockchainValidator {
                 return false;
             }
             const actualAmount = targetOutput.value / 1e8; // Convert from satoshis to BTC
-            console.log(`   Bitcoin Testnet TX: ${actualAmount} BTC to ${expectedTo}`);
+            console.log(`   Bitcoin Mainnet TX: ${actualAmount} BTC to ${expectedTo}`);
             return actualAmount >= minAmount && actualAmount <= maxAmount;
         }
         catch (error) {
@@ -156,12 +156,12 @@ class BlockchainValidator {
         }
     }
     /**
-     * Validate Stellar transaction using Horizon API (Testnet)
+     * Validate Stellar transaction using Horizon API (Mainnet)
      */
     async validateStellarTransaction(txHash, expectedTo, minAmount, maxAmount) {
         const endpoints = [
-            "https://horizon-testnet.stellar.org",
             "https://horizon.stellar.org",
+            "https://horizon-testnet.stellar.org",
         ];
         for (const endpoint of endpoints) {
             try {
@@ -246,15 +246,15 @@ class BlockchainValidator {
         return false;
     }
     /**
-     * Validate Polkadot transaction using Subscan API (Westend Testnet)
+     * Validate Polkadot transaction using Subscan API (Mainnet)
      */
     async validatePolkadotTransaction(txHash, expectedTo, minAmount, maxAmount) {
         const apiKey = process.env.SUBSCAN_API_KEY;
         if (!apiKey) {
             throw new Error("Subscan API key not configured");
         }
-        // Using Polkadot Westend testnet
-        const url = "https://westend.api.subscan.io/api/scan/extrinsic";
+        // Using Polkadot mainnet
+        const url = "https://polkadot.api.subscan.io/api/scan/extrinsic";
         try {
             const response = await axios_1.default.post(url, {
                 hash: txHash,
@@ -280,7 +280,7 @@ class BlockchainValidator {
                             const toParam = params.find((p) => p.name === "to" || p.type === "AccountId");
                             const valueParam = params.find((p) => p.name === "value" || p.type === "Balance");
                             if (toParam && valueParam && toParam.value === expectedTo) {
-                                totalAmount += parseFloat(valueParam.value) / 1e12; // Convert from Planck to WND (Westend)
+                                totalAmount += parseFloat(valueParam.value) / 1e10; // Convert from Planck to DOT (Mainnet)
                             }
                         }
                         catch (parseError) {
@@ -290,7 +290,7 @@ class BlockchainValidator {
                     }
                 }
             }
-            console.log(`   Polkadot Westend TX: ${totalAmount} WND to ${expectedTo}`);
+            console.log(`   Polkadot Mainnet TX: ${totalAmount} DOT to ${expectedTo}`);
             return totalAmount >= minAmount && totalAmount <= maxAmount;
         }
         catch (error) {
@@ -299,12 +299,12 @@ class BlockchainValidator {
         }
     }
     /**
-     * Validate Starknet transaction using Starknet API (Goerli Testnet)
+     * Validate Starknet transaction using Starknet API (Mainnet)
      */
     async validateStarknetTransaction(txHash, expectedTo, minAmount, maxAmount) {
         const rpcEndpoints = [
-            "https://starknet-sepolia-rpc.publicnode.com",
-            "https://starknet-sepolia.drpc.org",
+            "https://starknet-mainnet.public.blastapi.io",
+            "https://free-rpc.nethermind.io/mainnet-juno",
             "https://rpc.starknet.lava.build",
         ];
         let lastError = "";
@@ -411,19 +411,18 @@ class BlockchainValidator {
         return false;
     }
     /**
-     * Validate USDT ERC-20 transaction using Etherscan (Goerli Testnet)
+     * Validate USDT ERC-20 transaction using Etherscan (Mainnet)
      */
     async validateUsdtTransaction(txHash, expectedTo, minAmount, maxAmount) {
         const apiKey = process.env.ETHERSCAN_API_KEY;
         if (!apiKey) {
             throw new Error("Etherscan API key not configured");
         }
-        // USDT contract address on Ethereum Goerli testnet
-        // Note: You may need to deploy your own test USDT contract on Goerli
-        const usdtContract = process.env.USDT_TESTNET_CONTRACT ||
-            "0x509Ee0d083DdF8AC028f2a56731412edD63223B9";
-        // Using Goerli testnet
-        const url = `https://api-goerli.etherscan.io/api?module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${apiKey}`;
+        // USDT contract address on Ethereum Mainnet
+        const usdtContract = process.env.USDT_MAINNET_CONTRACT ||
+            "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+        // Using Ethereum mainnet
+        const url = `https://api.etherscan.io/api?module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${apiKey}`;
         try {
             const response = await axios_1.default.get(url);
             const data = response.data;
@@ -449,7 +448,7 @@ class BlockchainValidator {
                     }
                 }
             }
-            console.log(`   USDT Testnet TX: ${totalAmount} USDT to ${expectedTo}`);
+            console.log(`   USDT Mainnet TX: ${totalAmount} USDT to ${expectedTo}`);
             return totalAmount >= minAmount && totalAmount <= maxAmount;
         }
         catch (error) {
