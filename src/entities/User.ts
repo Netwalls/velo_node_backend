@@ -30,13 +30,13 @@ export class User {
   @PrimaryGeneratedColumn("uuid")
   id: string | undefined;
 
-  @Column({ unique: true })
+  @Column({ type: "varchar", unique: true, nullable: true })
   @IsEmail()
-  email!: string;
+  email?: string | null;
 
-  @Column()
+  @Column({ type: "varchar", nullable: true })
   @MinLength(6)
-  password!: string;
+  password?: string | null;
 
   @Column({
     type: "enum",

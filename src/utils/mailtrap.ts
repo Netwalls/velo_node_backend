@@ -6,10 +6,10 @@
  *   # or
  *   npm install mailtrap
  */
-import { MailtrapClient } from 'mailtrap';
+import { MailtrapClient } from "mailtrap";
 
-const TOKEN = process.env.MAILTRAP_TOKEN || '';
-const SENDER_EMAIL = process.env.MAILTRAP_SENDER || '';
+const TOKEN = process.env.MAILTRAP_TOKEN || "";
+const SENDER_EMAIL = process.env.MAILTRAP_SENDER || "";
 
 const client = new MailtrapClient({ token: TOKEN });
 
@@ -21,24 +21,25 @@ const client = new MailtrapClient({ token: TOKEN });
  * @param html Optional HTML body
  */
 export async function sendMailtrapMail({
-    to,
-    subject,
-    text,
-    html,
-    fromName = 'Velo',
+  to,
+  subject,
+  text,
+  html,
+  fromName = "Velo",
 }: {
-    to: string;
-    subject: string;
-    text: string;
-    html?: string;
-    fromName?: string;
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  fromName?: string;
 }): Promise<void> {
-    const sender = { name: fromName, email: SENDER_EMAIL };
-    await client.send({
-        from: sender,
-        to: [{ email: to }],
-        subject,
-        text,
-        html,
-    });
+  // const sender = { name: fromName, email: SENDER_EMAIL };
+  // await client.send({
+  //     from: sender,
+  //     to: [{ email: to }],
+  //     subject,
+  //     text,
+  //     html,
+  // });
+  return;
 }

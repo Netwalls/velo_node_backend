@@ -65,3 +65,6 @@ order.ts
 .cache/
 .parcel-cache/
 .eslintcache
+
+# Claude Code
+.claude/

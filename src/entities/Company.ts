@@ -16,14 +16,19 @@ export class Company {
   @PrimaryGeneratedColumn("uuid")
   id: string | undefined;
 
-  @Column()
-  companyName!: string;
+  @Column({ type: "varchar", default: "Unknown", nullable: true })
+  companyName?: string | null;
 
-  @Column({ unique: true })
-  companyEmail!: string;
+  @Column({
+    type: "varchar",
+    unique: true,
+    default: "unknown@company.invalid",
+    nullable: true,
+  })
+  companyEmail?: string | null;
 
-  @Column({ unique: true })
-  companyCode!: string;
+  @Column({ type: "varchar", unique: true, nullable: true })
+  companyCode?: string | null;
 
   @Column({ default: true })
   isActive!: boolean;

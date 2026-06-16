@@ -309,7 +309,7 @@ export class AuthController {
               ChainType[addr.chain.toUpperCase() as keyof typeof ChainType],
             network:
               NetworkType[
-              addr.network.toUpperCase() as keyof typeof NetworkType
+                addr.network.toUpperCase() as keyof typeof NetworkType
               ],
           });
           console.log("[DEBUG] Saved address:", {
@@ -459,11 +459,11 @@ export class AuthController {
           salary: user.salary,
           company: user.company
             ? {
-              id: user.company.id,
-              name: user.company.companyName,
-              code: user.company.companyCode,
-              email: user.company.companyEmail,
-            }
+                id: user.company.id,
+                name: user.company.companyName,
+                code: user.company.companyCode,
+                email: user.company.companyEmail,
+              }
             : null,
           isEmailVerified: user.isEmailVerified,
           hasTransactionPin: !!user.transactionPin,
@@ -1042,6 +1042,13 @@ export class AuthController {
         return;
       }
 
+      console.log("[DEBUG] Verifying OTP", {
+        email,
+        providedOTP: otp,
+        storedOTP: user.emailOTP,
+        expiry: user.emailOTPExpiry,
+      });
+
       // Check if OTP is expired
       if (isOTPExpired(user.emailOTPExpiry)) {
         res.status(400).json({
@@ -1392,10 +1399,7 @@ export class AuthController {
    * Update employee details (position and salary).
    * Only accessible by company owners for their employees.
    */
-  static async updateEmployee(
-    req: AuthRequest,
-    res: Response,
-  ): Promise<void> {
+  static async updateEmployee(req: AuthRequest, res: Response): Promise<void> {
     try {
       if (!req.user || !req.user.id) {
         res.status(401).json({ error: "Unauthorized" });
@@ -1405,7 +1409,7 @@ export class AuthController {
       const { employeeId } = req.params;
       const { position, salary } = req.body;
 
-      if (!employeeId || typeof employeeId !== 'string') {
+      if (!employeeId || typeof employeeId !== "string") {
         res.status(400).json({ error: "Invalid employee ID" });
         return;
       }
